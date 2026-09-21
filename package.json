@@ -42,7 +42,7 @@
     "upload:win:x64": "pnpm --filter @deepseek-ai/dsh-desktop run upload:win:x64",
     "clean": "tsx scripts/clean.ts",
     "change-scope": "tsx scripts/change-scope.ts",
-    "typecheck": "npm run build:lib:host && npm run typecheck:contracts-ready",
+    "typecheck": "pnpm run build:lib:host && pnpm run typecheck:contracts-ready",
     "typecheck:contracts-ready": "tsc -b tsconfig.client.json",
     "lint": "npm run build:lib:host && npm run lint:contracts-ready",
     "lint:contracts-ready": "tsx scripts/run-oxlint.ts .",
