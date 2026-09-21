@@ -49,6 +49,12 @@
     },
     {
       "path": "../../interaction/commands"
+    },
+    {
+      "path": "../../core/session"
+    },
+    {
+      "path": "../../llm/llm"
     }
   ]
 }

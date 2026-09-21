@@ -12,6 +12,7 @@ import { openSecurityJournal } from '../src/workbench/journal.ts'
 import { ArtifactStore } from '../src/workbench/artifacts.ts'
 import { SecurityController } from '../src/workbench/controller.ts'
 import type { SecurityCommand } from '../src/workbench/controller.ts'
+import { refineKnowledge, refinementSchema } from '../src/workbench/knowledge.ts'
 import { SecuritySearchIndex } from '../src/workbench/search.ts'
 
 async function harness() {
@@ -193,12 +194,7 @@ describe('security workbench', () => {
   it('rebuilds Chinese and identifier search from committed records', async () => {
     const { root, journal, send } = await harness()
     await send({
-      kind: 'knowledge',
-      title: '边界 检查 parse_packet',
-      content: '检查长度参数',
-      conditions: 'Owned fixture',
-      tags: ['native'],
-      evidenceIds: [],
+      kind: 'remember', entry: { ...entry, title: '边界 检查 parse_packet', summary: '检查长度参数', conditions: 'Owned fixture', tags: ['native'] },
     })
     const index = new SecuritySearchIndex(join(root, 'search.sqlite'))
     onTestFinished(() => {
@@ -213,7 +209,7 @@ describe('security workbench', () => {
   })
   it('rebuilds a corrupt derived index without changing committed evidence', async () => {
     const { root, journal, send } = await harness()
-    await send({ kind: 'knowledge', title: '恢复 索引', content: 'retained evidence', conditions: 'fixture', tags: [], evidenceIds: [] })
+    await send({ kind: 'remember', entry: { ...entry, title: '恢复 索引', summary: 'retained evidence' } })
     const before = journal.view()
     const path = join(root, 'search.sqlite')
     await writeFile(path, 'invalid sqlite bytes')
@@ -352,4 +348,84 @@ describe('security workbench', () => {
     await send({ kind: 'reconcile', checkId: check.value.id, rationale: 'Verified the process and script are absent' })
     expect(journal.view().records.find(item => item.kind === 'check')).toMatchObject({ value: { status: 'planned' } })
   })
+})
+
+const entry = { category: 'experience' as const, title: 'Check bounds', summary: 'Validate lengths before reading.', conditions: 'Binary parsers', actions: ['Check available bytes'], pitfalls: ['Do not trust declared lengths'], tags: ['parsing'] }
+const limits = { maxInputBytes: 32768, maxOutputBytes: 16384 }
+
+it('consolidates duplicate legacy notes atomically and reconstructs structured results after reopen', async () => {
+  const { journal, controller, ctx } = await harness()
+  await journal.commit('legacy-notes', undefined, {}, () => [
+    { kind: 'knowledge', value: { id: 'legacy-a', engagementId: controller.binding('parent')!.engagementId, title: 'Bounds', content: 'Check lengths. Evidence: internal-log', conditions: 'Binary parsers', tags: [], evidenceIds: [], published: false } },
+    { kind: 'knowledge', value: { id: 'legacy-b', engagementId: controller.binding('parent')!.engagementId, title: 'Validate sizes', content: 'Check available bytes.', conditions: 'Binary parsers', tags: [], evidenceIds: [], published: false } },
+  ])
+  const source = journal.view().records.filter(item => item.kind === 'knowledge')
+  const project = controller.binding('parent')!.engagementId
+  const generate = vi.fn(async (_prompt: string) => JSON.stringify({ entries: [{ sourceIds: source.map(item => item.value.id), entry }] }))
+  await refineKnowledge(journal, project, generate, limits, new AbortController().signal)
+  expect(generate.mock.calls[0]?.[0]).not.toContain('evidenceIds')
+  const visible = controller.view('parent').records.filter(item => item.kind === 'knowledge')
+  expect(visible).toHaveLength(1)
+  expect(visible[0]?.value).toMatchObject({ entry, content: entry.summary, evidenceIds: [], published: false })
+  await refineKnowledge(journal, project, generate, limits, new AbortController().signal)
+  expect(generate).toHaveBeenCalledTimes(1)
+  const before = journal.view()
+  await journal.close()
+  const reopened = await openSecurityJournal(ctx)
+  try { expect(reopened.view()).toEqual(before) } finally { await reopened.close() }
+})
+
+it.each(['foreign', 'missing', 'repeated', 'category', 'extra-field', 'oversized'])('preserves notes when refinement output is %s', async (kind) => {
+  const { send, journal, controller } = await harness()
+  await send({ kind: 'remember', entry })
+  const source = journal.view().records.filter(item => item.kind === 'knowledge')
+  const id = source[0]!.value.id
+  const result = { entries: [{ sourceIds: kind === 'foreign' ? ['foreign'] : kind === 'missing' ? [] : kind === 'repeated' ? [id, id] : [id],
+    entry: { ...entry, ...(kind === 'category' ? { category: 'retrospective' } : {}), ...(kind === 'extra-field' ? { reasoning: 'private trace' } : {}), ...(kind === 'oversized' ? { summary: 'x'.repeat(401) } : {}) } }] }
+  await expect(refineKnowledge(journal, controller.binding('parent')!.engagementId, async () => JSON.stringify(result), limits, new AbortController().signal)).rejects.toThrow()
+  expect(journal.view().records.filter(item => item.kind === 'knowledge')).toEqual(source)
+  expect(journal.view().records.find(item => item.kind === 'knowledge-maintenance')?.value).toMatchObject({ status: 'failed' })
+})
+
+it('rejects concurrent edits and retains the newly saved note', async () => {
+  const { send, journal, controller } = await harness()
+  await send({ kind: 'remember', entry })
+  const source = journal.view().records.filter(item => item.kind === 'knowledge')
+  const entered = Promise.withResolvers<undefined>()
+  const response = Promise.withResolvers<string>()
+  const pending = refineKnowledge(journal, controller.binding('parent')!.engagementId, () => { entered.resolve(undefined); return response.promise }, limits, new AbortController().signal)
+  const rejected = expect(pending).rejects.toThrow(/changed/)
+  await entered.promise
+  await send({ kind: 'remember', entry: { ...entry, title: 'New note' } })
+  response.resolve(JSON.stringify({ entries: [{ sourceIds: [source[0]!.value.id], entry }] }))
+  await rejected
+  expect(controller.view('parent').records.filter(item => item.kind === 'knowledge')).toHaveLength(2)
+})
+
+it('requires a new review after a shared lesson changes', async () => {
+  const { send, journal, controller } = await harness()
+  await send({ kind: 'remember', entry })
+  const source = journal.view().records.filter(item => item.kind === 'knowledge')
+  await send({ kind: 'publish', knowledgeId: source[0]!.value.id }, true)
+  expect(controller.sharedKnowledge()).toHaveLength(1)
+  await refineKnowledge(journal, controller.binding('parent')!.engagementId, async () => JSON.stringify({ entries: [{ sourceIds: [source[0]!.value.id], entry: { ...entry, summary: 'Check length before each read.' } }] }), limits, new AbortController().signal)
+  expect(controller.sharedKnowledge()).toHaveLength(0)
+})
+
+it('bounds framed input before dispatch and does not commit an aborted result', async () => {
+  const { send, journal, controller } = await harness()
+  await send({ kind: 'remember', entry })
+  const source = journal.view().records.filter(item => item.kind === 'knowledge')
+  const project = controller.binding('parent')!.engagementId
+  const generate = vi.fn(async () => '')
+  await expect(refineKnowledge(journal, project, generate,
+    { ...limits, maxInputBytes: 1 }, new AbortController().signal)).rejects.toThrow(/input exceeds/)
+  expect(generate).not.toHaveBeenCalled()
+  const abort = new AbortController()
+  await expect(refineKnowledge(journal, project, async () => {
+    abort.abort(new Error('cancelled'))
+    return JSON.stringify({ entries: [{ sourceIds: [source[0]!.value.id], entry }] })
+  }, limits, abort.signal)).rejects.toThrow('cancelled')
+  expect(journal.view().records.filter(item => item.kind === 'knowledge')).toEqual(source)
+  expect(() => refinementSchema.parse({ entries: [], evidence: [] })).toThrow()
 })

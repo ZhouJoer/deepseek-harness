@@ -145,6 +145,16 @@ export const bindingSchema = z
     assetIds: z.array(id),
   })
   .strict()
+/** Concise conclusions stored independently of analysis transcripts and evidence. */
+export const knowledgeEntrySchema = z.object({
+  category: z.enum(['retrospective', 'experience']),
+  title: text.max(100),
+  summary: text.max(400),
+  conditions: text.max(300),
+  actions: z.array(text.max(200)).min(1).max(5),
+  pitfalls: z.array(text.max(200)).max(5),
+  tags: z.array(text.max(40)).max(8),
+}).strict()
 /** Reviewed reusable material; its content does not grant execution authority. */
 export const knowledgeSchema = z
   .object({
@@ -156,6 +166,8 @@ export const knowledgeSchema = z
     tags: z.array(text),
     evidenceIds: z.array(id),
     published: z.boolean(),
+    entry: knowledgeEntrySchema.optional(),
+    supersededBy: id.optional(),
   })
   .strict()
 /** Tagged records form one append-only commit stream. */
@@ -198,6 +210,13 @@ export const recordSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('plan'), value: validationPlanSchema }).strict(),
   z.object({ kind: z.literal('binding'), value: bindingSchema }).strict(),
   z.object({ kind: z.literal('knowledge'), value: knowledgeSchema }).strict(),
+  z.object({ kind: z.literal('knowledge-maintenance'), value: z.object({
+    id,
+    engagementId: id,
+    inputHash: text,
+    lastRunAt: z.number().int().nonnegative(),
+    status: z.enum(['completed', 'failed']),
+  }).strict() }).strict(),
 ])
 /** Persisted domain record. */
 export type SecurityRecord = z.infer<typeof recordSchema>

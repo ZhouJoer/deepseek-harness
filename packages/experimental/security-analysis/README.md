@@ -80,6 +80,12 @@ The built-in `binary` provider needs no external installation. Call `security_st
 
 Raw provider output is saved before its evidence reference. Evidence records retain the sample, tool version, parameters, originating Session/call, completeness and approved plan. `security_evidence` reads bounded original-byte slices. Search rebuilds SQLite FTS from project records and original evidence, with Chinese segmentation and identifiers. Shared knowledge requires a user review and remains reference material, never project evidence.
 
+Retrospectives and experience use the `remember` command with `category`, `title`, `summary`, `conditions`, `actions`, `pitfalls` and `tags`. Retrospectives store outcomes, problems and improvements; experience stores reusable practices and cautions. Entries exclude reasoning traces, evidence and execution logs. Legacy free-text notes remain readable by the refinement worker and appear in the UI only after refinement.
+
+Knowledge refinement runs every `knowledgeIntervalMs` (default 3,600,000 ms; zero disables automatic runs) while the Host is running. The workbench also offers manual refinement. A fresh tool-free Agent Session logs the complete model request and response. `knowledgeProvider` and `knowledgeModel` optionally select a dedicated route together; omission uses the default Agent model. `knowledgeInputBytes` defaults to 131,072 bytes, `knowledgeOutputTokens` to 8,192 tokens; `maxOutputBytes` bounds the complete response and `delegationTimeoutMs` bounds the run.
+
+Refinement skips unchanged inputs and merges only within one project. Structured categories cannot change, and every source entry must appear exactly once in the response. Invalid, oversized, cancelled or concurrently edited results cannot replace the notes. Successful consolidation commits entries and duplicate replacements atomically; changed shared entries require another operator review. The journal retains prior revisions. A failed attempt can be retried manually or at the next interval. Projects stopped by the operator cancel and drain active refinement.
+
 The journal appends one complete command per storage-domain record. A dedicated SQLite ownership lock permits one Host per security root. Restart revokes approvals and marks unfinished executions for reconciliation; it never replays injection or process creation. Exact operation retries do not execute a second time. Use `import-legacy` to preserve a prototype JSON archive as an immutable, operator-declared record. Import the actual sample separately to obtain a measured identity; the archive is not promoted into verified evidence.
 
 -----
@@ -133,6 +139,7 @@ Tool definitions and workflow guidance remain stable. Project state enters conte
 - Real DeepSeek tutorial analysis exercised static evidence and child report collection, but produced incorrect ELF interpretations. Structured format parsing and persistent review remain incomplete; a real-model GUI GIF is still outstanding. Keyless tests and simulated external responses are separate evidence.
 - Environment leases conservatively serialize operations, including reads. Automatic GUI provisioning, rich component/JNI linking, remote labs, semantic search, Web/IoT specializations, fastboot writes and john execution are not available.
 - Android split APK validation is refused because one imported base APK cannot establish the complete installed package identity. Local attach refuses platforms that cannot provide a start identity or executable identity.
+- Refinement processes a complete project knowledge set; exceeding `knowledgeInputBytes` fails without truncation. Automatic runs require a running Host and a configured model. Semantic equivalence is model-assessed; shared results still require operator review.
 - `/legacy` retains the isolated prototype for its recorded Sessions. Do not load it together with the workbench; both register security tool names.
 
 <a id="dev-note"></a>

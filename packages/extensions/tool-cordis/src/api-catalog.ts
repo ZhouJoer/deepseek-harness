@@ -1670,6 +1670,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [],
       },
       {
+        signature: '@Remote(\'refineKnowledge\') async refineProjectKnowledge(agent: Agent): Promise<WorkbenchView>',
+        description: 'Refine and deduplicate the selected project\'s notes using a logged model Session.',
+        parameters: [{ name: 'agent', description: 'authenticated coordinating Session.' }],
+        returns: 'the committed project view after refinement.',
+      },
+      {
         signature: '@Remote(\'view\') async view(agent: Agent): Promise<WorkbenchView>',
         description: 'Read selected project state for an authenticated Web session.',
         parameters: [{ name: 'agent', description: 'carrier-resolved agent.' }],

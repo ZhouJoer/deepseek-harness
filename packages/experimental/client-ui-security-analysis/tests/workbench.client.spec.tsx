@@ -16,7 +16,7 @@ const view: WorkbenchView = { revision: 8, records: [project] }
 function actions(overrides: Partial<WorkbenchActions> = {}) {
   return {
     subscribeReset: () => () => {},
-    load: vi.fn(async () => view), command: vi.fn(async () => view),
+    refine: vi.fn(async () => view), load: vi.fn(async () => view), command: vi.fn(async () => view),
     configuration: vi.fn(async () => JSON.stringify({ environments: [{ id: 'local', label: 'Lab', tools: [], kind: 'local' }], providers: [] })),
     environment: vi.fn(async () => '{}'), execute: vi.fn(async () => view), search: vi.fn(async () => ({ revision: 8, records: [] })),
     artifact: vi.fn(async () => '{}'), ...overrides,
@@ -30,7 +30,7 @@ it('keeps authoritative project state when an evidence search returns no matches
   render(<Workbench {...props(api)} />)
   fireEvent.click(screen.getByRole('button', { name: '安全分析' }))
   await screen.findByText('Review the sample')
-  fireEvent.click(screen.getByRole('button', { name: '知识' }))
+  fireEvent.click(screen.getByRole('button', { name: '资料' }))
   fireEvent.change(screen.getByLabelText('关键词'), { target: { value: 'absent' } })
   fireEvent.click(screen.getByRole('button', { name: '搜索' }))
   await waitFor(() =>{  expect(api.search).toHaveBeenCalledWith('parent', 'absent', false) })
@@ -62,4 +62,41 @@ it('submits explicit approval for the displayed plan identity', async () => {
   fireEvent.click(screen.getByRole('button', { name: '批准此版本' }))
   await waitFor(() =>{  expect(api.command).toHaveBeenCalled() })
   expect(JSON.parse(vi.mocked(api.command).mock.calls[0]?.[1] ?? '{}')).toMatchObject({ expectedRevision: 8, action: { kind: 'approve', planId: 'plan' } })
+})
+
+it('separates concise knowledge cards from legacy text and evidence', async () => {
+  const note = recordSchema.parse({ kind: 'knowledge', value: { id: 'note', engagementId: 'project', title: 'Bounds', content: 'old reasoning', conditions: 'parsers', tags: [], evidenceIds: ['raw-evidence'], published: false,
+    entry: { category: 'experience', title: 'Bounds', summary: 'Validate lengths.', conditions: 'Binary parsers', actions: ['Check bytes'], pitfalls: [], tags: ['parsing'] } } })
+  const legacy = recordSchema.parse({ kind: 'knowledge', value: { id: 'legacy', engagementId: 'project', title: 'Unrefined', content: 'private chain of thought', conditions: 'parsers', tags: [], evidenceIds: [], published: false } })
+  const api = actions({ load: vi.fn(async () => ({ revision: 8, records: [project, note, legacy] })) })
+  render(<Workbench {...props(api)} />)
+  fireEvent.click(screen.getByRole('button', { name: '安全分析' }))
+  await screen.findByText('Review the sample')
+  fireEvent.click(screen.getByRole('button', { name: '复盘与经验' }))
+  fireEvent.click(screen.getByRole('button', { name: /经验 1/ }))
+  expect(screen.getByText('Validate lengths.')).toBeDefined()
+  expect(screen.queryByText('private chain of thought')).toBeNull()
+  expect(screen.queryByText('old reasoning')).toBeNull()
+  expect(screen.queryByText('raw-evidence')).toBeNull()
+  expect(screen.getByText('查看适用条件与建议').closest('details')?.open).toBe(false)
+  fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'absent' } })
+  expect(screen.queryByText('Validate lengths.')).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: '立即整理' }))
+  await waitFor(() =>{  expect(api.refine).toHaveBeenCalledWith('parent') })
+})
+
+it('saves retrospective fields without evidence or reasoning fields', async () => {
+  const api = actions()
+  render(<Workbench {...props(api)} />)
+  fireEvent.click(screen.getByRole('button', { name: '安全分析' }))
+  await screen.findByText('Review the sample')
+  fireEvent.click(screen.getByRole('button', { name: '复盘与经验' }))
+  fireEvent.click(screen.getByRole('button', { name: '新增记录' }))
+  for (const [label, value] of [['名称', 'Parser review'], ['结果摘要', 'Found a length check gap'], ['适用条件', 'Binary parser'], ['改进措施', 'Check bytes'], ['遇到的问题', 'Trusted input sizes']])
+    fireEvent.change(screen.getByLabelText(label!), { target: { value } })
+  fireEvent.click(screen.getByRole('button', { name: '保存记录' }))
+  await waitFor(() =>{  expect(api.command).toHaveBeenCalled() })
+  expect((JSON.parse(vi.mocked(api.command).mock.calls[0]![1]) as { action: unknown }).action).toEqual({ kind: 'remember', entry: {
+    category: 'retrospective', title: 'Parser review', summary: 'Found a length check gap', conditions: 'Binary parser', actions: ['Check bytes'], pitfalls: ['Trusted input sizes'], tags: [],
+  } })
 })

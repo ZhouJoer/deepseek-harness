@@ -9,7 +9,7 @@ import {
   validationPlanSchema,
   evidenceSchema,
   bindingSchema,
-  knowledgeSchema,
+  knowledgeEntrySchema,
   operationSchema,
   type AnalysisOperation,
   type Asset,
@@ -75,17 +75,8 @@ const actions = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('revoke'), planId: text }).strict(),
   z.object({ kind: z.literal('stop') }).strict(),
   z.object({ kind: z.literal('resume') }).strict(),
-  z
-    .object({
-      kind: z.literal('knowledge'),
-      title: text,
-      content: text,
-      conditions: text,
-      tags: z.array(text),
-      evidenceIds: z.array(text),
-    })
-    .strict(),
   z.object({ kind: z.literal('publish'), knowledgeId: text }).strict(),
+  z.object({ kind: z.literal('remember'), entry: knowledgeEntrySchema }).strict(),
 ])
 /** Structured command shared by model tools and the Web controller. */
 export const commandSchema = z
@@ -193,6 +184,7 @@ export class SecurityController {
     return {
       revision: view.revision,
       records: view.records.filter((item) => {
+        if (item.kind === 'knowledge' && item.value.supersededBy) return false
         const project = item.kind === 'engagement' ? item.value.id : item.value.engagementId
         if (project !== binding.engagementId) return false
         if (item.kind === 'engagement') return true
@@ -261,7 +253,7 @@ export class SecurityController {
         }
         const binding = this.requireBinding(view, sessionId)
         const project = this.project(view, binding.engagementId)
-        if (binding.role !== 'coordinator' && !['finding', 'knowledge'].includes(action.kind))
+        if (binding.role !== 'coordinator' && !['finding', 'remember'].includes(action.kind))
           throw new Error('This role cannot change the check plan')
         if (project.stopped && !['resume', 'revoke'].includes(action.kind)) throw new Error('Project is stopped')
         const scoped = (kind: SecurityRecord['kind'], id: string) => {
@@ -541,26 +533,16 @@ export class SecurityController {
           case 'stop':
           case 'resume':
             return [{ kind: 'engagement', value: { ...project, stopped: action.kind === 'stop' } }]
-          case 'knowledge':
-            evidence(action.evidenceIds)
-            return [
-              {
-                kind: 'knowledge',
-                value: knowledgeSchema.parse({
-                  id: randomUUID(),
-                  engagementId: project.id,
-                  title: action.title,
-                  content: action.content,
-                  conditions: action.conditions,
-                  tags: action.tags,
-                  evidenceIds: action.evidenceIds,
-                  published: false,
-                }),
-              },
-            ]
+          case 'remember':
+            return [{ kind: 'knowledge', value: {
+              id: randomUUID(), engagementId: project.id, title: action.entry.title,
+              content: action.entry.summary, conditions: action.entry.conditions,
+              tags: action.entry.tags, evidenceIds: [], published: false, entry: action.entry,
+            } }]
           case 'publish': {
             const item = scoped('knowledge', action.knowledgeId)
             if (item.kind !== 'knowledge') throw new Error('Knowledge entry required')
+            if (item.value.supersededBy || !item.value.entry) throw new Error('Refine this entry before sharing')
             return [{ kind: 'knowledge', value: { ...item.value, published: true } }]
           }
         }
@@ -670,7 +652,7 @@ export class SecurityController {
   /** Read reviewed cross-project reference material.
    * @returns published knowledge, which is never executable authority. */
   sharedKnowledge(): SecurityRecord[] {
-    return this.journal.view().records.filter(item => item.kind === 'knowledge' && item.value.published)
+    return this.journal.view().records.filter(item => item.kind === 'knowledge' && item.value.published && !item.value.supersededBy)
   }
 
   /**

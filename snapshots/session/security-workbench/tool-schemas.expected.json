@@ -90,7 +90,7 @@
     },
     {
       "name": "security_command",
-      "description": "Submit a JSON security command with operationId, expectedRevision and action. Actions: import, template, check, finish, reopen, reconcile, finding, plan, stop, revoke, knowledge. Plans require checkId, operation, hypothesis, expectedObservation, impact, cleanup and durationMs. Operator approval is separate.",
+      "description": "Submit a JSON security command with operationId, expectedRevision and action. Actions: import, template, check, finish, reopen, reconcile, finding, plan, stop, revoke, remember. Use remember for concise structured retrospectives or reusable experience without reasoning traces or evidence. Plans require checkId, operation, hypothesis, expectedObservation, impact, cleanup and durationMs. Operator approval is separate.",
       "parameters": {
         "type": "object",
         "properties": {
