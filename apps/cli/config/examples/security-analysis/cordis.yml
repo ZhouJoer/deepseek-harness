@@ -1,0 +1,31 @@
+# Apply after the security Host bundle. Tool paths are explicit operator configuration.
+- id: security-workbench
+  config:
+    root: !!js dshHomePath('security')
+    importRoots: !!js '[process.cwd()]'
+    environments:
+      - id: local
+        kind: local
+        label: Local reverse analysis
+        cwd: !!js process.cwd()
+        tools:
+          - id: python
+            command: python
+            versionArgs: [--version]
+            source: Operator installation with Frida bindings
+          - id: jadx
+            command: jadx
+            versionArgs: [--version]
+            source: Operator JADX installation
+          - id: adb
+            command: adb
+            versionArgs: [version]
+            source: Android platform tools
+          - id: fastboot
+            command: fastboot
+            versionArgs: [--version]
+            source: Android platform tools; inventory only
+          - id: john
+            command: john
+            versionArgs: [--list=build-info]
+            source: Operator audit tools; inventory only

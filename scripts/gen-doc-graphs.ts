@@ -657,6 +657,14 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'Providers implement transports; the service also owns optional Activation-based continuation orchestration, tool-subagent selects one-shot or continuable delegation, tool-subagent-control delivers follow-ups, and tool-ralph requires one fresh structured-output route.',
   },
   {
+    key: 'securityWorkbench',
+    pkg: 'experimental-security-analysis',
+    title: 'Security check and evidence domain',
+    mode: 'core',
+    consumers: ['experimental-client-ui-security-analysis', 'experimental-security-profile'],
+    note: 'Owns project scope, explicit Session roles, durable checks and immutable validation approval; dedicated analysis and environment providers register through its domain interfaces.',
+  },
+  {
     key: 'agentTeams',
     pkg: 'experimental-agent-team',
     title: 'Agent Teams coordination domain',

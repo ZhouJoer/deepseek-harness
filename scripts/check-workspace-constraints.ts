@@ -163,12 +163,21 @@ const packageFileExtras: Readonly<Record<string, readonly string[]>> = {
   '@deepseek-ai/dsh-client-ui-theme': ['lib/styles'],
   // The CPython side ships as source .py files, published as-is rather than built.
   '@deepseek-ai/dsh-experimental-ptc-runtime-python': ['py/**/*.py'],
+  // Reverse providers are independently loaded exports. Their shared bundles and
+  // the Python/Ghidra helpers must remain available after package installation.
+  '@deepseek-ai/dsh-experimental-security-analysis': [
+    'lib/workbench.js', 'lib/environment.js', 'lib/ghidra.js', 'lib/frida.js',
+    'lib/android.js', 'lib/commands.js', 'lib/legacy.js',
+    'lib/model-*.js', 'lib/process-*.js', 'lib/types-*.js',
+    'resources/**/*.py', 'resources/**/*.js',
+  ],
   // The isolated Node bootstrap is a separately launched bundle.
   '@deepseek-ai/dsh-ptc-runtime-node': ['lib/process.js'],
   // The Host entry starts its sibling Worker by URL rather than a package export.
   '@deepseek-ai/dsh-experimental-inspector': ['lib/worker.js'],
   // The shipped preset compositions travel inside the roster package.
   '@deepseek-ai/dsh-agent-presets': ['presets'],
+  '@deepseek-ai/dsh-experimental-security-profile': ['presets'],
   // The Web Host mounts the default-off settings owner independently of each
   // Agent-scoped delegation-tool instance.
   '@deepseek-ai/dsh-tool-subagent': ['lib/model-selection-settings.js'],

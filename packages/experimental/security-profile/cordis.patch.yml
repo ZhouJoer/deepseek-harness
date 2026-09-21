@@ -1,0 +1,63 @@
+- id: tools
+  config:
+    mode: native
+
+- id: tool-bash
+  disabled: true
+
+- id: tool-pwsh
+  disabled: true
+
+- id: tool-subagent
+  disabled: true
+
+- id: tool-subagent-fork
+  disabled: true
+
+- id: tool-subagent-control
+  disabled: true
+
+- id: tool-subagent-list-agents
+  disabled: true
+
+- id: ptc-runtime
+  disabled: true
+
+- id: workflow-ptc
+  disabled: true
+
+- id: tool-workflow
+  disabled: true
+
+- id: storage-domain
+  config:
+    backend: sqlite
+
+- insert:
+    - id: security-storage-sqlite
+      name: '@deepseek-ai/dsh-storage-sqlite'
+      config:
+        path: !!js dshHomePath('security/domain.sqlite')
+    - id: security-workbench
+      name: '@deepseek-ai/dsh-experimental-security-analysis'
+      config:
+        root: !!js dshHomePath('security')
+        importRoots: !!js '[process.cwd()]'
+        environments:
+          - id: local
+            kind: local
+            label: Local analysis
+            cwd: !!js process.cwd()
+            tools: []
+    - id: security-environments
+      name: '@deepseek-ai/dsh-experimental-security-analysis/environment'
+    - id: security-ghidra
+      name: '@deepseek-ai/dsh-experimental-security-analysis/ghidra'
+      config:
+        programs: []
+    - id: security-frida
+      name: '@deepseek-ai/dsh-experimental-security-analysis/frida'
+    - id: security-android
+      name: '@deepseek-ai/dsh-experimental-security-analysis/android'
+    - id: security-operator-commands
+      name: '@deepseek-ai/dsh-experimental-security-analysis/commands'

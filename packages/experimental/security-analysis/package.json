@@ -1,0 +1,132 @@
+{
+  "name": "@deepseek-ai/dsh-experimental-security-analysis",
+  "description": "Scoped reverse engineering with GhidraMCP, Frida, evidence records, and reconnaissance delegation",
+  "version": "0.1.6-alpha.2",
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/deepseek-ai/deepseek-harness.git",
+    "directory": "packages/experimental/security-analysis"
+  },
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./src/*": "./src/*",
+    "./package.json": "./package.json",
+    "./workbench": {
+      "types": "./lib/types/workbench/index.d.ts",
+      "default": "./lib/workbench.js"
+    },
+    "./typert": {
+      "types": "./lib/typert.host.d.ts",
+      "default": "./lib/typert.host.js"
+    },
+    "./remote": {
+      "types": "./lib/typert.remote-client.d.ts",
+      "default": "./lib/typert.remote-client.js"
+    },
+    "./client": {
+      "types": "./lib/types/workbench-client.d.ts",
+      "default": "./lib/types/workbench-client.js"
+    },
+    "./environment": {
+      "types": "./lib/types/environment-local.d.ts",
+      "default": "./lib/environment.js"
+    },
+    "./ghidra": {
+      "types": "./lib/types/ghidra-provider.d.ts",
+      "default": "./lib/ghidra.js"
+    },
+    "./frida": {
+      "types": "./lib/types/frida-provider.d.ts",
+      "default": "./lib/frida.js"
+    },
+    "./android": {
+      "types": "./lib/types/android-provider.d.ts",
+      "default": "./lib/android.js"
+    },
+    "./commands": {
+      "types": "./lib/types/operator-commands.d.ts",
+      "default": "./lib/commands.js"
+    },
+    "./legacy": {
+      "types": "./lib/types/legacy.d.ts",
+      "default": "./lib/legacy.js"
+    }
+  },
+  "files": [
+    "lib/index.js",
+    "lib/workbench.js",
+    "lib/environment.js",
+    "lib/ghidra.js",
+    "lib/frida.js",
+    "lib/android.js",
+    "lib/commands.js",
+    "lib/legacy.js",
+    "lib/model-*.js",
+    "lib/process-*.js",
+    "lib/types-*.js",
+    "resources/**/*.py",
+    "resources/**/*.js",
+    "lib/types/**/*.js",
+    "lib/types/**/*.d.ts",
+    "lib/typert.host.js",
+    "lib/typert.host.d.ts",
+    "lib/typert.remote-client.js",
+    "lib/typert.remote-client.d.ts"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@deepseek-ai/schemastery": "workspace:^",
+    "@deepseek-ai/dsh-brand": "workspace:^",
+    "@deepseek-ai/dsh-util-values": "workspace:^",
+    "zod": "^4.4.3",
+    "yauzl": "^3.4.0"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "workspace:^",
+    "@deepseek-ai/dsh-agent": "workspace:^",
+    "@deepseek-ai/dsh-tools": "workspace:^",
+    "@deepseek-ai/dsh-system-prompt": "workspace:^",
+    "@deepseek-ai/dsh-storage-domain": "workspace:^",
+    "@deepseek-ai/dsh-subprocess": "workspace:^",
+    "@deepseek-ai/dsh-subagent": "workspace:^",
+    "@deepseek-ai/dsh-jobs": "workspace:^",
+    "@deepseek-ai/dsh-user-approval": "workspace:^",
+    "@deepseek-ai/dsh-typert-protocol": "workspace:^",
+    "@deepseek-ai/dsh-commands": "workspace:^"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "workspace:^",
+    "@deepseek-ai/cordis-plugin-loader": "workspace:^",
+    "@deepseek-ai/cordis-plugin-include": "workspace:^",
+    "@deepseek-ai/dsh-agent": "workspace:^",
+    "@deepseek-ai/dsh-agent-loop": "workspace:^",
+    "@deepseek-ai/dsh-agent-loop-testkit": "workspace:^",
+    "@deepseek-ai/dsh-tools": "workspace:^",
+    "@deepseek-ai/dsh-system-prompt": "workspace:^",
+    "@deepseek-ai/dsh-storage": "workspace:^",
+    "@deepseek-ai/dsh-storage-json": "workspace:^",
+    "@deepseek-ai/dsh-storage-domain": "workspace:^",
+    "@deepseek-ai/dsh-subprocess": "workspace:^",
+    "@deepseek-ai/dsh-subagent": "workspace:^",
+    "@deepseek-ai/dsh-jobs": "workspace:^",
+    "@deepseek-ai/dsh-user-approval": "workspace:^",
+    "@deepseek-ai/dsh-session": "workspace:^",
+    "@deepseek-ai/dsh-session-projection": "workspace:^",
+    "@deepseek-ai/dsh-llm": "workspace:^",
+    "@deepseek-ai/dsh-typert-protocol": "workspace:^",
+    "@deepseek-ai/dsh-commands": "workspace:^",
+    "@types/yauzl": "^2.10.3",
+    "@deepseek-ai/dsh-subprocess-local": "workspace:^",
+    "@deepseek-ai/dsh-subagent-in-process-driver": "workspace:^",
+    "@deepseek-ai/dsh-scope": "workspace:^"
+  }
+}

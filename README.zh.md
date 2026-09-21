@@ -8,6 +8,12 @@ DeepSeek Harness（`dsh`）是由 [DeepSeek AI](https://deepseek.com) 开发的�
 
 文档：[https://deepseek-harness.github.io/deepseek-harness/](https://deepseek-harness.github.io/deepseek-harness/)
 
+> [!IMPORTANT]
+>
+> **安全 Agent：[架构文档](docs/security-architecture.zh.md) · [功能 TODO](docs/roadmaps/security-analysis.zh.md)**
+>
+> 从这里了解安全扩展的模块、角色权限和未完成事项。本地启动见[安全使用指南](docs/user/guide/security-analysis.zh.md)。
+
 ## 开发者预览
 
 DeepSeek Harness 处于 _开发者预览_ 阶段，正在快速迭代。**未来将出现破坏兼容性的变更。**

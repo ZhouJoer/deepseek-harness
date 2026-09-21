@@ -47,3 +47,17 @@ worktrees/
 .agents/worktrees/
 .typert-*/
 native/system/test/bin/
+
+# Local credentials and Harness state; keep configuration examples reviewable.
+/.env.*
+!/.env.example
+!/.env.*.example
+/.credentials.yaml
+/.dsh/
+/dsh-home/
+# Browser acceptance output and Python helper caches.
+/playwright-report/
+/test-results/
+/blob-report/
+__pycache__/
+.pytest_cache/

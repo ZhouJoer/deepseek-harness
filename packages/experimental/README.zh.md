@@ -37,6 +37,10 @@ kind: "package-group"
 | [`browser-use-stagehand-native`](browser-use-stagehand-native/README.zh.md) | Stagehand 浏览器操作与显式配置的原生模型 | `ctx.browserUse` |
 | [`browser-use-runtime`](browser-use-runtime/README.zh.md) | 实验性提供方共享的 Session 浏览器资源 | — |
 | [`inspector`](inspector/README.zh.md) | 用于 Host 调试、Client Runtime 检查、网络采集与 Cordis 树的跨 realm CDP hub | `ctx.inspector` |
+| [`security-analysis`](security-analysis/README.zh.md) | 逆向检查、证据、计划授权及 provider 接口 | `ctx.securityWorkbench` |
+| [`security-profile`](security-profile/README.zh.md) | 包含安全工具执行约束的可选 Host 组合 | — |
+| [`security-web-profile`](security-web-profile/README.zh.md) | 可选的 Web 工作台组合 | — |
+| [`client-ui-security-analysis`](client-ui-security-analysis/README.zh.md) | 项目、证据、环境及验证交互 | — |
 | [`tool-agent-team`](tool-agent-team/README.zh.md) | 让模型创建、发消息与协调 teammate 的九个工具 | 按作用域注册工具到 `ctx.tools` |
 | [`webworker-packer`](webworker-packer/README.zh.md) | 构建浏览器 worker 预览所消费的 gzip 压缩虚拟文件系统（VFS）镜像 | 库与 CLI（命令行界面），不使用 ctx key |
 | [`webworker-runtime`](webworker-runtime/README.zh.md) | 在专用浏览器 worker 中运行 harness 插件树 | 库与 worker 入口，不使用 ctx key |

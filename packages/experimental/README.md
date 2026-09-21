@@ -37,6 +37,10 @@ The experimental group contains prototype capabilities whose contracts can chang
 | [`browser-use-stagehand-native`](browser-use-stagehand-native/README.md) | Stagehand browser operations with explicitly configured native models | `ctx.browserUse` |
 | [`browser-use-runtime`](browser-use-runtime/README.md) | Session-owned browser resources shared by experimental providers | — |
 | [`inspector`](inspector/README.md) | Cross-realm CDP hub for Host debugging, Client Runtime inspection, network capture, and Cordis trees | `ctx.inspector` |
+| [`security-analysis`](security-analysis/README.md) | Reverse checks, evidence, plan approval and provider interfaces | `ctx.securityWorkbench` |
+| [`security-profile`](security-profile/README.md) | Optional Host composition with guarded security tools | — |
+| [`security-web-profile`](security-web-profile/README.md) | Optional Web workbench composition | — |
+| [`client-ui-security-analysis`](client-ui-security-analysis/README.md) | Project, evidence, environment and validation controls | — |
 | [`tool-agent-team`](tool-agent-team/README.md) | Nine tools that let the model create, message, and coordinate teammates | registers scoped tools on `ctx.tools` |
 | [`webworker-packer`](webworker-packer/README.md) | Builds the gzip-compressed VFS image consumed by the browser worker preview | library and CLI — no ctx key |
 | [`webworker-runtime`](webworker-runtime/README.md) | Runs the harness plugin tree inside a dedicated browser worker | library and worker entry — no ctx key |

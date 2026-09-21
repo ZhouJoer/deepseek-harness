@@ -1,0 +1,17 @@
+- id: webserver
+  inject: [webStartup]
+  config:
+    host: !!js ctx.webStartup.host ?? '127.0.0.1'
+    port: !!js ctx.webStartup.port ?? 3081
+    compression: gzip
+    compressionLevel: 1
+    compressionThresholdBytes: 1024
+
+- id: agent-presets
+  disabled: true
+
+- insert:
+    - id: security-presets
+      name: '@deepseek-ai/dsh-experimental-security-profile'
+    - id: ui-security-workbench
+      name: '@deepseek-ai/dsh-experimental-client-ui-security-analysis'

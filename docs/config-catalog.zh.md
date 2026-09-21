@@ -827,6 +827,76 @@ export interface Config {
 
 来源：[`packages/experimental/ptc-runtime-python/src/index.ts:42`](../packages/experimental/ptc-runtime-python/src/index.ts)
 
+<a id="deepseek-aidsh-experimental-security-analysis"></a>
+
+## `@deepseek-ai/dsh-experimental-security-analysis`
+
+需要：`tools` · `agents` · `systemPrompt` · `storageDomain` · `jobs` · `subagents`
+
+```ts config-catalog
+/** Explicit host locations and operational limits. */
+export interface WorkbenchConfig {
+  /** Absolute Host directory for ownership, immutable artifacts and the derived search index. */
+  root: string
+  /** Absolute directories whose real paths may contain imported samples. */
+  importRoots: string[]
+  /** Operator-selected execution environments; model commands cannot add environments. */
+  environments: SecurityEnvironment[]
+  /** Maximum DEX and native library members extracted from one APK. */
+  maxDerivedAssets: number
+  /** Maximum bytes in one imported sample or immutable artifact. */
+  maxArtifactBytes: number
+  /** Maximum bytes returned by an analysis operation or model-facing result. */
+  maxOutputBytes: number
+  /** Maximum approved operation duration in milliseconds. */
+  maxDurationMs: number
+  /** Maximum lifetime of a delegated analysis job in milliseconds. */
+  delegationTimeoutMs: number
+  /** Maximum concurrent fresh child Sessions across this security Host. */
+  maxConcurrentDelegations: number
+  /** Lifetime of an operator approval in milliseconds. */
+  approvalTtlMs: number
+}
+
+/** An explicit local execution world; container images never silently change. */
+export interface SecurityEnvironment {
+  /** Stable identity used in project scope and execution leases. */
+  id: string
+  /** Local process, owned Docker container or selected Android device. */
+  kind: 'local' | 'docker' | 'android'
+  /** Operator-facing environment name. */
+  label: string
+  /** Absolute Host directory available as the analysis workspace. */
+  cwd: string
+  /** Explicit adb/Frida device identity for Android operations. */
+  deviceId?: string
+  /** Exact local Docker image reference; missing images are not downloaded. */
+  image?: string
+  /** Installed tool declarations, independent of current runtime readiness. */
+  tools: ToolInstallation[]
+  /** Runtime-only immutable image identity measured by the environment manager. */
+  resolvedImageId?: string
+  /** Runtime-only container identity owned by the environment manager. */
+  containerId?: string
+  /** Runtime-only Host directory mounted for immutable inputs and analysis output. */
+  exchangeRoot?: string
+}
+
+/** Operator-configured tool location. */
+export interface ToolInstallation {
+  /** Provider-facing tool identity within one environment. */
+  id: string
+  /** Host executable or executable path inside the selected container. */
+  command: string
+  /** Fixed arguments for reporting the installed version, without a shell. */
+  versionArgs: string[]
+  /** Operator-recorded origin of the installation. */
+  source: string
+}
+```
+
+来源：[`packages/experimental/security-analysis/src/index.ts:27`](../packages/experimental/security-analysis/src/index.ts)
+
 <a id="deepseek-aidsh-experimental-tool-agent-team"></a>
 
 ## `@deepseek-ai/dsh-experimental-tool-agent-team`
@@ -3836,7 +3906,9 @@ export interface Config {
 - `@deepseek-ai/dsh-deepseek-llm-api-extensions`（[`packages/llm/deepseek-llm-api-extensions/src/index.ts`](../packages/llm/deepseek-llm-api-extensions/src/index.ts)）
 - `@deepseek-ai/dsh-experimental-auto-review` — 需要 `llm` · `permissionPresets` · `sessions` · `tools`（[`packages/experimental/auto-review/src/index.ts`](../packages/experimental/auto-review/src/index.ts)）
 - `@deepseek-ai/dsh-experimental-client-ui-agent-team`（[`packages/experimental/client-ui-agent-team/src/index.ts`](../packages/experimental/client-ui-agent-team/src/index.ts)）
+- `@deepseek-ai/dsh-experimental-client-ui-security-analysis` ([`packages/experimental/client-ui-security-analysis/src/index.ts`](../packages/experimental/client-ui-security-analysis/src/index.ts))
 - `@deepseek-ai/dsh-experimental-computer-use-cua-driver-native` — requires `computerUse` · `tools` · `systemPrompt` ([`packages/experimental/computer-use-cua-driver-native/src/index.ts`](../packages/experimental/computer-use-cua-driver-native/src/index.ts))
+- `@deepseek-ai/dsh-experimental-security-profile` — 需要 `loader` · `sessionProjections` ([`packages/experimental/security-profile/src/index.ts`](../packages/experimental/security-profile/src/index.ts))
 - `@deepseek-ai/dsh-fs-observation-policy`（[`packages/fs/fs-observation-policy/src/index.ts`](../packages/fs/fs-observation-policy/src/index.ts)）
 - `@deepseek-ai/dsh-fs-ssh` — 需要 `ssh` · `sandboxPolicy`（[`packages/ssh/fs-ssh/src/index.ts`](../packages/ssh/fs-ssh/src/index.ts)）
 - `@deepseek-ai/dsh-goal-round-driver` — 需要 `agents` · `goals` · `sessions`（[`packages/goal/goal-round-driver/src/index.ts`](../packages/goal/goal-round-driver/src/index.ts)）
@@ -3908,6 +3980,7 @@ export interface Config {
 - `@deepseek-ai/dsh-experimental-agent-team-profile`（[`packages/experimental/agent-team-profile/src/index.ts`](../packages/experimental/agent-team-profile/src/index.ts)）
 - `@deepseek-ai/dsh-experimental-agent-team-web-profile`（[`packages/experimental/agent-team-web-profile/src/index.ts`](../packages/experimental/agent-team-web-profile/src/index.ts)）
 - `@deepseek-ai/dsh-experimental-browser-use-runtime` ([`packages/experimental/browser-use-runtime/src/index.ts`](../packages/experimental/browser-use-runtime/src/index.ts))
+- `@deepseek-ai/dsh-experimental-security-web-profile` ([`packages/experimental/security-web-profile/src/index.ts`](../packages/experimental/security-web-profile/src/index.ts))
 - `@deepseek-ai/dsh-experimental-webworker-packer`（[`packages/experimental/webworker-packer/src/index.ts`](../packages/experimental/webworker-packer/src/index.ts)）
 - `@deepseek-ai/dsh-experimental-webworker-runtime`（[`packages/experimental/webworker-runtime/src/index.ts`](../packages/experimental/webworker-runtime/src/index.ts)）
 - `@deepseek-ai/dsh-home-paths`（[`packages/util/home-paths/src/index.ts`](../packages/util/home-paths/src/index.ts)）

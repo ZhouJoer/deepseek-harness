@@ -105,7 +105,9 @@
     "@deepseek-ai/dsh-http-proxy": "workspace:^",
     "@deepseek-ai/dsh-mcp-resources": "workspace:^",
     "@deepseek-ai/dsh-plugin-manager": "workspace:^",
-    "@deepseek-ai/dsh-atomic-write": "workspace:^"
+    "@deepseek-ai/dsh-atomic-write": "workspace:^",
+    "@deepseek-ai/dsh-experimental-security-profile": "workspace:^",
+    "@deepseek-ai/dsh-experimental-security-web-profile": "workspace:^"
   },
   "devDependencies": {
     "@agentclientprotocol/sdk": "1.4.0",

@@ -1,0 +1,10 @@
+version: 1
+scenario: security-analysis
+profile: headless
+composition: security-analysis
+recording: authored
+header:
+  class: security-analysis
+  pin: true
+replay:
+  override: true

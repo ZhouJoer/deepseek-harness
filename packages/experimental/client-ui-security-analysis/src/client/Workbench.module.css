@@ -1,0 +1,148 @@
+.launcher {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px solid #26809a66;
+  border-radius: 8px;
+  background: #26809a12;
+  text-align: left;
+}
+.launchButton {
+  flex-shrink: 0;
+  padding: 7px 12px;
+  border: 1px solid #398ca3;
+  border-radius: 6px;
+  background: #174d62;
+  color: #fff;
+  font-weight: 600;
+  cursor: pointer;
+}
+.launchHint {
+  font-size: 12px;
+  line-height: 1.5;
+}
+.panel {
+  position: fixed;
+  inset: 5vh 4vw;
+  z-index: 80;
+  display: flex;
+  flex-direction: column;
+  background: var(--background, #fff);
+  color: var(--foreground, #18242e);
+  border: 1px solid #8797a4;
+  border-radius: 12px;
+  box-shadow: 0 12px 50px #0004;
+  text-align: left;
+}
+.header,
+.tabs {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px;
+  border-bottom: 1px solid #8797a444;
+}
+.header strong {
+  flex: 1;
+}
+.tabs {
+  flex-wrap: wrap;
+}
+.tabs button[aria-pressed='true'] {
+  background: #174d62;
+  color: #fff;
+}
+.body {
+  overflow: auto;
+  padding: 18px;
+  flex: 1;
+}
+.form {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid #8797a455;
+  border-radius: 8px;
+  margin-bottom: 16px;
+}
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.field input,
+.field textarea,
+.field select {
+  padding: 8px;
+  border: 1px solid #8797a477;
+  border-radius: 5px;
+  background: inherit;
+  color: inherit;
+}
+.field textarea {
+  min-height: 75px;
+}
+.card {
+  padding: 16px;
+  border: 1px solid #8797a455;
+  border-radius: 8px;
+  margin: 10px 0;
+}
+.card p {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.card small {
+  display: block;
+  overflow-wrap: anywhere;
+}
+.card pre,
+.detail {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 360px;
+  overflow: auto;
+  font-size: 12px;
+}
+.card button {
+  margin-right: 8px;
+}
+.metrics {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+}
+.metrics article {
+  padding: 20px;
+  border-radius: 8px;
+  background: #8797a411;
+}
+.error {
+  color: #b32727;
+  padding: 8px;
+}
+.stop {
+  color: #b32727;
+}
+.panel button {
+  padding: 6px 11px;
+  border: 1px solid #8797a466;
+  border-radius: 5px;
+}
+.panel button:disabled {
+  opacity: 0.5;
+}
+@media (max-width: 720px) {
+  .panel {
+    inset: 1vh 1vw;
+  }
+  .metrics {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .header {
+    flex-wrap: wrap;
+  }
+}

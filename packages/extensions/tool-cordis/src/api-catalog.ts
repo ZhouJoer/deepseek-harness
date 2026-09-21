@@ -1660,6 +1660,60 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'securityWorkbench',
+    summary: 'Optional security profile service; default application compositions remain independent.',
+    description: 'Optional security profile service; default application compositions remain independent.',
+    methods: [
+      {
+        signature: 'readonly ready: Promise<SecurityController>',
+        description: 'Domain initialization and recovery complete before accepting operations.',
+        parameters: [],
+      },
+      {
+        signature: '@Remote(\'view\') async view(agent: Agent): Promise<WorkbenchView>',
+        description: 'Read selected project state for an authenticated Web session.',
+        parameters: [{ name: 'agent', description: 'carrier-resolved agent.' }],
+        returns: 'authoritative view; reconnecting clients reload it.',
+      },
+      {
+        signature: '@Remote(\'command\') async command(agent: Agent, command: string): Promise<WorkbenchView>',
+        description: 'Apply a user-authored command including approval gestures.',
+        parameters: [{ name: 'agent', description: 'carrier-resolved agent.' }, { name: 'command', description: 'JSON command prepared by the workbench.' }],
+        returns: 'committed project state.',
+      },
+      {
+        signature: '@Remote(\'search\') async search(agent: Agent, query: string, shared: boolean): Promise<WorkbenchView>',
+        description: 'Search material visible to this session.',
+        parameters: [{ name: 'agent', description: 'carrier-resolved agent.' }, { name: 'query', description: 'plain search terms.' }, { name: 'shared', description: 'include published local experience.' }],
+        returns: 'matching committed records and the observed revision.',
+      },
+      {
+        signature: '@Remote(\'configuration\') async configuration(agent: Agent): Promise<string>',
+        description: 'List operator-configured environments before project creation.',
+        parameters: [{ name: 'agent', description: 'authenticated Web session.' }],
+        returns: 'environment labels, tool identities and registered operations.',
+      },
+      {
+        signature: '@Remote(\'environment\') async environment(agent: Agent, environmentId: string, action: \'inspect\' | \'start\' | \'stop\'): Promise<string>',
+        description: 'Inspect or manage one configured environment from an operator gesture.',
+        parameters: [{ name: 'agent', description: 'authenticated Web session.' }, { name: 'environmentId', description: 'exact configured world.' }, { name: 'action', description: 'explicit lifecycle action.' }],
+        returns: 'health details or completion metadata.',
+      },
+      {
+        signature: '@Remote(\'execute\') async execute(agent: Agent, planId: string, operationId: string, revision: number): Promise<WorkbenchView>',
+        description: 'Execute an approved plan from the workbench.',
+        parameters: [{ name: 'agent', description: 'authenticated coordinating session.' }, { name: 'planId', description: 'approved plan.' }, { name: 'operationId', description: 'stable execution identity.' }, { name: 'revision', description: 'state observed before starting.' }],
+        returns: 'settled project state.',
+      },
+      {
+        signature: '@Remote(\'artifact\') async artifact(agent: Agent, sha256: string): Promise<string>',
+        description: 'Read a verified artifact belonging to the selected project.',
+        parameters: [{ name: 'agent', description: 'authenticated session.' }, { name: 'sha256', description: 'evidence or script digest.' }],
+        returns: 'bounded preview with a completeness flag.',
+      },
+    ],
+  },
+  {
     key: 'sessionController',
     summary: 'Host service backing the generated `ctx.remote.session` namespace.',
     description: 'Host service backing the generated `ctx.remote.session` namespace.',
@@ -4061,6 +4115,22 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type AgentStatus = \'idle\' | \'running\';',
   },
   {
+    name: 'AnalysisContext',
+    declaration: 'export interface AnalysisContext {\n    environment: SecurityEnvironment;\n    asset: Asset;\n    artifacts: ArtifactStore;\n    signal: AbortSignal;\n    durationMs: number;\n    maxOutputBytes: number;\n}',
+  },
+  {
+    name: 'AnalysisOperation',
+    declaration: 'export type AnalysisOperation = z.infer<typeof operationSchema>;',
+  },
+  {
+    name: 'AnalysisProvider',
+    declaration: 'export interface AnalysisProvider {\n    id: string;\n    operations: readonly string[];\n    inputGuide?: string;\n    resolve(request: AnalysisOperation, context: AnalysisContext): AnalysisOperation;\n    prepare?(request: AnalysisOperation, context: AnalysisContext): Promise<AnalysisOperation>;\n    run(request: AnalysisOperation, context: AnalysisContext): Promise<AnalysisResult>;\n}',
+  },
+  {
+    name: 'AnalysisResult',
+    declaration: 'export interface AnalysisResult {\n    bytes: Uint8Array;\n    mediaType: string;\n    summary: string;\n    incomplete: boolean;\n    toolVersion: string;\n}',
+  },
+  {
     name: 'ApiKeyRecord',
     declaration: 'export interface ApiKeyRecord {\n    readonly kind: \'api-key\';\n    readonly key?: string;\n    readonly env?: Readonly<Record<string, string>>;\n}',
   },
@@ -4087,6 +4157,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'ApprovalRequestEvent',
     declaration: 'export interface ApprovalRequestEvent {\n    readonly agent: Agent;\n    readonly toolName: string;\n    readonly callId?: ToolCallId;\n    readonly reason?: string;\n    readonly signal?: AbortSignal;\n}',
+  },
+  {
+    name: 'Artifact',
+    declaration: 'export type Artifact = z.infer<typeof artifactSchema>;',
+  },
+  {
+    name: 'ArtifactStore',
+    declaration: 'export class ArtifactStore {\n    constructor(private readonly root: string, private readonly maxBytes: number);\n    async put(bytes: Uint8Array, mediaType: string): Promise<Artifact>;\n    async read(artifact: Artifact): Promise<Buffer>;\n    async import(path: string, roots: readonly string[]): Promise<{\n        artifact: Artifact;\n        format: Asset[\'format\'];\n    }>;\n    async materialize(artifact: Artifact): Promise<string>;\n    async release(path: string): Promise<void>;\n}',
   },
   {
     name: 'AskUserQuestionAnswer',
@@ -4127,6 +4205,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'AssembledSection',
     declaration: 'export interface AssembledSection {\n    name: string;\n    text: string;\n    interpolate?: boolean;\n}',
+  },
+  {
+    name: 'Asset',
+    declaration: 'export type Asset = z.infer<typeof assetSchema>;',
   },
   {
     name: 'AssistantMessage',
@@ -4541,6 +4623,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type DeepSeekLlmApiJson = null | boolean | number | string | DeepSeekLlmApiJson[] | {\n    [key: string]: DeepSeekLlmApiJson;\n};',
   },
   {
+    name: 'DelegatedRole',
+    declaration: 'export type DelegatedRole = Exclude<SecurityRole, \'coordinator\'>;',
+  },
+  {
     name: 'DiffCallView',
     declaration: 'export interface DiffCallView {\n    card: \'diff\';\n    title: string;\n    diffs: FileDiff[];\n    locations?: FileLocation[];\n}',
   },
@@ -4659,6 +4745,18 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'EncodedImageAttachment',
     declaration: 'export interface EncodedImageAttachment {\n    mediaType: ImageMediaType;\n    data: string;\n    name?: string;\n}',
+  },
+  {
+    name: 'Engagement',
+    declaration: 'export type Engagement = z.infer<typeof engagementSchema>;',
+  },
+  {
+    name: 'EnvironmentManager',
+    declaration: 'export interface EnvironmentManager {\n    inspect(environment: SecurityEnvironment, signal: AbortSignal): Promise<EnvironmentStatus>;\n    start(environment: SecurityEnvironment, signal: AbortSignal): Promise<string>;\n    stop(environment: SecurityEnvironment, signal: AbortSignal): Promise<void>;\n}',
+  },
+  {
+    name: 'EnvironmentStatus',
+    declaration: 'export interface EnvironmentStatus {\n    id: string;\n    ready: boolean;\n    diagnostics: string[];\n    tools: {\n        id: string;\n        available: boolean;\n        version: string;\n        source: string;\n    }[];\n}',
   },
   {
     name: 'EpochHeader',
@@ -5417,6 +5515,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type PromptSectionOrderName = keyof typeof SECTION_ORDERS;',
   },
   {
+    name: 'ProviderRegistry',
+    declaration: 'export class ProviderRegistry<T extends {\n    id: string;\n}> {\n    register(provider: T): () => void;\n    get(id: string): T;\n    list(): string[];\n}',
+  },
+  {
     name: 'ProviderRequestId',
     declaration: 'export type ProviderRequestId = Branded<\'ProviderRequestId\'>;',
   },
@@ -5657,6 +5759,22 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type SearchResultView = SearchMatchesResultView | SearchPathsResultView;',
   },
   {
+    name: 'SecurityController',
+    declaration: 'export class SecurityController {\n    readonly providers: ProviderRegistry<AnalysisProvider>;\n    readonly environments: ProviderRegistry<{\n        id: string;\n        manager: EnvironmentManager;\n    }>;\n    constructor(private readonly journal: SecurityJournal, readonly artifacts: ArtifactStore, readonly options: WorkbenchOptions);\n    trackDelegation(project: string, controller: AbortController, done: Promise<unknown>): () => void;\n    async manageEnvironment<T>(environmentId: string, run: (signal: AbortSignal) => Promise<T>, project: string = \'\'): Promise<T>;\n    binding(sessionId: string): SessionBinding | undefined;\n    projects(): Engagement[];\n    view(sessionId: string): WorkbenchView;\n    async command(sessionId: string, input: unknown, operator: boolean = false): Promise<WorkbenchView>;\n    async recover(): Promise<void>;\n    async bindChild(parentId: string, childId: string, assetIds: string[], role: DelegatedRole): Promise<void>;\n    sharedKnowledge(): SecurityRecord[];\n    async execute(sessionId: string, planId: string, operationId: string, expectedRevision: number, callId: string, signal: AbortSignal): Promise<WorkbenchView>;\n    async dispose(): Promise<void>;\n    async observe(sessionId: string, operation: AnalysisOperation, callId: string, signal: AbortSignal): Promise<SecurityRecord>;\n}',
+  },
+  {
+    name: 'SecurityEnvironment',
+    declaration: 'export interface SecurityEnvironment {\n    id: string;\n    kind: \'local\' | \'docker\' | \'android\';\n    label: string;\n    cwd: string;\n    deviceId?: string;\n    image?: string;\n    tools: ToolInstallation[];\n    resolvedImageId?: string;\n    containerId?: string;\n    exchangeRoot?: string;\n}',
+  },
+  {
+    name: 'SecurityJournal',
+    declaration: 'export interface SecurityJournal {\n    view(): WorkbenchView;\n    commit(operationId: string, expectedRevision: number | undefined, input: unknown, produce: (view: WorkbenchView) => Promise<SecurityRecord[]> | SecurityRecord[]): Promise<WorkbenchView>;\n    close(): Promise<void>;\n}',
+  },
+  {
+    name: 'SecurityRole',
+    declaration: 'export type SecurityRole = SessionBinding[\'role\'];',
+  },
+  {
     name: 'SendTeamMessageRequest',
     declaration: 'export interface SendTeamMessageRequest {\n    readonly target: string;\n    readonly content: ContentBlock[];\n    readonly signal: AbortSignal;\n}',
   },
@@ -5703,6 +5821,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'SessionAvailability',
     declaration: 'export type SessionAvailability = \'live\' | \'persisted\';',
+  },
+  {
+    name: 'SessionBinding',
+    declaration: 'export type SessionBinding = z.infer<typeof bindingSchema>;',
   },
   {
     name: 'SessionCancelRequest',
@@ -6753,6 +6875,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type ToolGuard = (execution: Readonly<ToolExecution>) => string | undefined;',
   },
   {
+    name: 'ToolInstallation',
+    declaration: 'export interface ToolInstallation {\n    id: string;\n    command: string;\n    versionArgs: string[];\n    source: string;\n}',
+  },
+  {
     name: 'ToolMessageSource',
     declaration: 'export interface ToolMessageSource {\n    kind: \'tool\';\n    callId: ToolCallId;\n}',
   },
@@ -7047,6 +7173,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'WebUpgradeRoute',
     declaration: 'export interface WebUpgradeRoute {\n    path: string;\n    handler: (req: IncomingMessage, socket: Duplex, head: Buffer) => void | Promise<void>;\n}',
+  },
+  {
+    name: 'WorkbenchOptions',
+    declaration: 'export interface WorkbenchOptions {\n    importRoots: string[];\n    environments: SecurityEnvironment[];\n    maxDurationMs: number;\n    maxOutputBytes: number;\n    approvalTtlMs: number;\n    maxDerivedAssets: number;\n    maxArtifactBytes: number;\n}',
+  },
+  {
+    name: 'WorkbenchView',
+    declaration: 'export interface WorkbenchView {\n    revision: number;\n    records: SecurityRecord[];\n}',
   },
   {
     name: 'WorkflowAgentEndInfo',

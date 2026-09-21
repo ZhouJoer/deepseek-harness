@@ -1,0 +1,4 @@
+DSH_SECURITY_DEMO_V1
+Owned inert sample for binary string inspection.
+DEMO_PARSER_ENTRY
+No executable code and no real vulnerability claim.

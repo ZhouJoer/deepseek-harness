@@ -8,6 +8,12 @@ It is built on an **everything-is-a-plugin** architecture and powered by [Cordis
 
 Documentation: [https://deepseek-harness.github.io/deepseek-harness/](https://deepseek-harness.github.io/deepseek-harness/)
 
+> [!IMPORTANT]
+>
+> **Security Agent: [Architecture](docs/security-architecture.md) · [Feature TODO](docs/roadmaps/security-analysis.md)**
+>
+> Start here to understand the security extension, role permissions and remaining work. For local startup, see the [security guide](docs/user/guide/security-analysis.md).
+
 ## Developer preview
 
 DeepSeek Harness is in _developer preview_ and iterating rapidly. **THERE WILL BE COMPATIBILITY-BREAKING CHANGES.**
