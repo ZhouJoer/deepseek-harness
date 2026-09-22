@@ -5,14 +5,14 @@ import { join } from 'node:path'
 import { describe, expect, it, onTestFinished } from 'vitest'
 import { ArtifactStore } from '../src/workbench/artifacts.ts'
 import { BinaryProvider } from '../src/workbench/binary.ts'
-import { assetSchema } from '../src/workbench/model.ts'
+import { fileAssetSchema } from '../src/workbench/model.ts'
 
 async function fixture(bytes: Buffer) {
   const root = await mkdtemp(join(tmpdir(), 'dsh-binary-'))
   onTestFinished(() => rm(root, { recursive: true, force: true }))
   const artifacts = new ArtifactStore(root, 65536)
   const artifact = await artifacts.put(bytes, 'application/octet-stream')
-  const context = { artifacts, asset: assetSchema.parse({ id: 'sample', engagementId: 'project', label: 'owned',
+  const context = { artifacts, asset: fileAssetSchema.parse({ id: 'sample', engagementId: 'project', label: 'owned',
     artifact, format: 'other', identity: 'measured' }),
   environment: { id: 'local', kind: 'local' as const, label: 'Host', cwd: root, tools: [] },
   signal: new AbortController().signal, durationMs: 1000, maxOutputBytes: 4096 }

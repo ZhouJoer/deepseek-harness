@@ -14,6 +14,7 @@ import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import type {} from '@deepseek-ai/dsh-system-prompt'
 import type {} from '@deepseek-ai/dsh-jobs'
+import { findingHash } from './workbench/assessment.ts'
 import { BinaryProvider } from './workbench/binary.ts'
 import { toolsForRole, canObserve, delegationPrompt, resolveTask, taskKinds, type DelegatedRole } from './workbench/roles.ts'
 import { ArtifactStore } from './workbench/artifacts.ts'
@@ -153,6 +154,8 @@ export default class SecurityWorkbench extends TypertRemoteService {
           const controller = await this.ready
           return json({
             ...controller.view(exec.agent.id),
+            findings: controller.view(exec.agent.id).records.filter(item => item.kind === 'finding')
+              .map(item => ({ ...item.value, findingHash: findingHash(item.value) })),
             providers: controller.providers.list(),
             role: controller.binding(exec.agent.id)?.role ?? null,
             allowedTools: toolsForRole(controller.binding(exec.agent.id)?.role),
@@ -387,7 +390,7 @@ export default class SecurityWorkbench extends TypertRemoteService {
           assetId: { type: 'string', required: true },
           question: { type: 'string', required: true },
           criterion: { type: 'string', required: true },
-          role: { type: 'string', required: true, enum: ['reconnaissance', 'reverse-analyst', 'researcher', 'reviewer'] },
+          role: { type: 'string', required: true, enum: ['reconnaissance', 'reverse-analyst', 'web-analyst', 'researcher', 'reviewer'] },
           task: { type: 'string', enum: [...taskKinds], description: 'inventory for reconnaissance; surface or assessment for reverse-analyst; assessment for researcher; review for reviewer. Omission uses the role default.' },
         },
         output,
@@ -498,6 +501,15 @@ export default class SecurityWorkbench extends TypertRemoteService {
       }),
     )
 
+    ctx.tools.register(defineTool({
+      name: 'security_review',
+      description: 'Persist an independent review. JSON fields: findingId, findingHash from security_scope, verdict (confirmed/refuted/inconclusive), supportingEvidenceIds, opposingEvidenceIds, explanation, uncertainty. Only an assigned reviewer may call this tool.',
+      parameters: { review: { type: 'string', required: true } }, output,
+      execute: async (args, exec) => {
+        if (!exec.agent) throw new Error('Security review requires a Session')
+        return json(await (await this.ready).review(exec.agent.id, JSON.parse(args.review)))
+      },
+    }))
     ctx.tools.guard(exec =>
       exec.agent && toolsForRole(this.controller?.binding(exec.agent.id)?.role).includes(exec.name)
         ? undefined : 'Tool is outside the security role capability set',
@@ -522,9 +534,9 @@ export default class SecurityWorkbench extends TypertRemoteService {
     })
     ctx.effect(() => async () => {
       this.shutdown.abort(new Error('Security service disposed'))
-      await Promise.allSettled([...this.pending])
       try {
         await (await this.ready).dispose()
+        await Promise.allSettled([...this.pending])
       } finally {
         this.index?.close()
         await this.journal?.close()
@@ -568,10 +580,48 @@ export default class SecurityWorkbench extends TypertRemoteService {
   }
 
   /**
-   * Read selected project state for an authenticated Web session.
-   * @param agent - carrier-resolved agent.
-   * @returns authoritative view; reconnecting clients reload it.
+   * List persistent security projects for the authenticated operator.
+   * @returns project identities and objectives.
    */
+  @Remote('projects')
+  async projects(): Promise<string> {
+    return JSON.stringify((await this.ready).projects())
+  }
+  /** Read a project from the authenticated operator panel.
+   * @param projectId - selected project.
+   * @returns project records without Session authority. */
+  @Remote('project')
+  async project(projectId: string): Promise<WorkbenchView> {
+    return (await this.ready).projectView(projectId)
+  }
+  /** Manage a project laboratory from an explicit operator gesture.
+   * @param projectId - owning project.
+   * @param action - prepare, start, inspect, stop or reset.
+   * @param laboratoryId - existing generation, or empty for prepare.
+   * @returns settled project records. */
+  @Remote('laboratory')
+  async laboratory(projectId: string, action: string, laboratoryId: string): Promise<WorkbenchView> {
+    const controller = await this.ready
+    this.shutdown.signal.throwIfAborted()
+    const pending = controller.laboratories.get('local').action(projectId, action, laboratoryId)
+    this.pending.add(pending)
+    try { return await pending } finally { this.pending.delete(pending) }
+  }
+  /** Read a report after reopening its project without a chat Session.
+   * @param projectId - owning project.
+   * @param reportId - saved report.
+   * @param format - Markdown or JSON.
+   * @returns complete immutable report text. */
+  @Remote('report')
+  async report(projectId: string, reportId: string, format: 'markdown' | 'json'): Promise<string> {
+    const controller = await this.ready
+    const record = controller.projectView(projectId).records.find(item => item.kind === 'report' && item.value.id === reportId)
+    if (record?.kind !== 'report') throw new Error('Report is outside the project scope')
+    return (await controller.artifacts.read(record.value[format])).toString('utf8')
+  }
+  /** Read selected project state for an authenticated Web session.
+   * @param agent - carrier-resolved agent.
+   * @returns project state. */
   @Remote('view')
   async view(agent: Agent): Promise<WorkbenchView> {
     return (await this.ready).view(agent.id)
@@ -658,6 +708,7 @@ export default class SecurityWorkbench extends TypertRemoteService {
     const controller = await this.ready
     const environment = this.config.environments.find(item => item.id === environmentId)
     if (!environment) throw new Error('Unknown environment')
+    if (environment.manifest) throw new Error('Manage laboratory environments from the project laboratory page')
     const binding = controller.binding(agent.id)
     if (binding && binding.role !== 'coordinator') throw new Error('Delegated sessions cannot manage environments')
     const manager = controller.environments.get('local').manager
@@ -707,16 +758,17 @@ export default class SecurityWorkbench extends TypertRemoteService {
     const records = controller.view(agent.id).records
     const entry = records.find(
       item =>
-        ((item.kind === 'asset' || item.kind === 'evidence' || item.kind === 'legacy') &&
+        ((item.kind === 'asset' || item.kind === 'evidence' || item.kind === 'legacy') && 'artifact' in item.value &&
           item.value.artifact.sha256 === sha256) ||
-        (item.kind === 'plan' && item.value.operation.script?.sha256 === sha256),
+        (item.kind === 'plan' && item.value.operation.script?.sha256 === sha256) ||
+        (item.kind === 'report' && [item.value.markdown.sha256, item.value.json.sha256].includes(sha256)),
     )
     const reference =
-      entry?.kind === 'asset' || entry?.kind === 'evidence' || entry?.kind === 'legacy'
+      (entry?.kind === 'asset' || entry?.kind === 'evidence' || entry?.kind === 'legacy') && 'artifact' in entry.value
         ? entry.value.artifact
         : entry?.kind === 'plan'
           ? entry.value.operation.script
-          : undefined
+          : entry?.kind === 'report' ? (entry.value.markdown.sha256 === sha256 ? entry.value.markdown : entry.value.json) : undefined
     if (!reference) throw new Error('Artifact is outside the session scope')
     const bytes = await controller.artifacts.read(reference)
     return JSON.stringify({

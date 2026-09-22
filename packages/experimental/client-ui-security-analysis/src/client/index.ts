@@ -7,6 +7,9 @@ import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
+import type { MainPanelId } from '@deepseek-ai/dsh-client-ui-layout/client'
+import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
+import { Projects, ProjectIcon, type ProjectActions } from './Projects.tsx'
 import { Workbench, type WorkbenchActions } from './Workbench.tsx'
 import { NS, zh, en, type SecurityKey } from './locales.ts'
 
@@ -34,6 +37,15 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   const ui = ctx.inject(['remote.securityWorkbench', 'slots', 'locale'], (scoped) => {
     scoped.effect(() => scoped.locale.register(NS, { zh, en }))
     const remote = scoped.remote.securityWorkbench
+    const projectActions: ProjectActions = {
+      projects: () => unwrap(remote.projects()), project: id => unwrap(remote.project(id)),
+      laboratory: (project, action, id) => unwrap(remote.laboratory(project, action, id)),
+      report: (project, id, format) => unwrap(remote.report(project, id, format)),
+      subscribeReset: listener => scoped.on('connection/reset', listener),
+    }
+    const panel = 'security-projects' as MainPanelId
+    scoped.slots.inject('main', () => scoped.slots.register({ name: 'main', key: panel, locale: NS, inject: () => projectActions }, Projects))
+    scoped.slots.inject('sidebar.panellist', () => scoped.slots.register({ name: 'sidebar.panellist', id: panel, order: 30, label: () => scoped.locale.bind(NS)('title'), locale: NS }, ProjectIcon))
     const actions: WorkbenchActions = {
       subscribeReset: listener => scoped.on('connection/reset', listener),
       load: id => unwrap(remote.view(id)),

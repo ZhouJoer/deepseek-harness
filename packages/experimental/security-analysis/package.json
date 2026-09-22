@@ -59,6 +59,14 @@
     "./legacy": {
       "types": "./lib/types/legacy.d.ts",
       "default": "./lib/legacy.js"
+    },
+    "./web": {
+      "types": "./lib/types/web-provider.d.ts",
+      "default": "./lib/web.js"
+    },
+    "./laboratory": {
+      "types": "./lib/types/laboratory.d.ts",
+      "default": "./lib/laboratory.js"
     }
   },
   "files": [
@@ -80,7 +88,10 @@
     "lib/typert.host.js",
     "lib/typert.host.d.ts",
     "lib/typert.remote-client.js",
-    "lib/typert.remote-client.d.ts"
+    "lib/typert.remote-client.d.ts",
+    "lib/web.js",
+    "lib/laboratory.js",
+    "resources/toolbox/Dockerfile"
   ],
   "license": "MIT",
   "dependencies": {

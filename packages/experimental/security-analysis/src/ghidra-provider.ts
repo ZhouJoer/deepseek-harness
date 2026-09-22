@@ -1,5 +1,6 @@
 /** Authenticated managed GhidraMCP queries bound to measured samples. @module */
 import assert from 'node:assert/strict'
+import { fileAsset } from './workbench/assessment.ts'
 import type { Context } from '@deepseek-ai/cordis'
 import Schema from '@deepseek-ai/schemastery'
 import { z } from 'zod'
@@ -91,7 +92,7 @@ export class GhidraProvider implements AnalysisProvider {
   }
   resolve(request: AnalysisOperation, context: AnalysisContext): AnalysisOperation {
     if (!this.operations.includes(request.operation)) throw new Error('Unsupported Ghidra operation')
-    if (!this.programs.some(program => program.sha256 === context.asset.artifact.sha256))
+    if (!this.programs.some(program => program.sha256 === fileAsset(context.asset).artifact.sha256))
       throw new Error('No managed Ghidra program matches this sample')
     if (request.script) throw new Error('Ghidra does not accept arbitrary scripts')
     const args = parameters.parse(request.parameters)
@@ -122,7 +123,7 @@ export class GhidraProvider implements AnalysisProvider {
     }
   }
   async run(request: AnalysisOperation, context: AnalysisContext) {
-    const binding = this.programs.find(program => program.sha256 === context.asset.artifact.sha256)
+    const binding = this.programs.find(program => program.sha256 === fileAsset(context.asset).artifact.sha256)
     const endpoint = request.operation === 'functions' && request.parameters.filter !== undefined
       ? '/searchFunctions' : queries[request.operation] ?? writes[request.operation]
     assert(binding && endpoint, 'Resolved Ghidra binding and operation must remain available')

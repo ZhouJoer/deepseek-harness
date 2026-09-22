@@ -23,7 +23,7 @@ const digest = z.string().regex(/^[a-f0-9]{64}$/u)
 /** Four assessment stages, independent for each check. */
 export const phaseSchema = z.enum(['recon', 'surface', 'assessment', 'validation'])
 /** Session roles are granted by the coordinator, never inferred from ancestry. */
-export const roleSchema = z.enum(['coordinator', 'reconnaissance', 'reverse-analyst', 'researcher', 'reviewer'])
+export const roleSchema = z.enum(['coordinator', 'reconnaissance', 'reverse-analyst', 'web-analyst', 'researcher', 'reviewer'])
 /** Content-addressed immutable file metadata. */
 export const artifactSchema = z
   .object({
@@ -44,7 +44,7 @@ export const engagementSchema = z
   })
   .strict()
 /** A measured sample or an explicitly unverified legacy declaration. */
-export const assetSchema = z
+export const fileAssetSchema = z
   .object({
     id: id.transform(brandString<AssetId>),
     engagementId: id,
@@ -55,6 +55,14 @@ export const assetSchema = z
     parentId: id.optional(),
   })
   .strict()
+/** A laboratory endpoint is an operator declaration, not an immutable file identity. */
+export const webAssetSchema = z.object({
+  kind: z.literal('web'),
+  id: id.transform(brandString<AssetId>), engagementId: id, label: text,
+  environmentId: id, origin: z.url(), pathPrefix: text, instanceId: id,
+}).strict()
+/** Existing file records retain their original persisted representation. */
+export const assetSchema = z.union([fileAssetSchema, webAssetSchema])
 /** One check with its acceptance criterion, inputs and durable execution status. */
 export const checkSchema = z
   .object({
@@ -106,6 +114,19 @@ export const findingSchema = z
     review: z.string(),
   })
   .strict()
+/** Independent assessment bound to exact finding content and its observations. */
+export const reviewSchema = z.object({
+  id, engagementId: id, assetId: id, findingId: id, findingHash: digest,
+  reviewerSessionId: id,
+  verdict: z.enum(['confirmed', 'refuted', 'inconclusive']),
+  supportingEvidenceIds: z.array(id), opposingEvidenceIds: z.array(id),
+  explanation: text, uncertainty: z.string(), createdAt: z.number().int().nonnegative(),
+}).strict()
+/** Immutable report exports for one observed project revision. */
+export const reportSchema = z.object({
+  id, engagementId: id, revision: z.number().int().nonnegative(),
+  markdown: artifactSchema, json: artifactSchema, createdAt: z.number().int().nonnegative(),
+}).strict()
 /** A resolved, immutable request submitted to one analysis provider. */
 export const operationSchema = z
   .object({
@@ -158,6 +179,16 @@ export const knowledgeSchema = z
     published: z.boolean(),
   })
   .strict()
+/** Project-owned laboratory resources and pinned build results. */
+export const laboratorySchema = z.object({
+  id, engagementId: id, environmentId: id, recipe: text,
+  state: z.enum(['preparing', 'ready', 'running', 'stopped', 'interrupted', 'failed']),
+  imageId: z.string(), targetImageId: z.string(), instanceId: id, baseImage: text, targetImage: text,
+  network: text, worker: text, target: text,
+  browserUrl: z.string(), address: z.string(), detail: z.string(),
+  tools: z.record(z.string(), z.string()), templates: z.record(z.string(), z.string()),
+  createdAt: z.number().int().nonnegative(),
+}).strict()
 /** Tagged records form one append-only commit stream. */
 export const recordSchema = z.discriminatedUnion('kind', [
   z
@@ -195,6 +226,9 @@ export const recordSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('check'), value: checkSchema }).strict(),
   z.object({ kind: z.literal('evidence'), value: evidenceSchema }).strict(),
   z.object({ kind: z.literal('finding'), value: findingSchema }).strict(),
+  z.object({ kind: z.literal('review'), value: reviewSchema }).strict(),
+  z.object({ kind: z.literal('report'), value: reportSchema }).strict(),
+  z.object({ kind: z.literal('laboratory'), value: laboratorySchema }).strict(),
   z.object({ kind: z.literal('plan'), value: validationPlanSchema }).strict(),
   z.object({ kind: z.literal('binding'), value: bindingSchema }).strict(),
   z.object({ kind: z.literal('knowledge'), value: knowledgeSchema }).strict(),
@@ -205,6 +239,10 @@ export type SecurityRecord = z.infer<typeof recordSchema>
 export type Engagement = z.infer<typeof engagementSchema>
 /** Imported sample. */
 export type Asset = z.infer<typeof assetSchema>
+/** Imported file sample, excluding network endpoints. */
+export type FileAsset = z.infer<typeof fileAssetSchema>
+/** Declared laboratory endpoint. */
+export type WebAsset = z.infer<typeof webAssetSchema>
 /** Dependency-tracked check. */
 export type CheckStep = z.infer<typeof checkSchema>
 /** Immutable provider evidence. */
@@ -222,3 +260,6 @@ export interface WorkbenchView {
   revision: number
   records: SecurityRecord[]
 }
+
+/** One owned laboratory generation. */
+export type Laboratory = z.infer<typeof laboratorySchema>

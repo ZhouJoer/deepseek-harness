@@ -50,6 +50,10 @@ kind: "package-reference"
 
 -----
 
+## 持久安全项目
+
+侧栏安全分析面板无需选择聊天即可列出项目、目标、检查、发现、复核、报告和靶场实例。工具箱页提供显式复用本地镜像和构建新镜像操作，两者都保留已有靶场的镜像标识。聊天工作台可登记已启动 Web 目标、应用独立复核和生成修订报告。[Web 指南](../../../docs/user/guide/security-analysis.zh.md#local-web-laboratory) 说明操作流程与当前 provider 限制。
+
 <a id="model-experience"></a>
 ## 模型体验
 

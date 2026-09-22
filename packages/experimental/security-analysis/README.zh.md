@@ -37,7 +37,7 @@ kind: "package-reference"
 <a id="configure-analysis-providers"></a>
 ### 配置分析 provider
 
-包分别导出 `./environment`、`./ghidra`、`./frida`、`./android` 和 `./commands` 插件。[配置源码](src/index.ts) 定义制品、输出、时长、批准有效期和委派限额。只允许已配置的本机、Docker 和 Android 环境。Docker 使用指定的已安装镜像，限制 CPU、内存和 PID，禁用网络，并挂载只读工作目录及独立交换目录。Docker 控制权保留在 Host。
+包分别导出 `./web`、`./laboratory`、`./environment`、`./ghidra`、`./frida`、`./android` 和 `./commands` 插件。[配置源码](src/index.ts) 定义制品、输出、时长、批准有效期和委派限额。只允许已配置的本机、Docker 和 Android 环境。Docker 使用指定的已安装镜像，限制 CPU、内存和 PID，禁用网络，并挂载只读工作目录及独立交换目录。Docker 控制权保留在 Host。
 
 [GhidraMCP 1.4](https://github.com/LaurieWired/GhidraMCP/tree/1.4) 需要应用[受管理补丁](resources/ghidra/patch_upstream.py)。对固定上游 Java 文件应用补丁，使用对应 Ghidra 发行版构建扩展，然后在 GUI 打开导入的程序。启动前设置 `DSH_GHIDRA_TOKEN`、`DSH_GHIDRA_SHA256` 和 `DSH_GHIDRA_PROGRAM`。在 Ghidra provider 的 `programs` 中配置相同 token、实测哈希和 domain-file 路径。补丁绑定稳定程序，只监听本地地址，认证每个请求，并拒绝已关闭或身份不符的程序。切换 GUI 当前程序不会改变查询目标。查询、改名、注释及原型操作走专用适配器；数据库写入需要计划。
 
@@ -55,7 +55,7 @@ JADX 接受 APK/DEX，并明确标记不完整反编译。adb 只操作指定设
 | JADX | APK/DEX 反编译、源码及资源提取 | 受管理子进程；限制输出并清理临时目录 | 集成未验证；部分反编译结果标记为不完整 |
 | Docker 29.7.2 | 启动、检查、停止本任务拥有的环境 | 固定镜像摘要、资源限制、无网络、移除自有容器 | 本机 Docker Desktop 与已有 Kali ARM64 镜像：生命周期及 Python 命令 |
 | adb | 所选设备状态、包列表/详情、base APK 身份读取 | 固定 argv 子进程调用；不接受任意 shell 命令 | 没有连接的 Android 设备；未验证 |
-| fastboot / john | 仅版本登记 | 操作者配置的版本查询 | 执行 provider 尚不可用 |
+| fastboot / john | 版本登记；受管工具箱内进行固定 John yescrypt 验收 | 操作者查询与隔离测试向量检测 | 设备写入与密码审计 provider 尚不可用 |
 
 <a id="roles-tasks-and-tool-management"></a>
 ### 角色、任务和工具管理
@@ -67,6 +67,7 @@ Host 操作者在[示例 overlay](../../../apps/cli/config/examples/security-ana
 | `coordinator` | 规划、汇总与验证 | 全部领域工具、网页资料、jobs/goal/todo；执行已批准的验证计划 |
 | `reconnaissance` | `inventory` | 二进制身份/十六进制/字符串，Ghidra 身份/函数/导入/导出/字符串，固定 adb 查询，环境检查，证据检索 |
 | `reverse-analyst` | `surface`、`assessment` | 二进制检查、全部只读 Ghidra 查询、JADX 和固定 adb 查询、环境检查、证据检索 |
+| `web-analyst` | `surface`、`assessment` | 指定 HTTP 证据与入口假设；不能发起未经批准的请求 |
 | `researcher` | `assessment` | 项目证据、已审核知识、公开网页搜索与读取；不能执行样本或调用静态 provider |
 | `reviewer` | `review` | 指定资产的证据与知识检索；不能采集、访问网页或执行验证 |
 
@@ -107,6 +108,12 @@ provider 原始输出先保存，再提交证据引用。证据记录保留样�
 
 -----
 
+## Web 靶场支持
+
+./web 和 ./laboratory 插件提供批准后的 HTTP 证据采集与操作者显式管理的靶场生命周期。配置见 [Web 靶场指南](../../../docs/user/guide/security-analysis.zh.md#local-web-laboratory)，未验收或延后项见 [交付范围](../../../docs/roadmaps/security-analysis.zh.md#web-delivery-scope-2026-09-22)。版本化配方使用官方 Kali，记录已安装软件包，并以已知 yescrypt 向量检测作为构建条件。操作者可从本地 Docker 镜像库复用 `existingImage`（默认 `vxcontrol/kali-linux:latest`），不拉取或构建工具箱。复用会固定镜像 ID，在自有断网容器内检测工具，记录 yescrypt 失败而不阻塞 HTTP；缺少 Python 运行时则拒绝登记。每次复用或构建产生独立版本，升级时保留已有靶场。Nuclei 和 Metasploit 安装不会开放执行能力。
+
+独立复核记录绑定发现内容、同目标证据和复核子 Session。报告将项目修订保存为含证据引用的 Markdown 与 JSON。确认/反驳须具备完整验证计划证据和独立复核，调用方不能在新发现中直接设置这些结论。生成报告只记录当前结论，不表示覆盖完整。
+
 <a id="model-experience"></a>
 ## 模型体验
 
@@ -130,8 +137,8 @@ provider 原始输出先保存，再提交证据引用。证据记录保留样�
 
 - Ghidra 安装、扩展编译、GUI 启动和程序导入仍需要用户准备。认证补丁已在固定源码上应用验证；真实 Ghidra GUI 构建及三类目标完整四阶段验收尚未完成。
 - 已在本任务创建的 Windows 进程上实际验证 Frida 17.18.0 观察与清理。目前没有 Android 设备；现有 Kali 镜像缺少 Frida、JADX 和 Ghidra，镜像存在不等于分析环境受支持。
-- 真实 DeepSeek 教程分析已跑通静态证据和子 agent 报告回收，但出现错误的 ELF 解读。结构化格式解析与持久化复核尚未完成，真实模型 GUI GIF 仍待录制。keyless 测试与外部响应模拟分别作为证据。
-- 环境租约保守地串行化操作，包括读取。自动 GUI 部署、完整组件/JNI 关联、远程实验室、语义检索、Web/IoT 专项、fastboot 写设备及 john 执行尚不可用。
+- 真实 DeepSeek 教程分析已跑通静态证据和子 agent 报告回收，但出现错误的 ELF 解读。结构化格式解析尚未完成，真实模型 GUI GIF 仍待录制。keyless 测试与外部响应模拟分别作为证据。
+- 环境租约保守地串行化操作，包括读取。自动 GUI 部署、完整组件/JNI 关联、远程实验室、语义检索、IoT 专项、fastboot 写设备及 John 密码审计尚不可用。
 - Android split APK 验证会被拒绝，因为单个导入的 base APK 不能证明完整安装包身份。本机 attach 会拒绝无法提供启动身份或可执行文件身份的平台。
 - `/legacy` 为已录制 Session 保留隔离的原型。不能与工作台一起加载，两者注册相同的安全工具名。
 

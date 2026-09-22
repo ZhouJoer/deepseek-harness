@@ -61,7 +61,9 @@
     "react-dom": "^18.2.0",
     "@deepseek-ai/dsh-experimental-security-analysis": "workspace:^",
     "@deepseek-ai/dsh-util-crypto": "workspace:^",
-    "@deepseek-ai/dsh-client-connection": "workspace:^"
+    "@deepseek-ai/dsh-client-connection": "workspace:^",
+    "@deepseek-ai/dsh-client-ui-layout": "workspace:^",
+    "@deepseek-ai/dsh-client-ui-sidebar": "workspace:^"
   },
   "files": [
     "lib/index.js",

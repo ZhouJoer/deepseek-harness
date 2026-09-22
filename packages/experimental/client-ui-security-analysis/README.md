@@ -50,7 +50,12 @@ This package composes capabilities through a profile patch or input dock slot. I
 
 -----
 
+## Persistent security projects
+
+The sidebar Security analysis panel lists projects, targets, checks, findings, reviews, reports and laboratory generations without requiring a selected conversation. The toolbox page offers explicit local-image reuse and new-image builds; both preserve existing laboratory image identities. The conversation workbench registers running Web targets, applies independent reviews and generates revision reports. The [Web guide](../../../docs/user/guide/security-analysis.md#local-web-laboratory) describes the workflow and current provider limits.
+
 <a id="model-experience"></a>
+
 ## Model Experience
 
 ### Security context

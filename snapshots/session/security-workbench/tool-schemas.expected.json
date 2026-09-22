@@ -124,6 +124,7 @@
             "enum": [
               "reconnaissance",
               "reverse-analyst",
+              "web-analyst",
               "researcher",
               "reviewer"
             ]

@@ -37,7 +37,7 @@ The operator can also use `/security` to inspect state or `/security <JSON comma
 <a id="configure-analysis-providers"></a>
 ### Configure analysis providers
 
-The package exports separate `./environment`, `./ghidra`, `./frida`, `./android` and `./commands` plugins. The [configuration source](src/index.ts) owns artifact, output, duration, approval lifetime and delegation limits. Only configured local, Docker and Android environments are eligible. Docker uses the exact installed image, bounded CPU/memory/PIDs, no network, a read-only workspace and a separate exchange directory. Docker control remains on the Host.
+The package exports separate `./web`, `./laboratory`, `./environment`, `./ghidra`, `./frida`, `./android` and `./commands` plugins. The [configuration source](src/index.ts) owns artifact, output, duration, approval lifetime and delegation limits. Only configured local, Docker and Android environments are eligible. The reverse-analysis Docker manager uses the exact installed image, bounded CPU/memory/PIDs, no network, a read-only workspace and a separate exchange directory. Docker control remains on the Host.
 
 [GhidraMCP 1.4](https://github.com/LaurieWired/GhidraMCP/tree/1.4) requires the [managed patch](resources/ghidra/patch_upstream.py). Apply it to the pinned upstream Java file, build the extension against the corresponding Ghidra distribution, and open the imported program in the GUI. Set `DSH_GHIDRA_TOKEN`, `DSH_GHIDRA_SHA256` and `DSH_GHIDRA_PROGRAM` before launch. Configure the same token, measured hash and domain-file path under the Ghidra provider's `programs`. The patch binds a stable program, listens on loopback, authenticates every request and refuses a closed or mismatched program. GUI selection does not retarget queries. Queries, rename, comment and prototype operations use the dedicated adapter; database writes require a plan.
 
@@ -55,7 +55,7 @@ JADX accepts APK/DEX assets and reports incomplete decompilation explicitly. adb
 | JADX | APK/DEX decompilation and source/resource extraction | Managed subprocess; bounded output and temporary-directory cleanup | Integration unverified; partial decompilation is marked incomplete |
 | Docker 29.7.2 | Start, inspect and stop an owned environment | Exact image digest, resource limits, no network, remove owned container | Local Docker Desktop with existing Kali ARM64 image: lifecycle and Python command |
 | adb | Selected device state, package listing/details, base APK identity read | Fixed argv through subprocess; no arbitrary shell commands | No connected Android device; unverified |
-| fastboot / john | Version inventory only | Operator-configured version query | Execution providers unavailable |
+| fastboot / john | Version inventory; fixed John yescrypt acceptance in the managed toolbox | Operator queries and isolated fixture test | Device writes and password audit providers unavailable |
 
 <a id="roles-tasks-and-tool-management"></a>
 ### Roles, tasks and tool management
@@ -67,6 +67,7 @@ The Host operator adds or removes installations in `environments[].tools` in the
 | `coordinator` | Plan, integrate and validate | All domain tools, web references, jobs/goal/todo; approved validation execution |
 | `reconnaissance` | `inventory` | Binary identity/hex/strings, Ghidra identity/functions/imports/exports/strings, fixed adb queries, environment health, evidence search |
 | `reverse-analyst` | `surface`, `assessment` | Binary inspection, all read-only Ghidra queries, JADX and fixed adb queries, environment health, evidence search |
+| `web-analyst` | `surface`, `assessment` | Assigned HTTP evidence and entry-point hypotheses; no unapproved requests |
 | `researcher` | `assessment` | Project evidence, reviewed knowledge, public web search/fetch; no sample execution or static provider calls |
 | `reviewer` | `review` | Assigned evidence and knowledge retrieval; no collection, web lookup or validation execution |
 
@@ -90,7 +91,7 @@ The journal appends one complete command per storage-domain record. A dedicated 
 <details>
 <summary>Implementation details</summary>
 
-Tools and generated Remote methods share the [controller](src/workbench/controller.ts). Provider registrations return disposers and compose through the existing Loader. The service adds guidance and executor guards without changing `agent-loop`. Explicit Session bindings determine coordinator, reconnaissance, reverse-analyst, researcher and reviewer authority. Fresh delegated Sessions return evidence IDs and uncertainty; ordinary job results preserve their Session links.
+Tools and generated Remote methods share the [controller](src/workbench/controller.ts). Provider registrations return disposers and compose through the existing Loader. The service adds guidance and executor guards without changing `agent-loop`. Explicit Session bindings determine coordinator, reconnaissance, reverse-analyst, web-analyst, researcher and reviewer authority. Fresh delegated Sessions return evidence IDs and uncertainty; ordinary job results preserve their Session links.
 
 The [journal](src/workbench/journal.ts) owns durable checks and attempts. Jobs, goal and todo coordinate live work but do not replace it. The artifact store publishes complete content by hash; the rebuildable search index cannot delete journal evidence. A corrupt derived index is quarantined and rebuilt from committed records; permission and I/O errors remain visible. No invariant companion is published: journal projections have one writer and are validated on reopen, while provider execution checks current identities and permissions at admission.
 
@@ -107,7 +108,14 @@ The [journal](src/workbench/journal.ts) owns durable checks and attempts. Jobs, 
 
 -----
 
+## Web laboratory support
+
+The ./web and ./laboratory plugins provide approved HTTP evidence collection and explicit operator-owned lab lifecycle. Use the [Web lab guide](../../../docs/user/guide/security-analysis.md#local-web-laboratory) for setup and the [delivery scope](../../../docs/roadmaps/security-analysis.md#web-delivery-scope-2026-09-22) for unverified or deferred work. The versioned recipe uses official Kali, records installed packages and gates the build on a known yescrypt test vector. The operator can reuse `existingImage` (default `vxcontrol/kali-linux:latest`) from the local Docker image store without a toolbox pull or build. Reuse pins its image ID, measures tools in an owned network-disabled container and records yescrypt failure without blocking HTTP; a missing Python runtime rejects registration. Every reuse or build creates a separate generation, preserving existing labs during upgrades. Nuclei and Metasploit installation does not expose their execution.
+
+Independent review records bind finding content, same-target evidence and a reviewer Session. Reports preserve a project revision as Markdown and JSON with evidence references. Confirmed/refuted outcomes require complete validation-plan evidence and an independent review; callers cannot set them directly in a new finding. Report generation records current conclusions without asserting that coverage is complete.
+
 <a id="model-experience"></a>
+
 ## Model Experience
 
 ### Security context
@@ -130,8 +138,8 @@ Tool definitions and workflow guidance remain stable. Project state enters conte
 
 - Ghidra installation, extension compilation, GUI launch and sample import require operator preparation. The authenticated patch has been applied to its pinned source; a real Ghidra GUI build and three-target four-stage acceptance remain unverified.
 - Real Frida 17.18.0 observations and cleanup have been exercised on an owned Windows process. No Android device is available. The installed Kali image lacks Frida, JADX and Ghidra; its presence is not a supported analysis combination.
-- Real DeepSeek tutorial analysis exercised static evidence and child report collection, but produced incorrect ELF interpretations. Structured format parsing and persistent review remain incomplete; a real-model GUI GIF is still outstanding. Keyless tests and simulated external responses are separate evidence.
-- Environment leases conservatively serialize operations, including reads. Automatic GUI provisioning, rich component/JNI linking, remote labs, semantic search, Web/IoT specializations, fastboot writes and john execution are not available.
+- Real DeepSeek tutorial analysis exercised static evidence and child report collection, but produced incorrect ELF interpretations. Structured format parsing remains incomplete; a real-model GUI GIF is still outstanding. Keyless tests and simulated external responses are separate evidence.
+- Environment leases conservatively serialize operations, including reads. Automatic GUI provisioning, rich component/JNI linking, remote labs, semantic search, IoT specializations, fastboot writes and John password auditing are not available.
 - Android split APK validation is refused because one imported base APK cannot establish the complete installed package identity. Local attach refuses platforms that cannot provide a start identity or executable identity.
 - `/legacy` retains the isolated prototype for its recorded Sessions. Do not load it together with the workbench; both register security tool names.
 

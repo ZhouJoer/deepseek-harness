@@ -1670,10 +1670,34 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [],
       },
       {
+        signature: '@Remote(\'projects\') async projects(): Promise<string>',
+        description: 'List persistent security projects for the authenticated operator.',
+        parameters: [],
+        returns: 'project identities and objectives.',
+      },
+      {
+        signature: '@Remote(\'project\') async project(projectId: string): Promise<WorkbenchView>',
+        description: 'Read a project from the authenticated operator panel.',
+        parameters: [{ name: 'projectId', description: 'selected project.' }],
+        returns: 'project records without Session authority.',
+      },
+      {
+        signature: '@Remote(\'laboratory\') async laboratory(projectId: string, action: string, laboratoryId: string): Promise<WorkbenchView>',
+        description: 'Manage a project laboratory from an explicit operator gesture.',
+        parameters: [{ name: 'projectId', description: 'owning project.' }, { name: 'action', description: 'prepare, start, inspect, stop or reset.' }, { name: 'laboratoryId', description: 'existing generation, or empty for prepare.' }],
+        returns: 'settled project records.',
+      },
+      {
+        signature: '@Remote(\'report\') async report(projectId: string, reportId: string, format: \'markdown\' | \'json\'): Promise<string>',
+        description: 'Read a report after reopening its project without a chat Session.',
+        parameters: [{ name: 'projectId', description: 'owning project.' }, { name: 'reportId', description: 'saved report.' }, { name: 'format', description: 'Markdown or JSON.' }],
+        returns: 'complete immutable report text.',
+      },
+      {
         signature: '@Remote(\'view\') async view(agent: Agent): Promise<WorkbenchView>',
         description: 'Read selected project state for an authenticated Web session.',
         parameters: [{ name: 'agent', description: 'carrier-resolved agent.' }],
-        returns: 'authoritative view; reconnecting clients reload it.',
+        returns: 'project state.',
       },
       {
         signature: '@Remote(\'command\') async command(agent: Agent, command: string): Promise<WorkbenchView>',
@@ -4128,7 +4152,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'AnalysisResult',
-    declaration: 'export interface AnalysisResult {\n    bytes: Uint8Array;\n    mediaType: string;\n    summary: string;\n    incomplete: boolean;\n    toolVersion: string;\n}',
+    declaration: 'export interface AnalysisResult {\n    bytes: Uint8Array;\n    mediaType: string;\n    summary: string;\n    incomplete: boolean;\n    toolVersion: string;\n    failure?: string;\n    cleanup?: string;\n}',
   },
   {
     name: 'ApiKeyRecord',
@@ -4164,7 +4188,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ArtifactStore',
-    declaration: 'export class ArtifactStore {\n    constructor(private readonly root: string, private readonly maxBytes: number);\n    async put(bytes: Uint8Array, mediaType: string): Promise<Artifact>;\n    async read(artifact: Artifact): Promise<Buffer>;\n    async import(path: string, roots: readonly string[]): Promise<{\n        artifact: Artifact;\n        format: Asset[\'format\'];\n    }>;\n    async materialize(artifact: Artifact): Promise<string>;\n    async release(path: string): Promise<void>;\n}',
+    declaration: 'export class ArtifactStore {\n    constructor(private readonly root: string, private readonly maxBytes: number);\n    async put(bytes: Uint8Array, mediaType: string): Promise<Artifact>;\n    async read(artifact: Artifact): Promise<Buffer>;\n    async import(path: string, roots: readonly string[]): Promise<{\n        artifact: Artifact;\n        format: FileAsset[\'format\'];\n    }>;\n    async materialize(artifact: Artifact): Promise<string>;\n    async release(path: string): Promise<void>;\n}',
   },
   {
     name: 'AskUserQuestionAnswer',
@@ -4771,6 +4795,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export const enum FiberState {\n    PENDING,\n    LOADING,\n    ACTIVE,\n    FAILED,\n    DISPOSED,\n    UNLOADING\n}',
   },
   {
+    name: 'FileAsset',
+    declaration: 'export type FileAsset = z.infer<typeof fileAssetSchema>;',
+  },
+  {
     name: 'FileAttachmentRef',
     declaration: 'export interface FileAttachmentRef {\n    attachmentId: AttachmentId;\n    name: string;\n    bytes: number;\n}',
   },
@@ -5069,6 +5097,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'KvUnitDescriptor',
     declaration: 'export interface KvUnitDescriptor {\n    readonly name: string;\n    readonly version: number;\n    readonly tables: readonly string[];\n    readonly hasGlobal: boolean;\n    readonly layout?: \'single\' | \'per-record\';\n    readonly compatibleVersions?: readonly number[];\n}',
+  },
+  {
+    name: 'Laboratory',
+    declaration: 'export type Laboratory = z.infer<typeof laboratorySchema>;',
   },
   {
     name: 'LlmAdapter',
@@ -5760,11 +5792,11 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SecurityController',
-    declaration: 'export class SecurityController {\n    readonly providers: ProviderRegistry<AnalysisProvider>;\n    readonly environments: ProviderRegistry<{\n        id: string;\n        manager: EnvironmentManager;\n    }>;\n    constructor(private readonly journal: SecurityJournal, readonly artifacts: ArtifactStore, readonly options: WorkbenchOptions);\n    trackDelegation(project: string, controller: AbortController, done: Promise<unknown>): () => void;\n    async manageEnvironment<T>(environmentId: string, run: (signal: AbortSignal) => Promise<T>, project: string = \'\'): Promise<T>;\n    binding(sessionId: string): SessionBinding | undefined;\n    projects(): Engagement[];\n    view(sessionId: string): WorkbenchView;\n    async command(sessionId: string, input: unknown, operator: boolean = false): Promise<WorkbenchView>;\n    async recover(): Promise<void>;\n    async bindChild(parentId: string, childId: string, assetIds: string[], role: DelegatedRole): Promise<void>;\n    sharedKnowledge(): SecurityRecord[];\n    async execute(sessionId: string, planId: string, operationId: string, expectedRevision: number, callId: string, signal: AbortSignal): Promise<WorkbenchView>;\n    async dispose(): Promise<void>;\n    async observe(sessionId: string, operation: AnalysisOperation, callId: string, signal: AbortSignal): Promise<SecurityRecord>;\n}',
+    declaration: 'export class SecurityController {\n    readonly providers: ProviderRegistry<AnalysisProvider>;\n    readonly environments: ProviderRegistry<{\n        id: string;\n        manager: EnvironmentManager;\n    }>;\n    readonly laboratories: ProviderRegistry<{\n        id: string;\n        action(projectId: string, action: string, laboratoryId?: string): Promise<WorkbenchView>;\n    }>;\n    laboratoriesView(): Laboratory[];\n    async saveLaboratory(input: Laboratory): Promise<Laboratory>;\n    constructor(private readonly journal: SecurityJournal, readonly artifacts: ArtifactStore, readonly options: WorkbenchOptions);\n    trackDelegation(project: string, controller: AbortController, done: Promise<unknown>): () => void;\n    async manageEnvironment<T>(environmentId: string, run: (signal: AbortSignal) => Promise<T>, project: string = \'\'): Promise<T>;\n    binding(sessionId: string): SessionBinding | undefined;\n    projects(): Engagement[];\n    view(sessionId: string): WorkbenchView;\n    async command(sessionId: string, input: unknown, operator: boolean = false): Promise<WorkbenchView>;\n    async review(sessionId: string, input: unknown): Promise<WorkbenchView>;\n    projectView(projectId: string): WorkbenchView;\n    async recover(): Promise<void>;\n    async bindChild(parentId: string, childId: string, assetIds: string[], role: DelegatedRole): Promise<void>;\n    sharedKnowledge(): SecurityRecord[];\n    async execute(sessionId: string, planId: string, operationId: string, expectedRevision: number /* …truncated — full shape in source */',
   },
   {
     name: 'SecurityEnvironment',
-    declaration: 'export interface SecurityEnvironment {\n    id: string;\n    kind: \'local\' | \'docker\' | \'android\';\n    label: string;\n    cwd: string;\n    deviceId?: string;\n    image?: string;\n    tools: ToolInstallation[];\n    resolvedImageId?: string;\n    containerId?: string;\n    exchangeRoot?: string;\n}',
+    declaration: 'export interface SecurityEnvironment {\n    id: string;\n    kind: \'local\' | \'docker\' | \'android\';\n    label: string;\n    cwd: string;\n    deviceId?: string;\n    image?: string;\n    tools: ToolInstallation[];\n    resolvedImageId?: string;\n    containerId?: string;\n    exchangeRoot?: string;\n    webTarget?: {\n        origin: string;\n        instanceId: string;\n        networkId: string;\n        address: string;\n        laboratoryId: string;\n        target: string;\n        targetImageId: string;\n    };\n    manifest?: {\n        recipe: string;\n        imageId: string;\n        tools: Record<string, string>;\n        templates: Record<string, string>;\n    };\n}',
   },
   {
     name: 'SecurityJournal',

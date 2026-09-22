@@ -12,6 +12,7 @@ import { openSecurityJournal } from '../src/workbench/journal.ts'
 import { ArtifactStore } from '../src/workbench/artifacts.ts'
 import { SecurityController } from '../src/workbench/controller.ts'
 import type { SecurityCommand } from '../src/workbench/controller.ts'
+import { findingHash } from '../src/workbench/assessment.ts'
 import { SecuritySearchIndex } from '../src/workbench/search.ts'
 
 async function harness() {
@@ -63,7 +64,7 @@ describe('security workbench', () => {
   it('measures imported bytes and rejects foreign paths and corrupt artifacts', async () => {
     const { artifacts, controller, root } = await harness()
     const record = controller.view('parent').records.find(item => item.kind === 'asset')!
-    if (record.kind !== 'asset') throw new Error('Missing sample')
+    if (record.kind !== 'asset' || !('artifact' in record.value)) throw new Error('Missing sample')
     expect(record.value.identity).toBe('measured')
     expect((await artifacts.read(record.value.artifact)).toString()).toBe('MZ owned fixture')
     await expect(artifacts.import(join(root, 'sample.exe'), [join(root, 'artifacts')])).rejects.toThrow(/outside/)
@@ -352,4 +353,66 @@ describe('security workbench', () => {
     await send({ kind: 'reconcile', checkId: check.value.id, rationale: 'Verified the process and script are absent' })
     expect(journal.view().records.find(item => item.kind === 'check')).toMatchObject({ value: { status: 'planned' } })
   })
+})
+
+async function reviewedFixture(incomplete = false, phase: 'validation' | 'recon' = 'validation') {
+  const fixture = await harness()
+  const { controller, send, assetId, journal } = fixture
+  controller.providers.register({ id: 'web-fixture', operations: ['request'], resolve: request => request,
+    run: async () => ({ bytes: Buffer.from('HTTP fixture observation'), mediaType: 'text/plain', summary: 'Observed response', incomplete, toolVersion: 'fixture' }) })
+  await send({ kind: 'check', check: { assetId, title: 'Controlled validation', phase, criterion: 'Compare response', dependencies: [], evidenceIds: [] } })
+  const check = controller.view('parent').records.find(item => item.kind === 'check')!
+  if (check.kind !== 'check') throw new Error('Missing check')
+  await send({ kind: 'plan', checkId: check.value.id, operation: { provider: 'web-fixture', operation: 'request', environmentId: 'local', assetId, parameters: {}, impact: 'observe' },
+    hypothesis: 'Endpoint exposes fixture', expectedObservation: 'Fixture response', impact: 'Read only', cleanup: 'Connection closed', durationMs: 100 })
+  const plan = controller.view('parent').records.find(item => item.kind === 'plan')!
+  if (plan.kind !== 'plan') throw new Error('Missing plan')
+  await send({ kind: 'approve', planId: plan.value.id }, true)
+  await controller.execute('parent', plan.value.id, randomUUID(), journal.view().revision, 'review-fixture', new AbortController().signal)
+  const evidence = controller.view('parent').records.find(item => item.kind === 'evidence')!
+  if (evidence.kind !== 'evidence') throw new Error('Missing evidence')
+  await send({ kind: 'finding', finding: { assetId, title: 'Fixture claim', explanation: 'Response content', conditions: 'Owned fixture', evidenceIds: [evidence.value.id], status: 'suspected', review: '' } })
+  const finding = controller.view('parent').records.find(item => item.kind === 'finding')!
+  if (finding.kind !== 'finding') throw new Error('Missing finding')
+  await controller.bindChild('parent', 'reviewer', [assetId], 'reviewer')
+  const review = async (verdict: 'confirmed' | 'refuted' | 'inconclusive') => {
+    const view = await controller.review('reviewer', { findingId: finding.value.id, findingHash: findingHash(finding.value), verdict,
+      supportingEvidenceIds: verdict === 'confirmed' ? [evidence.value.id] : [], opposingEvidenceIds: verdict === 'refuted' ? [evidence.value.id] : [],
+      explanation: 'Independent assessment of stored response', uncertainty: verdict === 'inconclusive' ? 'Insufficient coverage' : '' })
+    const record = view.records.findLast(item => item.kind === 'review')!
+    if (record.kind !== 'review') throw new Error('Missing review')
+    return record.value.id
+  }
+  return { ...fixture, evidence: evidence.value, finding: finding.value, review }
+}
+
+it.each(['confirmed', 'refuted', 'inconclusive'] as const)('derives %s from an independent version-bound review and exports it', async verdict => {
+  const { controller, send, review, artifacts } = await reviewedFixture()
+  await send({ kind: 'conclude', reviewId: await review(verdict) })
+  await send({ kind: 'report' })
+  const projectId = controller.projects()[0]!.id
+  const view = controller.projectView(projectId)
+  expect(view.records.some(item => item.kind === 'binding')).toBe(false)
+  expect(view.records.find(item => item.kind === 'finding')?.value).toMatchObject({ status: verdict })
+  const report = view.records.find(item => item.kind === 'report')!
+  if (report.kind !== 'report') throw new Error('Missing report')
+  expect((await artifacts.read(report.value.markdown)).toString()).toContain(verdict)
+  expect(JSON.parse((await artifacts.read(report.value.json)).toString())).toMatchObject({ revision: report.value.revision })
+})
+it('invalidates reviews when claim content changes and rejects forged review authors', async () => {
+  const { controller, send, review, finding } = await reviewedFixture()
+  const reviewId = await review('confirmed')
+  await expect(controller.review('parent', { findingId: finding.id, findingHash: findingHash(finding), verdict: 'confirmed', supportingEvidenceIds: finding.evidenceIds, opposingEvidenceIds: [], explanation: 'self review', uncertainty: '' })).rejects.toThrow(/reviewer/)
+  await send({ kind: 'revise-finding', findingId: finding.id, title: 'Changed claim', explanation: finding.explanation, conditions: finding.conditions, evidenceIds: finding.evidenceIds })
+  await expect(send({ kind: 'conclude', reviewId })).rejects.toThrow(/changed/)
+})
+it.each([{ incomplete: true, phase: 'validation' as const }, { incomplete: false, phase: 'recon' as const }])('rejects a conclusive review without complete validation observations: %j', async ({ incomplete, phase }) => {
+  const { send, review } = await reviewedFixture(incomplete, phase)
+  await expect(send({ kind: 'conclude', reviewId: await review('confirmed') })).rejects.toThrow(/complete|validation/)
+})
+it('rejects foreign evidence and requires operator ownership to register a Web target', async () => {
+  const { controller, send, finding } = await reviewedFixture()
+  await expect(controller.review('reviewer', { findingId: finding.id, findingHash: findingHash(finding), verdict: 'confirmed', supportingEvidenceIds: ['foreign'], opposingEvidenceIds: [], explanation: 'Foreign reference', uncertainty: '' })).rejects.toThrow(/another asset/)
+  await expect(send({ kind: 'web-target', environmentId: 'local', label: 'Web', pathPrefix: '/' })).rejects.toThrow(/operator/)
+  await expect(send({ kind: 'web-target', environmentId: 'local', label: 'Web', pathPrefix: '/' }, true)).rejects.toThrow(/laboratory/)
 })

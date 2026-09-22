@@ -2,7 +2,7 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { mkdir, open, readFile, realpath, stat, link, unlink, rm } from 'node:fs/promises'
 import { isAbsolute, join, relative, sep, dirname, resolve } from 'node:path'
-import type { Artifact, Asset } from './model.ts'
+import type { Artifact, FileAsset } from './model.ts'
 
 /** Host-owned evidence storage; filenames are SHA-256 digests, never model paths. */
 export class ArtifactStore {
@@ -63,7 +63,7 @@ export class ArtifactStore {
    * @param roots - deployment-owned import roots.
    * @returns measured bytes and detected format.
    */
-  async import(path: string, roots: readonly string[]): Promise<{ artifact: Artifact; format: Asset['format'] }> {
+  async import(path: string, roots: readonly string[]): Promise<{ artifact: Artifact; format: FileAsset['format'] }> {
     if (!isAbsolute(path)) throw new Error('Select an absolute sample path')
     const resolved = await realpath(path)
     const approved = await Promise.all(roots.map(root => realpath(root)))
@@ -91,7 +91,7 @@ export class ArtifactStore {
       if (before.size !== after.size || before.mtimeMs !== after.mtimeMs || before.ino !== current.ino) {
         throw new Error('Sample changed during import')
       }
-      const format: Asset['format'] = bytes.subarray(0, 4).equals(Buffer.from([0x7f, 0x45, 0x4c, 0x46]))
+      const format: FileAsset['format'] = bytes.subarray(0, 4).equals(Buffer.from([0x7f, 0x45, 0x4c, 0x46]))
         ? 'elf'
         : bytes.subarray(0, 2).toString() === 'MZ'
           ? 'pe'

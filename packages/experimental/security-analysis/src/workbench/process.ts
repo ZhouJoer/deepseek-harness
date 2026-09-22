@@ -1,6 +1,6 @@
 /** Structured subprocess execution inside operator-selected local environments. @module */
 import assert from 'node:assert/strict'
-import { isAbsolute, relative, sep } from 'node:path'
+import { isAbsolute, relative, sep, dirname, delimiter } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-subprocess'
 import type { SecurityEnvironment, ToolInstallation } from './providers.ts'
@@ -86,7 +86,7 @@ export async function runProcess(
         'exec',
         '-i',
         '--workdir',
-        '/workspace',
+        environment.webTarget ? '/tmp' : '/workspace',
         environment.containerId as string,
         tool.command,
         ...args.map(arg => environmentPath(environment, arg)),
@@ -96,7 +96,7 @@ export async function runProcess(
     handle = ctx.subprocess.spawn({
       argv,
       cwd: environment.cwd,
-      env: {},
+      env: toolId === 'docker' ? { PATH: dirname(command) + delimiter + (process.env.PATH ?? '') } : {},
       signal,
       graceMs: limits.graceMs,
       stdio: {

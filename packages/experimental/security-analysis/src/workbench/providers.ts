@@ -35,6 +35,34 @@ export interface SecurityEnvironment {
   containerId?: string
   /** Runtime-only Host directory mounted for immutable inputs and analysis output. */
   exchangeRoot?: string
+  /** Runtime target measured from a project-owned laboratory. */
+  webTarget?: {
+    /** Origin sent as the HTTP Host header. */
+    origin: string
+    /** Target generation renewed after every start. */
+    instanceId: string
+    /** Exclusive internal Docker network name. */
+    networkId: string
+    /** Measured target IPv4 address. */
+    address: string
+    /** Durable owner label of this laboratory. */
+    laboratoryId: string
+    /** Target container name owned by the manager. */
+    target: string
+    /** Immutable target image identity. */
+    targetImageId: string
+  }
+  /** Immutable build capability manifest, populated by managed provisioning. */
+  manifest?: {
+    /** Versioned build recipe identity. */
+    recipe: string
+    /** Immutable tool image identity. */
+    imageId: string
+    /** Measured package versions and capability results. */
+    tools: Record<string, string>
+    /** Template or module versions when an execution provider is available. */
+    templates: Record<string, string>
+  }
 }
 /** Environment readiness is distinct from tool installation. */
 export interface EnvironmentStatus {
@@ -50,6 +78,10 @@ export interface AnalysisResult {
   summary: string
   incomplete: boolean
   toolVersion: string
+  /** Failure still carries all collected observations. */
+  failure?: string
+  /** Settled cleanup facts, independent of the command exit status. */
+  cleanup?: string
 }
 /** One admitted operation's resources and cancellation lifetime. */
 export interface AnalysisContext {

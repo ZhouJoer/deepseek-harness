@@ -2,18 +2,18 @@
 import { it, expect, vi, afterEach } from 'vitest'
 import { GhidraProvider } from '../src/ghidra-provider.ts'
 import { ArtifactStore } from '../src/workbench/artifacts.ts'
-import { assetSchema, operationSchema } from '../src/workbench/model.ts'
+import { fileAssetSchema, operationSchema } from '../src/workbench/model.ts'
 import type { AnalysisContext } from '../src/workbench/providers.ts'
 
 const hash = 'a'.repeat(64)
 const binding = { sha256: hash, programId: '/项目/sample', baseUrl: 'http://127.0.0.1:8080', token: 't'.repeat(32) }
 function fixture(operation = 'functions', parameters: Record<string, string | number> = {}) {
   const provider = new GhidraProvider([binding], 100)
-  const context: AnalysisContext = {
-    asset: assetSchema.parse({ id: 'sample', engagementId: 'project', label: 'Owned', artifact: { sha256: hash, size: 1, mediaType: 'application/octet-stream' }, format: 'pe', identity: 'measured' }),
+  const context = {
+    asset: fileAssetSchema.parse({ id: 'sample', engagementId: 'project', label: 'Owned', artifact: { sha256: hash, size: 1, mediaType: 'application/octet-stream' }, format: 'pe', identity: 'measured' }),
     environment: { id: 'local', kind: 'local', label: 'Lab', cwd: process.cwd(), tools: [] },
     artifacts: new ArtifactStore(process.cwd(), 65536), signal: new AbortController().signal, durationMs: 1000, maxOutputBytes: 32,
-  }
+  } satisfies AnalysisContext
   const request = operationSchema.parse({ provider: 'ghidra', operation, environmentId: 'local', assetId: 'sample', parameters, impact: 'observe' })
   return { provider, context, request }
 }

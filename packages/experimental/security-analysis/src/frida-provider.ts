@@ -1,5 +1,6 @@
 /** Programmable Frida observations bound to immutable approved scripts. @module */
 import assert from 'node:assert/strict'
+import { fileAsset } from './workbench/assessment.ts'
 import { createHash } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
 import Schema from '@deepseek-ai/schemastery'
@@ -115,7 +116,7 @@ export class FridaProvider implements AnalysisProvider {
     if (context.environment.kind === 'android' && !context.environment.deviceId)
       throw new Error('Select an Android device')
     if (context.environment.kind === 'android' && request.operation !== 'processes') {
-      if (!args.packageName || context.asset.format !== 'apk')
+      if (!args.packageName || fileAsset(context.asset).format !== 'apk')
         throw new Error('Android validation requires an APK and explicit package identity')
       if (args.target?.mode === 'spawn' && (args.target.argv.length !== 1 || args.target.argv[0] !== args.packageName))
         throw new Error('Spawn must select exactly the approved package')
@@ -148,7 +149,7 @@ export class FridaProvider implements AnalysisProvider {
       const executable = args.target.argv[0]
       assert(executable, 'Resolved spawn requires an executable')
       const imported = await context.artifacts.import(executable, [context.environment.cwd])
-      if (imported.artifact.sha256 !== context.asset.artifact.sha256)
+      if (imported.artifact.sha256 !== fileAsset(context.asset).artifact.sha256)
         throw new Error('Spawn executable does not match the approved sample')
     }
     if (context.environment.kind === 'android' && request.operation !== 'processes') {
@@ -187,7 +188,7 @@ export class FridaProvider implements AnalysisProvider {
         JSON.stringify({
           operation: request.operation,
           deviceId: context.environment.kind === 'android' ? context.environment.deviceId : 'local',
-          sampleHash: context.asset.artifact.sha256,
+          sampleHash: fileAsset(context.asset).artifact.sha256,
           packageName: args.packageName,
           cancelPath: environmentPath(context.environment, channel + '.cancel'),
           target:
@@ -242,7 +243,7 @@ export class FridaProvider implements AnalysisProvider {
     const paths = located.stdout.trim().split(/\r?\n/u)
     if (located.truncated || paths.length !== 1 || !paths[0]?.startsWith('package:/'))
       throw new Error('A single installed APK is required to verify this package')
-    const local = await context.artifacts.materialize(context.asset.artifact)
+    const local = await context.artifacts.materialize(fileAsset(context.asset).artifact)
     try {
       const pulled = await runProcess(
         this.ctx,
@@ -254,7 +255,7 @@ export class FridaProvider implements AnalysisProvider {
       requireProcessSuccess(pulled)
       const pathModule = await import('node:path')
       const installed = await context.artifacts.import(local, [pathModule.dirname(local)])
-      if (installed.artifact.sha256 !== context.asset.artifact.sha256)
+      if (installed.artifact.sha256 !== fileAsset(context.asset).artifact.sha256)
         throw new Error('Installed APK differs from the approved sample')
     } finally {
       await context.artifacts.release(local)

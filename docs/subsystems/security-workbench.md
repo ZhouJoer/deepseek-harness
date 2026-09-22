@@ -26,10 +26,33 @@ Optional security profile service; default application compositions remain indep
 
 ```ts cordis-catalog
 /**
- * Read selected project state for an authenticated Web session.
- * @param agent - carrier-resolved agent.
- * @returns authoritative view; reconnecting clients reload it.
+ * List persistent security projects for the authenticated operator.
+ * @returns project identities and objectives.
  */
+@Remote('projects') async projects(): Promise<string>
+
+/** Read a project from the authenticated operator panel.
+ * @param projectId - selected project.
+ * @returns project records without Session authority. */
+@Remote('project') async project(projectId: string): Promise<WorkbenchView>
+
+/** Manage a project laboratory from an explicit operator gesture.
+ * @param projectId - owning project.
+ * @param action - prepare, start, inspect, stop or reset.
+ * @param laboratoryId - existing generation, or empty for prepare.
+ * @returns settled project records. */
+@Remote('laboratory') async laboratory(projectId: string, action: string, laboratoryId: string): Promise<WorkbenchView>
+
+/** Read a report after reopening its project without a chat Session.
+ * @param projectId - owning project.
+ * @param reportId - saved report.
+ * @param format - Markdown or JSON.
+ * @returns complete immutable report text. */
+@Remote('report') async report(projectId: string, reportId: string, format: 'markdown' | 'json'): Promise<string>
+
+/** Read selected project state for an authenticated Web session.
+ * @param agent - carrier-resolved agent.
+ * @returns project state. */
 @Remote('view') async view(agent: Agent): Promise<WorkbenchView>
 
 /**

@@ -8,6 +8,7 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { WorkbenchView } from '@deepseek-ai/dsh-experimental-security-analysis/client'
 import { recordSchema } from '@deepseek-ai/dsh-experimental-security-analysis/src/workbench/model.ts'
 import { Workbench, type WorkbenchActions, type WorkbenchProps } from '../src/client/Workbench.tsx'
+import { Projects } from '../src/client/Projects.tsx'
 import { zh } from '../src/client/locales.ts'
 
 afterEach(cleanup)
@@ -62,4 +63,19 @@ it('submits explicit approval for the displayed plan identity', async () => {
   fireEvent.click(screen.getByRole('button', { name: '批准此版本' }))
   await waitFor(() =>{  expect(api.command).toHaveBeenCalled() })
   expect(JSON.parse(vi.mocked(api.command).mock.calls[0]?.[1] ?? '{}')).toMatchObject({ expectedRevision: 8, action: { kind: 'approve', planId: 'plan' } })
+})
+
+it('reuses the configured local image through an explicit operator gesture', async () => {
+  const laboratory = vi.fn(async () => view)
+  const projectProps = { projects: async () => JSON.stringify([{ id: 'project', title: 'Owned lab' }]), project: async () => view,
+    laboratory, report: async () => '', subscribeReset: () => () => {}, t: makeTranslate(zh, commonZh) } as unknown as Parameters<typeof Projects>[0]
+  render(<Projects {...projectProps} />)
+  await screen.findByRole('option', { name: 'Owned lab' })
+  await waitFor(() => { expect(screen.getByRole('combobox').hasAttribute('disabled')).toBe(false) })
+  fireEvent.change(screen.getByRole('combobox'), { target: { value: 'project' } })
+  fireEvent.click(screen.getByRole('button', { name: '工具箱与靶场' }))
+  await waitFor(() => { expect(screen.getByRole('button', { name: '复用本地 Kali 镜像' }).hasAttribute('disabled')).toBe(false) })
+  expect(laboratory).not.toHaveBeenCalled()
+  fireEvent.click(screen.getByRole('button', { name: '复用本地 Kali 镜像' }))
+  await waitFor(() => { expect(laboratory).toHaveBeenCalledWith('project', 'reuse', '') })
 })

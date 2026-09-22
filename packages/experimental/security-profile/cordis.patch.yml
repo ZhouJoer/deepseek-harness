@@ -61,3 +61,8 @@
       name: '@deepseek-ai/dsh-experimental-security-analysis/android'
     - id: security-operator-commands
       name: '@deepseek-ai/dsh-experimental-security-analysis/commands'
+
+    - id: security-web
+      name: '@deepseek-ai/dsh-experimental-security-analysis/web'
+    - id: security-laboratory
+      name: '@deepseek-ai/dsh-experimental-security-analysis/laboratory'

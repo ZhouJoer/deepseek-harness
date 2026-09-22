@@ -67,6 +67,7 @@ The Session log stores model interaction and tool results. The domain journal st
 | Coordinator | Decompose checks, delegate and assemble conclusions | Domain commands, observations, jobs and execution of approved plans |
 | Reconnaissance | Inventory one assigned asset | Binary observations and restricted Ghidra/Android inventory |
 | Reverse analyst | Examine entry points and weakness hypotheses | Approved static query operations, including decompilation |
+| Web analyst | Analyze assigned HTTP evidence and entry points | Evidence reads; request plans are executed by the coordinator after approval |
 | Researcher | Retrieve project evidence and public references | Evidence retrieval and Web research; no provider execution |
 | Reviewer | Check supporting and opposing evidence | Read existing evidence and return a structured assessment |
 
@@ -89,3 +90,11 @@ After restart, unfinished execution requires reconciliation rather than automati
 Future Web and IoT projects should add asset/check definitions, provider operations, environment requirements, role policies, prompts and evidence consumers together. An execution adapter alone is insufficient. Keep Host credentials and environment management outside the analyzed target. Reuse DSH Session, jobs, subprocess, storage and Remote services instead of changing the loop.
 
 Start with the [feature TODO](roadmaps/security-analysis.md). ELF/PE structured parsing, real Ghidra binding and reliable review are the next priorities; Web/IoT expansion follows a working reverse-analysis baseline.
+
+## Web targets, reviews and laboratories
+
+Web targets record the operator-selected lab instance, origin and path prefix. The HTTP provider resolves method, path, tool image and instance before approval. Execution checks current Docker ownership, image identities, the two-container internal isolated network and the target address. Requests connect to that measured address and never follow redirects. File providers reject Web assets; existing file records remain readable without a journal version bump.
+
+The web-analyst role reads assigned evidence and proposes entry-point analysis. A separate reviewer Session records supporting/opposing evidence and uncertainty against the finding content hash. Conclusive status requires complete same-target evidence from a completed validation plan; revisions reset the finding and reject stale reviews. Reports snapshot one project revision and remain accessible through operator-level Remote reads independent of Session selection.
+
+Laboratory ownership is saved before resource creation. Restart marks unsettled generations interrupted; cleanup verifies each resource label before removal. Reset removes owned containers and networks; the next start changes instance identity. Build and lifecycle commands are operator-only. The roadmap distinguishes implemented controls from real container/model acceptance and deferred scanning providers.

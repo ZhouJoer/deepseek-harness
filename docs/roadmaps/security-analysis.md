@@ -98,3 +98,18 @@ Tool additions must include a consumer-visible capability, bounded execution, en
 3. Exercise disconnects, target exit, script errors, cancellation, floods, cleanup failure and Host restart. Verify no side-effect replay and visible uncertainty after failed cleanup.
 4. Run real Loader/profile tests, keyless Session snapshots, persistence-type checks, build/type/document checks, and browser workflows. Report external-tool simulation separately from real-environment results.
 5. Publish only environment combinations actually exercised; list outstanding limitations and attach a real-service, real-model Web GIF to any GUI PR.
+
+<a id="web-delivery-scope-2026-09-22"></a>
+## Web delivery scope (2026-09-22)
+
+Local Web evidence and review take priority; remaining reverse-analysis P0 items stay on this roadmap. Implemented source includes laboratory target records, approved HTTP GET/HEAD collection, version-bound independent reviews, revision reports, and a persistent project sidebar. Old file records retain their parser and the security journal remains version 1.
+
+- Available: operator-only target registration; immutable request plans; original HTTP evidence; confirmed/refuted/inconclusive review records; stale-review rejection; project Markdown/JSON reports and evidence index.
+- Implemented local-image reuse: the operator can register the installed PentAGI Kali image without rebuilding it. Registration measures tools and pins the immutable image ID; optional capability failures remain visible. A new registration or build leaves existing labs on their original images. The real reuse path passed HTTP, egress rejection, reset/recovery and missing-upgrade-image checks; John passed the fixed yescrypt vector through `--format=crypt`.
+- Implemented, environment acceptance separate: official Kali build recipe, fixed John yescrypt vector, pinned Juice Shop recipe, explicit lifecycle actions and persisted ownership. New builds create separate images; existing plans keep their measured image identity.
+- Deferred: Nuclei execution and template pinning; Metasploit structured RPC, module catalogue and audited check allowlist; Vulhub curated recipe deployment; John offline audit provider; full per-tool occupancy display and streamed build progress; rich target/entry-point UI; loopback browser proxy for strict isolated networks.
+- Verification limits: Kali package downloads returned HTTP 500/EOF twice, so the new toolbox image and its John result have not passed real acceptance. Workspace Host bundling hit the default 4 GiB Node heap limit; focused package generation/build is used for the changed plugins. Real-container tests using the existing Kali image pass HTTP collection, outside-network rejection, recovery and reset identity checks; they do not validate the new image. Real-model Web end-to-end acceptance and its GIF are not complete.
+
+Metasploit check is not automatically read-only: some upstream checks execute commands. No module becomes executable until its exact options and side effects are reviewed and constrained by the Host adapter. Binary installation and version matching cannot confirm a vulnerability.
+
+Verification evidence: 52 focused behavior tests, 19 Web/provider/Loader/component tests, the keyless security-workbench Session replay, and 3 real Host/browser tests passed. The existing-image Docker test passed collection and reset/recovery checks; the fresh toolbox build remains unverified. Full doc-sync encountered a Windows EPERM when a documentation-site test created a symlink; no platform check was disabled. HTTP helper cancellation can leave only incomplete process output; durable streaming of every partial response is deferred.

@@ -1,5 +1,6 @@
 /** Bounded inspection of immutable samples without external executables. @module */
 import { z } from 'zod'
+import { fileAsset } from './assessment.ts'
 import type { AnalysisContext, AnalysisProvider, AnalysisResult } from './providers.ts'
 import type { AnalysisOperation } from './model.ts'
 
@@ -24,7 +25,7 @@ export class BinaryProvider implements AnalysisProvider {
   }
   async run(request: AnalysisOperation, context: AnalysisContext): Promise<AnalysisResult> {
     context.signal.throwIfAborted()
-    const bytes = await context.artifacts.read(context.asset.artifact)
+    const bytes = await context.artifacts.read(fileAsset(context.asset).artifact)
     context.signal.throwIfAborted()
     let value: object
     let incomplete = false
@@ -46,7 +47,7 @@ export class BinaryProvider implements AnalysisProvider {
         header.endian = bytes[5] === 1 ? 'little' : 'big'
         header.machine = bytes[5] === 1 ? bytes.readUInt16LE(18) : bytes.readUInt16BE(18)
       }
-      value = { sha256: context.asset.artifact.sha256, size: bytes.length, format: context.asset.format,
+      value = { sha256: fileAsset(context.asset).artifact.sha256, size: bytes.length, format: fileAsset(context.asset).format,
         header, coverage: 'Identity and selected header fields only; format validity and reachability are not established.' }
     } else {
       const offset = request.parameters.offset as number

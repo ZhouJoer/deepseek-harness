@@ -1,5 +1,6 @@
 /** Android package inspection through JADX and explicitly selected adb devices. @module */
 import assert from 'node:assert/strict'
+import { fileAsset } from './workbench/assessment.ts'
 import type { Context } from '@deepseek-ai/cordis'
 import Schema from '@deepseek-ai/schemastery'
 import { readdir, open } from 'node:fs/promises'
@@ -50,7 +51,7 @@ export class AndroidProvider implements AnalysisProvider {
     if (!this.operations.some(operation => operation === request.operation) || request.script)
       throw new Error('Unsupported Android operation')
     const args = argsSchema.parse(request.parameters)
-    if (request.operation === 'decompile' && !['apk', 'dex'].includes(context.asset.format))
+    if (request.operation === 'decompile' && !['apk', 'dex'].includes(fileAsset(context.asset).format))
       throw new Error('JADX requires an APK or DEX asset')
     if (request.operation !== 'decompile' && !context.environment.deviceId) throw new Error('Select an Android device')
     if (request.operation === 'package-info' && !args.packageName) throw new Error('Select the package name')
@@ -95,7 +96,7 @@ export class AndroidProvider implements AnalysisProvider {
         toolVersion,
       }
     }
-    const path = await context.artifacts.materialize(context.asset.artifact)
+    const path = await context.artifacts.materialize(fileAsset(context.asset).artifact)
     const root = dirname(path)
     const output = join(root, 'jadx')
     try {

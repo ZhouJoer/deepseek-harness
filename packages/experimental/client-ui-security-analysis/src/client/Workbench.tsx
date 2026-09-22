@@ -24,13 +24,13 @@ export interface WorkbenchActions {
 export type WorkbenchProps = Pick<PropsRuntime<'conversation.input.dock'>, 'sessionId'> &
   PropsLocale<typeof NS> &
   WorkbenchActions
-type Tab = 'overview' | 'assets' | 'checks' | 'findings' | 'environments' | 'knowledge'
+type Tab = 'overview' | 'assets' | 'checks' | 'findings' | 'environments' | 'knowledge' | 'reviews' | 'reports'
 interface Configuration {
   projects?: { id: string; title: string }[]
   environments: { id: string; kind: string; label: string; tools: string[] }[]
   providers: { id: string; operations: string[] }[]
 }
-const tabKeys: Tab[] = ['overview', 'assets', 'checks', 'findings', 'environments', 'knowledge']
+const tabKeys: Tab[] = ['overview', 'assets', 'checks', 'findings', 'environments', 'knowledge', 'reviews', 'reports']
 const ids = (text: string): string[] =>
   text
     .split(',')
@@ -291,13 +291,19 @@ export function Workbench(props: WorkbenchProps) {
                     {t('import')}
                   </button>
                 </div>
+                <div className={css.form}>
+                  {select('environment', configuration.environments.map(item => ({ id: item.id, label: item.label })))}
+                  {field('webLabel')}
+                  {field('pathPrefix')}
+                  <button disabled={busy > 0 || !project} onClick={() => void perform(() => command({ kind: 'web-target', environmentId: draft.environment ?? '', label: draft.webLabel ?? '', pathPrefix: draft.pathPrefix || '/' }))}>{t('registerWeb')}</button>
+                </div>
                 {assets.map(item => (
                   <article key={item.value.id} className={css.card}>
                     <strong>{item.value.label}</strong>
                     <p>
-                      {item.value.format} · {item.value.identity === 'measured' ? t('measured') : item.value.identity}
+                      {'kind' in item.value ? item.value.origin + item.value.pathPrefix : item.value.format + ' · ' + t('measured')}
                     </p>
-                    <code>{item.value.artifact.sha256}</code>
+                    <code>{'kind' in item.value ? item.value.instanceId : item.value.artifact.sha256}</code>
                     <small>{item.value.id}</small>
                     <button
                       disabled={busy > 0}
@@ -309,6 +315,25 @@ export function Workbench(props: WorkbenchProps) {
                 ))}
               </>
             )}
+            {tab === 'reviews' && view.records.filter(item => item.kind === 'review').map(item => (
+              <article key={item.value.id} className={css.card}>
+                <strong>{t(item.value.verdict)}</strong>
+                <p>{item.value.explanation}</p><p>{item.value.uncertainty}</p>
+                <code>{item.value.findingId} · {item.value.findingHash}</code>
+                <p>{t('supportingEvidence')}: {item.value.supportingEvidenceIds.join(', ')}</p>
+                <p>{t('opposingEvidence')}: {item.value.opposingEvidenceIds.join(', ')}</p>
+                <small>{item.value.reviewerSessionId}</small>
+                <button disabled={busy > 0} onClick={() => void perform(() => command({ kind: 'conclude', reviewId: item.value.id }))}>{t('applyReview')}</button>
+              </article>
+            ))}
+            {tab === 'reports' && <>
+              <button disabled={busy > 0 || !project} onClick={() => void perform(() => command({ kind: 'report' }))}>{t('generateReport')}</button>
+              {view.records.filter(item => item.kind === 'report').map(item => <article key={item.value.id} className={css.card}>
+                <strong>{t('revision')} {item.value.revision}</strong>
+                <button onClick={() => void perform(() => preview(props.artifact(sessionId, item.value.markdown.sha256)))}>{t('markdownReport')}</button>
+                <button onClick={() => void perform(() => preview(props.artifact(sessionId, item.value.json.sha256)))}>{t('jsonReport')}</button>
+              </article>)}
+            </>}
             {tab === 'checks' && (
               <>
                 <div className={css.form}>
@@ -404,7 +429,7 @@ export function Workbench(props: WorkbenchProps) {
                   {field('evidenceIds')}
                   {select(
                     'status',
-                    ['suspected', 'confirmed', 'refuted', 'inconclusive'].map(id => ({
+                    ['suspected', 'inconclusive'].map(id => ({
                       id,
                       label: t(id as SecurityKey),
                     })),

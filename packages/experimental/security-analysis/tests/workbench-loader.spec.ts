@@ -36,6 +36,8 @@ import Security from '../src/workbench/index.ts'
 import * as Ghidra from '../src/ghidra-provider.ts'
 import * as Frida from '../src/frida-provider.ts'
 import * as Android from '../src/android-provider.ts'
+import * as Web from '../src/web-provider.ts'
+import * as Laboratory from '../src/laboratory.ts'
 import * as Environments from '../src/environment-local.ts'
 
 const contexts: Context[] = []
@@ -150,6 +152,8 @@ async function load(inheritJobTool = false) {
     ['frida', Frida],
     ['android', Android],
     ['environments', Environments],
+    ['web', Web],
+    ['laboratory', Laboratory],
   ])
   const configPath = join(root, 'cordis.yml')
   await writeFile(
@@ -255,7 +259,7 @@ describe('security workbench Loader composition', () => {
 
   it('loads independent providers and logs model-visible scope through the unchanged loop', async () => {
     const { ctx, agent, controller, model } = await load()
-    expect(controller.providers.list().sort()).toEqual(['android', 'binary', 'frida', 'ghidra'])
+    expect(controller.providers.list().sort()).toEqual(['android', 'binary', 'frida', 'ghidra', 'web'])
     expect(controller.environments.list()).toEqual(['local'])
     agent.followup(
       createUserMessage({ content: [{ type: 'text', text: 'Inspect the scope.' }], source: { kind: 'user' } }),
@@ -347,4 +351,22 @@ describe('security workbench Loader composition', () => {
     expect(shell).toHaveBeenCalledOnce()
     expect(ctx.tools.schemas(agent).some(tool => tool.name === 'security_scope')).toBe(false)
   })
+})
+
+it('settles an operator laboratory job when the Host is disposed', async () => {
+  const { ctx, controller } = await load()
+  const started = Promise.withResolvers<void>()
+  const manager = controller.laboratories.get('local')
+  const action = vi.spyOn(manager, 'action').mockImplementation(() => controller.manageEnvironment('shutdown-fixture', signal => {
+    started.resolve()
+    return new Promise(resolve => {
+      signal.addEventListener('abort', () => resolve({ revision: 0, records: [] }), { once: true })
+    })
+  }))
+  try {
+    const pending = ctx.securityWorkbench.laboratory('fixture', 'inspect', 'fixture')
+    await started.promise
+    await ctx.fiber.dispose()
+    expect(await pending).toEqual({ revision: 0, records: [] })
+  } finally { action.mockRestore() }
 })

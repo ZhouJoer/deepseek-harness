@@ -3,7 +3,12 @@ import { createHash, randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import {
   engagementSchema,
-  assetSchema,
+  fileAssetSchema,
+  webAssetSchema,
+  reviewSchema,
+  reportSchema,
+  laboratorySchema,
+  type Laboratory,
   checkSchema,
   findingSchema,
   validationPlanSchema,
@@ -21,6 +26,7 @@ import {
 } from './model.ts'
 import type { SecurityJournal } from './journal.ts'
 import { canObserve, type DelegatedRole } from './roles.ts'
+import { findingHash, projectMarkdown } from './assessment.ts'
 import { apkMembers } from './apk.ts'
 import { ArtifactStore } from './artifacts.ts'
 import {
@@ -53,6 +59,10 @@ const actions = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('import'), path: text, label: text }).strict(),
   z.object({ kind: z.literal('import-legacy'), path: text, title: text }).strict(),
   z.object({ kind: z.literal('check'), check: checkInput }).strict(),
+  z.object({ kind: z.literal('web-target'), environmentId: text, label: text, pathPrefix: text.default('/') }).strict(),
+  z.object({ kind: z.literal('revise-finding'), findingId: text, title: text, explanation: text, conditions: text, evidenceIds: z.array(text).min(1) }).strict(),
+  z.object({ kind: z.literal('conclude'), reviewId: text }).strict(),
+  z.object({ kind: z.literal('report') }).strict(),
   z.object({ kind: z.literal('template'), assetId: text }).strict(),
   z.object({ kind: z.literal('finish'), checkId: text, evidenceIds: z.array(text), rationale: text }).strict(),
   z.object({ kind: z.literal('reopen'), checkId: text, rationale: text }).strict(),
@@ -117,6 +127,29 @@ export class SecurityController {
     id: string
     manager: EnvironmentManager
   }>()
+  /** Optional Host-owned laboratory implementation. */
+  readonly laboratories: ProviderRegistry<{
+    id: string
+    action(projectId: string, action: string, laboratoryId?: string): Promise<WorkbenchView>
+  }> = new ProviderRegistry()
+  /** Read persisted laboratory ownership, including interrupted resources.
+   * @returns laboratory generations. */
+  laboratoriesView(): Laboratory[] {
+    return this.journal.view().records.filter(item => item.kind === 'laboratory').map(item => item.value)
+  }
+  /** Persist Host-measured resources before publishing their environment.
+   * @param input - complete owned resource state.
+   * @returns committed record. */
+  async saveLaboratory(input: Laboratory): Promise<Laboratory> {
+    const laboratory = laboratorySchema.parse(input)
+    await this.journal.commit(randomUUID(), undefined, { laboratory }, (view) => {
+      const project = this.project(view, laboratory.engagementId)
+      return [{ kind: 'laboratory', value: laboratory }, { kind: 'engagement', value: {
+        ...project, environmentIds: [...new Set([...project.environmentIds, laboratory.environmentId])],
+      } }]
+    })
+    return laboratory
+  }
   private environmentHash(environment: SecurityEnvironment): string {
     const { containerId: _container, exchangeRoot: _exchange, ...configuration } = environment
     return createHash('sha256').update(JSON.stringify(configuration)).digest('hex')
@@ -219,7 +252,7 @@ export class SecurityController {
   async command(sessionId: string, input: unknown, operator: boolean = false): Promise<WorkbenchView> {
     const command = commandSchema.parse(input)
     const action = command.action
-    const operatorActions = ['create', 'select', 'approve', 'publish', 'resume']
+    const operatorActions = ['create', 'select', 'approve', 'publish', 'resume', 'web-target']
     if (operatorActions.includes(action.kind) && !operator) throw new Error('This action requires an operator gesture')
     await this.journal.commit(
       command.operationId,
@@ -286,6 +319,59 @@ export class SecurityController {
           }
         }
         switch (action.kind) {
+          case 'web-target': {
+            const environment = this.environment(project.id, action.environmentId)
+            const target = environment.webTarget
+            if (!target) throw new Error('Start a managed laboratory before registering its target')
+            if (!action.pathPrefix.startsWith('/') || /[?#\\]/u.test(action.pathPrefix) || decodeURIComponent(action.pathPrefix).includes('..'))
+              throw new Error('Select an absolute path prefix without traversal, query or fragment')
+            return [{ kind: 'asset', value: webAssetSchema.parse({
+              kind: 'web', id: randomUUID(), engagementId: project.id, label: action.label,
+              environmentId: environment.id, origin: target.origin, instanceId: target.instanceId,
+              pathPrefix: action.pathPrefix,
+            }) }]
+          }
+          case 'report': {
+            const records = view.records.filter(record => record.kind !== 'binding' && record.kind !== 'report' &&
+              (record.kind === 'engagement' ? record.value.id : record.value.engagementId) === project.id)
+            return [{ kind: 'report', value: reportSchema.parse({
+              id: randomUUID(), engagementId: project.id, revision: view.revision, createdAt: Date.now(),
+              markdown: await this.artifacts.put(Buffer.from(projectMarkdown(records, view.revision)), 'text/markdown'),
+              json: await this.artifacts.put(Buffer.from(JSON.stringify({ revision: view.revision, records })), 'application/json'),
+            }) }]
+          }
+          case 'revise-finding': {
+            const item = scoped('finding', action.findingId)
+            if (item.kind !== 'finding') throw new Error('Finding required')
+            evidence(action.evidenceIds, item.value.assetId)
+            return [{ kind: 'finding', value: { ...item.value, title: action.title, explanation: action.explanation,
+              conditions: action.conditions, evidenceIds: action.evidenceIds, status: 'suspected', review: '' } }]
+          }
+          case 'conclude': {
+            const review = scoped('review', action.reviewId)
+            if (review.kind !== 'review') throw new Error('Review required')
+            const item = scoped('finding', review.value.findingId)
+            if (item.kind !== 'finding' || findingHash(item.value) !== review.value.findingHash)
+              throw new Error('Finding changed; obtain another independent review')
+            if (review.value.verdict !== 'inconclusive') {
+              const ids = review.value.verdict === 'confirmed' ? review.value.supportingEvidenceIds : review.value.opposingEvidenceIds
+              if (!ids.length) throw new Error('Conclusions require validation evidence')
+              for (const id of ids) {
+                const observation = scoped('evidence', id)
+                if (observation.kind !== 'evidence' || observation.value.incomplete || observation.value.assetId !== item.value.assetId)
+                  throw new Error('Conclusions require complete evidence for the finding asset')
+              }
+              if (!ids.some((id) => {
+                const observation = scoped('evidence', id)
+                const plan = observation.kind === 'evidence' && view.records.find(record => record.kind === 'plan' && record.value.id === observation.value.planId)
+                if (!plan || plan.kind !== 'plan' || !view.records.some(record => record.kind === 'check' && record.value.id === plan.value.checkId && record.value.phase === 'validation')) return false
+                return observation.value.planId && view.records.some(run =>
+                  run.kind === 'execution' && run.value.planId === observation.value.planId &&
+                  run.value.assetId === item.value.assetId && run.value.status === 'completed')
+              })) throw new Error('Conclusions require a completed validation plan')
+            }
+            return [{ kind: 'finding', value: { ...item.value, status: review.value.verdict, review: review.value.id } }]
+          }
           case 'import-legacy': {
             const imported = await this.artifacts.import(action.path, this.options.importRoots)
             const archive = JSON.parse((await this.artifacts.read(imported.artifact)).toString('utf8')) as unknown
@@ -308,7 +394,7 @@ export class SecurityController {
           }
           case 'import': {
             const measured = await this.artifacts.import(action.path, this.options.importRoots)
-            const sample = assetSchema.parse({
+            const sample = fileAssetSchema.parse({
               id: randomUUID(),
               engagementId: project.id,
               label: action.label,
@@ -324,7 +410,7 @@ export class SecurityController {
               )
               for (const member of members)
                 samples.push(
-                  assetSchema.parse({
+                  fileAssetSchema.parse({
                     id: randomUUID(),
                     engagementId: project.id,
                     label: member.path,
@@ -338,17 +424,18 @@ export class SecurityController {
             return samples.map(value => ({ kind: 'asset' as const, value }))
           }
           case 'template': {
-            asset(action.assetId)
+            const selected = asset(action.assetId)
+            const web = 'kind' in selected
             const stages = [
               [
                 'recon',
-                'Inventory the sample',
-                'Record identity, architecture, composition, dependencies and environment availability',
+                web ? 'Inventory the laboratory target' : 'Inventory the sample',
+                web ? 'Record the scoped origin, instance, HTTP responses and environment availability' : 'Record identity, architecture, composition, dependencies and environment availability',
               ],
               [
                 'surface',
                 'Map exposed entry points',
-                'Cite exports, parsers, components, IPC and JNI entry points with locations',
+                web ? 'Map observed URLs, methods, parameters and response evidence within the declared scope' : 'Cite exports, parsers, components, IPC and JNI entry points with locations',
               ],
               [
                 'assessment',
@@ -454,17 +541,8 @@ export class SecurityController {
           case 'finding': {
             asset(action.finding.assetId)
             evidence(action.finding.evidenceIds, action.finding.assetId)
-            if (action.finding.status === 'confirmed' || action.finding.status === 'refuted') {
-              if (binding.role !== 'coordinator' || !action.finding.review.trim())
-                throw new Error('Conclusions require coordinator review')
-              const refs = action.finding.evidenceIds.map(id => scoped('evidence', id))
-              if (
-                refs.some(item => item.kind === 'evidence' && item.value.incomplete) ||
-                !refs.some(item => item.kind === 'evidence' && item.value.provider === 'frida')
-              ) {
-                throw new Error('A conclusive validation requires complete dynamic evidence')
-              }
-            }
+            if (action.finding.status === 'confirmed' || action.finding.status === 'refuted')
+              throw new Error('Conclusions require an independent review and the conclude command')
             return [
               {
                 kind: 'finding',
@@ -577,6 +655,40 @@ export class SecurityController {
       await Promise.allSettled(cancelled.map(run => run.done))
     }
     return this.view(sessionId)
+  }
+  /** Persist a reviewer-authored conclusion without granting execution authority.
+   * @param sessionId - independently bound reviewer Session.
+   * @param input - review fields supplied by the reviewer tool.
+   * @returns committed review visible to the reviewer. */
+  async review(sessionId: string, input: unknown): Promise<WorkbenchView> {
+    const schema = reviewSchema.omit({ id: true, engagementId: true, assetId: true, reviewerSessionId: true, createdAt: true })
+    const proposal = schema.parse(input)
+    await this.journal.commit(randomUUID(), undefined, { sessionId, proposal }, (view) => {
+      const binding = this.requireBinding(view, sessionId)
+      if (binding.role !== 'reviewer') throw new Error('An independently bound reviewer is required')
+      if (this.project(view, binding.engagementId).stopped) throw new Error('Project is stopped')
+      const finding = this.view(sessionId).records.find(item => item.kind === 'finding' && item.value.id === proposal.findingId)
+      if (finding?.kind !== 'finding' || findingHash(finding.value) !== proposal.findingHash)
+        throw new Error('Finding is unavailable or changed')
+      for (const id of [...proposal.supportingEvidenceIds, ...proposal.opposingEvidenceIds]) {
+        const observation = view.records.find(item => item.kind === 'evidence' && item.value.id === id)
+        if (observation?.kind !== 'evidence' || observation.value.engagementId !== binding.engagementId || observation.value.assetId !== finding.value.assetId)
+          throw new Error('Review evidence belongs to another asset')
+        if (observation.value.source.sessionId === sessionId) throw new Error('Reviewer must be independent of evidence collection')
+      }
+      return [{ kind: 'review', value: reviewSchema.parse({ ...proposal, id: randomUUID(),
+        engagementId: binding.engagementId, assetId: finding.value.assetId, reviewerSessionId: sessionId, createdAt: Date.now() }) }]
+    })
+    return this.view(sessionId)
+  }
+  /** Read a project for the authenticated operator without changing a Session binding.
+   * @param projectId - selected project identifier.
+   * @returns project records excluding role bindings. */
+  projectView(projectId: string): WorkbenchView {
+    const view = this.journal.view()
+    this.project(view, projectId)
+    return { revision: view.revision, records: view.records.filter(item => item.kind !== 'binding' &&
+      (item.kind === 'engagement' ? item.value.id : item.value.engagementId) === projectId) }
   }
   private requireBinding(view: WorkbenchView, sessionId: string): SessionBinding {
     const record = view.records.find(item => item.kind === 'binding' && item.value.sessionId === sessionId)
@@ -793,7 +905,7 @@ export class SecurityController {
               toolVersion: result.toolVersion,
               request: plan.operation.parameters,
               source: { sessionId, callId, channel: callId.startsWith('operator:') ? 'operator' : 'tool' },
-              incomplete: result.incomplete || combined.aborted,
+              incomplete: result.incomplete || !!result.failure || combined.aborted,
               createdAt: Date.now(),
             }),
           },
@@ -801,7 +913,7 @@ export class SecurityController {
             kind: 'check',
             value: {
               ...item.value,
-              status: combined.aborted ? 'interrupted' : 'planned',
+              status: combined.aborted ? 'interrupted' : result.failure ? 'blocked' : 'planned',
               evidenceIds: [...item.value.evidenceIds, evidenceId],
               rationale: 'Review collected evidence against the check criterion',
             },
@@ -813,8 +925,8 @@ export class SecurityController {
               engagementId: binding.engagementId,
               assetId: sample.value.id,
               planId,
-              status: combined.aborted ? 'interrupted' : 'completed',
-              detail: combined.aborted ? 'Cancelled after provider cleanup' : '',
+              status: combined.aborted ? 'interrupted' : result.failure ? 'failed' : 'completed',
+              detail: JSON.stringify({ failure: result.failure, cleanup: result.cleanup, cancelled: combined.aborted }),
             },
           },
         ]
