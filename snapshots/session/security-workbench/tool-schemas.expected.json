@@ -90,7 +90,7 @@
     },
     {
       "name": "security_command",
-      "description": "Submit a JSON security command with operationId, expectedRevision and action. Actions: import, template, check, finish, reopen, reconcile, finding, plan, stop, revoke, remember. Use remember for concise structured retrospectives or reusable experience without reasoning traces or evidence. Plans require checkId, operation, hypothesis, expectedObservation, impact, cleanup and durationMs. Operator approval is separate.",
+      "description": "Submit a JSON security command with operationId, expectedRevision and action. Actions: import, import-source, template, check, finish, reopen, reconcile, finding, plan, stop, revoke, remember, report. Returns committed revision and changed record IDs; read full records with security_scope. Use remember for concise structured retrospectives or reusable experience without reasoning traces or evidence. Plans require checkId, operation, hypothesis, expectedObservation, impact, cleanup and durationMs. Operator approval is separate.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -219,10 +219,18 @@
     },
     {
       "name": "security_scope",
-      "description": "Read the selected security project, checks, available providers, and execution limits.",
+      "description": "Read a bounded page of selected project records. Use kind to filter (asset, check, evidence, finding, plan, review, report, binding), and nextOffset to continue. Evidence bodies are read separately with security_evidence. The revision is current for commands.",
       "parameters": {
         "type": "object",
-        "properties": {}
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Nonnegative continuation offset; default 0."
+          }
+        }
       }
     },
     {
@@ -236,6 +244,10 @@
           },
           "shared": {
             "type": "boolean"
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Nonnegative continuation offset; default 0."
           }
         },
         "required": [
@@ -245,7 +257,7 @@
     },
     {
       "name": "security_static",
-      "description": "Collect read-only binary, Ghidra or Android evidence for an assigned asset. Raw output is stored before a summary is returned.",
+      "description": "Collect read-only source, binary, Ghidra or Android evidence for an assigned asset. Raw output is stored before a summary is returned.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -254,7 +266,8 @@
             "enum": [
               "binary",
               "ghidra",
-              "android"
+              "android",
+              "source"
             ]
           },
           "operation": {

@@ -61,8 +61,14 @@ export const webAssetSchema = z.object({
   id: id.transform(brandString<AssetId>), engagementId: id, label: text,
   environmentId: id, origin: z.url(), pathPrefix: text, instanceId: id,
 }).strict()
+/** An immutable directory manifest with measured member artifacts. */
+export const sourceAssetSchema = z.object({
+  kind: z.literal('source'),
+  id: id.transform(brandString<AssetId>), engagementId: id, label: text,
+  artifact: artifactSchema, identity: z.literal('measured'),
+}).strict()
 /** Existing file records retain their original persisted representation. */
-export const assetSchema = z.union([fileAssetSchema, webAssetSchema])
+export const assetSchema = z.union([fileAssetSchema, webAssetSchema, sourceAssetSchema])
 /** One check with its acceptance criterion, inputs and durable execution status. */
 export const checkSchema = z
   .object({
@@ -95,8 +101,12 @@ export const evidenceSchema = z
     operation: text,
     toolVersion: text,
     request: z.record(z.string(), json),
+    requestHash: digest.optional(),
     source: z.object({ sessionId: id, callId: id, channel: z.enum(['tool', 'operator']).optional() }).strict(),
     incomplete: z.boolean(),
+    failure: z.string().optional(),
+    cleanup: z.string().optional(),
+    method: z.enum(['static', 'simulation', 'device']).optional(),
     createdAt: z.number().int().nonnegative(),
   })
   .strict()
@@ -157,6 +167,10 @@ export const validationPlanSchema = z
     status: z.enum(['draft', 'approved', 'revoked']),
   })
   .strict()
+/** Validated child conclusions; original interaction remains in the child Session. */
+export const childReportSchema = z.object({
+  summary: z.string(), evidenceIds: z.array(id), uncertainty: z.string(), nextSteps: z.array(z.string()),
+}).strict()
 /** A durable authority binding for one session. */
 export const bindingSchema = z
   .object({
@@ -164,6 +178,7 @@ export const bindingSchema = z
     engagementId: id,
     role: roleSchema,
     assetIds: z.array(id),
+    report: childReportSchema.optional(),
   })
   .strict()
 /** Concise conclusions stored independently of analysis transcripts and evidence. */
@@ -262,6 +277,8 @@ export type Asset = z.infer<typeof assetSchema>
 export type FileAsset = z.infer<typeof fileAssetSchema>
 /** Declared laboratory endpoint. */
 export type WebAsset = z.infer<typeof webAssetSchema>
+/** A directory snapshot with project-scoped member references. */
+export type SourceAsset = z.infer<typeof sourceAssetSchema>
 /** Dependency-tracked check. */
 export type CheckStep = z.infer<typeof checkSchema>
 /** Immutable provider evidence. */

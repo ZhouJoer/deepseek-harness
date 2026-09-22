@@ -113,3 +113,11 @@ Local Web evidence and review take priority; remaining reverse-analysis P0 items
 Metasploit check is not automatically read-only: some upstream checks execute commands. No module becomes executable until its exact options and side effects are reviewed and constrained by the Host adapter. Binary installation and version matching cannot confirm a vulnerability.
 
 Verification evidence: 52 focused behavior tests, 19 Web/provider/Loader/component tests, the keyless security-workbench Session replay, and 3 real Host/browser tests passed. The existing-image Docker test passed collection and reset/recovery checks; the fresh toolbox build remains unverified. Full doc-sync encountered a Windows EPERM when a documentation-site test created a symlink; no platform check was disabled. HTTP helper cancellation can leave only incomplete process output; durable streaming of every partial response is deferred.
+
+## Source pilot scope (2026-09-22)
+
+Implemented: immutable directory assets; bounded source tools; plan-bound Python and browser containers; committed observation retry identities; instance leases; paginated model results; source-location controls and observation-method labels. Legacy file records remain readable. Python and Chromium container fixtures have passed without external networking.
+
+Tufty real-model analysis has produced source evidence, offline runs, independent reviews and a report through the configured security profile. Both pilots have matching Session calls, raw results and evidence hashes. Sixty-six focused tests, seven UI tests, two real container fixtures, keyless Session replay, the build and package publication checks pass. Script failures and disproved hypotheses remain recorded. Browser connection and later scenarios, physical hardware, review of revised finding hashes, and Computer Use remain unverified. Windows symlink restrictions block NodeNext consumption, the ACP profile checkout and one documentation-site test.
+
+The webui_httpd pilot remains a capability check only. DSH measured its ARM32 little-endian ELF identity. The managed Ghidra 11.3.2 extension and independent import were prepared, but the GUI closed before DSH queries succeeded. Further Ghidra acceptance is explicitly deferred by the operator; no binary vulnerability findings or execution are included.

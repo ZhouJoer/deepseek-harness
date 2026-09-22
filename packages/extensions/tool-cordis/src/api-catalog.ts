@@ -1736,10 +1736,16 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'settled project state.',
       },
       {
+        signature: '@Remote(\'observe\') async observe(agent: Agent, input: string): Promise<WorkbenchView>',
+        description: 'Collect bounded static observations through the same authority as model tools.',
+        parameters: [{ name: 'agent', description: 'authenticated project session.' }, { name: 'input', description: 'serialized analysis operation.' }],
+        returns: 'the committed project view.',
+      },
+      {
         signature: '@Remote(\'artifact\') async artifact(agent: Agent, sha256: string): Promise<string>',
-        description: 'Read a verified artifact belonging to the selected project.',
-        parameters: [{ name: 'agent', description: 'authenticated session.' }, { name: 'sha256', description: 'evidence or script digest.' }],
-        returns: 'bounded preview with a completeness flag.',
+        description: 'Preview an artifact belonging to the selected project.',
+        parameters: [{ name: 'agent', description: 'authenticated session.' }, { name: 'sha256', description: 'content digest.' }],
+        returns: 'bounded bytes rendered as text.',
       },
     ],
   },
@@ -4154,11 +4160,11 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'AnalysisProvider',
-    declaration: 'export interface AnalysisProvider {\n    id: string;\n    operations: readonly string[];\n    inputGuide?: string;\n    resolve(request: AnalysisOperation, context: AnalysisContext): AnalysisOperation;\n    prepare?(request: AnalysisOperation, context: AnalysisContext): Promise<AnalysisOperation>;\n    run(request: AnalysisOperation, context: AnalysisContext): Promise<AnalysisResult>;\n}',
+    declaration: 'export interface AnalysisProvider {\n    id: string;\n    operations: readonly string[];\n    inputGuide?: string;\n    resourceKey?(request: AnalysisOperation, asset: Asset): string | null;\n    resolve(request: AnalysisOperation, context: AnalysisContext): AnalysisOperation;\n    prepare?(request: AnalysisOperation, context: AnalysisContext): Promise<AnalysisOperation>;\n    run(request: AnalysisOperation, context: AnalysisContext): Promise<AnalysisResult>;\n}',
   },
   {
     name: 'AnalysisResult',
-    declaration: 'export interface AnalysisResult {\n    bytes: Uint8Array;\n    mediaType: string;\n    summary: string;\n    incomplete: boolean;\n    toolVersion: string;\n    failure?: string;\n    cleanup?: string;\n}',
+    declaration: 'export interface AnalysisResult {\n    bytes: Uint8Array;\n    mediaType: string;\n    summary: string;\n    incomplete: boolean;\n    toolVersion: string;\n    failure?: string;\n    cleanup?: string;\n    method?: \'static\' | \'simulation\' | \'device\';\n}',
   },
   {
     name: 'ApiKeyRecord',
@@ -5798,7 +5804,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SecurityController',
-    declaration: 'export class SecurityController {\n    readonly providers: ProviderRegistry<AnalysisProvider>;\n    readonly environments: ProviderRegistry<{\n        id: string;\n        manager: EnvironmentManager;\n    }>;\n    readonly laboratories: ProviderRegistry<{\n        id: string;\n        action(projectId: string, action: string, laboratoryId?: string): Promise<WorkbenchView>;\n    }>;\n    laboratoriesView(): Laboratory[];\n    async saveLaboratory(input: Laboratory): Promise<Laboratory>;\n    constructor(private readonly journal: SecurityJournal, readonly artifacts: ArtifactStore, readonly options: WorkbenchOptions);\n    trackDelegation(project: string, controller: AbortController, done: Promise<unknown>): () => void;\n    async manageEnvironment<T>(environmentId: string, run: (signal: AbortSignal) => Promise<T>, project: string = \'\'): Promise<T>;\n    binding(sessionId: string): SessionBinding | undefined;\n    projects(): Engagement[];\n    view(sessionId: string): WorkbenchView;\n    async command(sessionId: string, input: unknown, operator: boolean = false): Promise<WorkbenchView>;\n    async review(sessionId: string, input: unknown): Promise<WorkbenchView>;\n    projectView(projectId: string): WorkbenchView;\n    async recover(): Promise<void>;\n    async bindChild(parentId: string, childId: string, assetIds: string[], role: DelegatedRole): Promise<void>;\n    sharedKnowledge(): SecurityRecord[];\n    async execute(sessionId: string, planId: string, operationId: string, expectedRevision: number /* …truncated — full shape in source */',
+    declaration: 'export class SecurityController {\n    readonly providers: ProviderRegistry<AnalysisProvider>;\n    readonly environments: ProviderRegistry<{\n        id: string;\n        manager: EnvironmentManager;\n    }>;\n    readonly laboratories: ProviderRegistry<{\n        id: string;\n        action(projectId: string, action: string, laboratoryId?: string): Promise<WorkbenchView>;\n    }>;\n    laboratoriesView(): Laboratory[];\n    async saveLaboratory(input: Laboratory): Promise<Laboratory>;\n    constructor(private readonly journal: SecurityJournal, readonly artifacts: ArtifactStore, readonly options: WorkbenchOptions);\n    trackDelegation(project: string, controller: AbortController, done: Promise<unknown>): () => void;\n    async manageEnvironment<T>(environmentId: string, run: (signal: AbortSignal) => Promise<T>, project: string = \'\'): Promise<T>;\n    binding(sessionId: string): SessionBinding | undefined;\n    async saveChildReport(sessionId: string, input: unknown): Promise<void>;\n    projects(): Engagement[];\n    view(sessionId: string): WorkbenchView;\n    async command(sessionId: string, input: unknown, operator: boolean = false): Promise<WorkbenchView>;\n    async review(sessionId: string, input: unknown): Promise<WorkbenchView>;\n    projectView(projectId: string): WorkbenchView;\n    async recover(): Promise<void>;\n    async bindChild(parentId: string, childId: string, assetIds: string[], role: DelegatedRole): Promise<void>;\n    sharedKnowledge(): SecurityRecord[];\n    async execute(ses /* …truncated — full shape in source */',
   },
   {
     name: 'SecurityEnvironment',

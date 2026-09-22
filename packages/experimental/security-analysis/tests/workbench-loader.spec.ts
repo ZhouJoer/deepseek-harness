@@ -1,5 +1,5 @@
 /** Real Loader composition for scoped evidence, workflow, and tool enforcement. */
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -33,10 +33,12 @@ import { startInProcessRun } from '@deepseek-ai/dsh-subagent-in-process-driver'
 import { createScope, bindScopeParent, scopeOf } from '@deepseek-ai/dsh-scope'
 import Approval from '@deepseek-ai/dsh-user-approval'
 import Security from '../src/workbench/index.ts'
+import { findingHash } from '../src/workbench/assessment.ts'
 import * as Ghidra from '../src/ghidra-provider.ts'
 import * as Frida from '../src/frida-provider.ts'
 import * as Android from '../src/android-provider.ts'
 import * as Web from '../src/web-provider.ts'
+import * as Offline from '../src/offline-provider.ts'
 import * as Laboratory from '../src/laboratory.ts'
 import * as Environments from '../src/environment-local.ts'
 
@@ -163,6 +165,7 @@ async function load(inheritJobTool = false, knowledgeIntervalMs = 0) {
     ['android', Android],
     ['environments', Environments],
     ['web', Web],
+    ['offline', Offline],
     ['laboratory', Laboratory],
   ])
   const configPath = join(root, 'cordis.yml')
@@ -258,6 +261,8 @@ describe('security workbench Loader composition', () => {
       const job = await ctx.jobs.wait(JobId(jobId), 10000, agent)
       expect(job.status, JSON.stringify(job)).toBe('completed')
       expect(ctx.jobs.read(JobId(jobId), agent).text).toContain('Assigned evidence review completed.')
+      expect(controller.view(agent.id).records.filter(item => item.kind === 'binding').filter(item => item.value.role === role)
+        .map(item => item.value.report?.summary)).toContain('Assigned evidence review completed.')
       const child = model.requests.at(-1)!
       const names = child.tools?.map(tool => tool.name)
       expect(names).toContain('structured_output')
@@ -269,7 +274,7 @@ describe('security workbench Loader composition', () => {
 
   it('loads independent providers and logs model-visible scope through the unchanged loop', async () => {
     const { ctx, agent, controller, model } = await load()
-    expect(controller.providers.list().sort()).toEqual(['android', 'binary', 'frida', 'ghidra', 'web'])
+    expect(controller.providers.list().sort()).toEqual(['android', 'binary', 'frida', 'ghidra', 'offline', 'source', 'web'])
     expect(controller.environments.list()).toEqual(['local'])
     agent.followup(
       createUserMessage({ content: [{ type: 'text', text: 'Inspect the scope.' }], source: { kind: 'user' } }),
@@ -447,4 +452,56 @@ it('cancels an active refinement and drains the worker before project stop retur
   await rejected
   expect(controller.view(agent.id).records.filter(item => item.kind === 'knowledge')).toEqual(before)
   expect(ctx.agents.get(worker!.id)).toBeUndefined()
+})
+
+it('imports and reads source through the real Loader tool composition', async () => {
+  const { ctx, agent, controller } = await load()
+  const root = roots[roots.length - 1]!
+  const source = join(root, 'source')
+  await mkdir(source)
+  await writeFile(join(source, 'app.py'), 'VALUE = 1\nprint(VALUE)\n')
+  const send = operator(controller, agent)
+  await send({ kind: 'create', title: 'Source', objective: 'Read immutable lines', environmentIds: ['local'], maxAttempts: 2 })
+  await send({ kind: 'import-source', path: source, label: 'Sources' })
+  const asset = controller.view(agent.id).records.find(item => item.kind === 'asset')!
+  if (asset.kind !== 'asset') throw new Error('Missing source')
+  const result = await execute(ctx, agent, 'security_static', {
+    provider: 'source', operation: 'read', assetId: asset.value.id, environmentId: 'local', parameters: JSON.stringify({ path: 'app.py', startLine: 2, limit: 1 }),
+  })
+  expect(result.isError, JSON.stringify(result)).toBe(false)
+  const evidence = controller.view(agent.id).records.find(item => item.kind === 'evidence')
+  expect(evidence).toMatchObject({ kind: 'evidence', value: { provider: 'source', method: 'static', source: { sessionId: agent.id } } })
+  if (evidence?.kind !== 'evidence') throw new Error('Missing observation')
+  expect((await controller.artifacts.read(evidence.value.artifact)).toString()).toContain('print(VALUE)')
+})
+
+it('acknowledges reviews in a large project without turning a committed review into an output error', async () => {
+  const { ctx, agent, controller } = await load()
+  const root = roots[roots.length - 1]!
+  await writeFile(join(root, 'review.bin'), 'owned')
+  const send = operator(controller, agent)
+  await send({ kind: 'create', title: 'Large review', objective: 'Bound committed results', environmentIds: ['local'], maxAttempts: 2 })
+  await send({ kind: 'import', path: join(root, 'review.bin'), label: 'sample' })
+  const asset = controller.view(agent.id).records.find(item => item.kind === 'asset')!
+  if (asset.kind !== 'asset') throw new Error('Missing asset')
+  const evidence = await controller.observe(agent.id, { provider: 'binary', operation: 'hex', assetId: asset.value.id,
+    environmentId: 'local', parameters: {}, impact: 'observe' }, 'observation', new AbortController().signal)
+  if (evidence.kind !== 'evidence') throw new Error('Missing evidence')
+  for (let index = 0; index < 40; index++) await send({ kind: 'finding', finding: {
+    assetId: asset.value.id, title: 'Candidate ' + String(index), explanation: 'x'.repeat(2000), conditions: 'fixture',
+    evidenceIds: [evidence.value.id], status: 'suspected', review: '',
+  } })
+  const finding = controller.view(agent.id).records.find(item => item.kind === 'finding')!
+  if (finding.kind !== 'finding') throw new Error('Missing finding')
+  const childId = SessionId('large-reviewer')
+  await controller.bindChild(agent.id, childId, [asset.value.id], 'reviewer')
+  const { agent: child } = await ctx.agents.create({ sessionId: childId, parentAgent: agent,
+    meta: { cwd: root, parentSession: agent.id, origin: 'subagent', delegationDepth: 1 } })
+  const result = await execute(ctx, child, 'security_review', { review: JSON.stringify({
+    findingId: finding.value.id, findingHash: findingHash(finding.value), verdict: 'inconclusive',
+    supportingEvidenceIds: [evidence.value.id], opposingEvidenceIds: [], explanation: 'No validation yet', uncertainty: 'Static only',
+  }) })
+  expect(result.isError, JSON.stringify(result)).toBe(false)
+  expect(result.content.filter(block => block.type === 'text').map(block => block.text).join('')).toContain('"committed":true')
+  expect(controller.view(agent.id).records.filter(item => item.kind === 'review')).toHaveLength(1)
 })

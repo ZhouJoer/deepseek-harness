@@ -30,6 +30,8 @@ Open Security analysis above the message composer, including in a new empty Sess
 
 -----
 
+Source directory assets provide file inventory, line reads and literal searches from the conversation workbench. Evidence cards label static observations, offline simulations and device validation, with failure and cleanup details. Project overviews and reports retain completed child Session summaries; original child interaction remains in Session navigation.
+
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
 

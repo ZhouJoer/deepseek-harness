@@ -55,6 +55,8 @@
       name: '@deepseek-ai/dsh-experimental-security-analysis/ghidra'
       config:
         programs: []
+    - id: security-offline
+      name: '@deepseek-ai/dsh-experimental-security-analysis/offline'
     - id: security-frida
       name: '@deepseek-ai/dsh-experimental-security-analysis/frida'
     - id: security-android

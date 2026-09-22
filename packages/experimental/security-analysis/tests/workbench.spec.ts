@@ -62,6 +62,46 @@ async function harness() {
 }
 
 describe('security workbench', () => {
+
+  it('returns the committed evidence for exact static retries and rejects changed retries', async () => {
+    const { controller, assetId } = await harness()
+    const run = vi.fn(async () => ({ bytes: Buffer.from('result'), mediaType: 'text/plain', summary: 'result', incomplete: false, toolVersion: 'fixture' }))
+    controller.providers.register({ id: 'ghidra', operations: ['functions'], resolve: request => request, run })
+    const request = { provider: 'ghidra', operation: 'functions', assetId, environmentId: 'local', parameters: {}, impact: 'observe' as const }
+    const signal = new AbortController().signal
+    const first = await controller.observe('parent', request, 'retry', signal)
+    expect(await controller.observe('parent', request, 'retry', signal)).toEqual(first)
+    expect(controller.view('parent').records).toContainEqual(first)
+    expect(run).toHaveBeenCalledTimes(1)
+    await expect(controller.observe('parent', { ...request, parameters: { offset: 1 } }, 'retry', signal)).rejects.toThrow(/different|changed/i)
+  })
+
+  it('allows independent source reads while joining identical pending observations', async () => {
+    const { controller, assetId } = await harness()
+    let release!: () => void
+    const hold = new Promise<void>((resolve) => { release = resolve })
+    let ready!: () => void
+    const both = new Promise<void>((resolve) => { ready = resolve })
+    let entered = 0
+    const run = vi.fn(async () => {
+      if (++entered === 2) ready()
+      await hold
+      return { bytes: Buffer.from('read'), mediaType: 'text/plain', summary: 'read', incomplete: false, toolVersion: 'fixture' }
+    })
+    controller.providers.register({ id: 'source', resourceKey: () => null, operations: ['read'], resolve: request => request, run })
+    const request = { provider: 'source', operation: 'read', assetId, environmentId: 'local', parameters: {}, impact: 'observe' as const }
+    const signal = new AbortController().signal
+    const first = controller.observe('parent', request, 'a', signal)
+    const retry = controller.observe('parent', request, 'a', signal)
+    const other = controller.observe('parent', request, 'b', signal)
+    await both
+    release()
+    const [a, again, b] = await Promise.all([first, retry, other])
+    expect(a).toEqual(again)
+    expect(a).not.toEqual(b)
+    expect(run).toHaveBeenCalledTimes(2)
+  })
+
   it('measures imported bytes and rejects foreign paths and corrupt artifacts', async () => {
     const { artifacts, controller, root } = await harness()
     const record = controller.view('parent').records.find(item => item.kind === 'asset')!
@@ -280,7 +320,7 @@ describe('security workbench', () => {
       'static',
       new AbortController().signal,
     )
-    const rejected = expect(observation).rejects.toThrow('cancelled')
+    const rejected = expect(observation).resolves.toMatchObject({ kind: 'evidence', value: { incomplete: true, failure: 'cancelled' } })
     await began
     const stopping = send({ kind: 'stop' })
     await aborted
@@ -491,4 +531,20 @@ it('bounds framed input before dispatch and does not commit an aborted result', 
   }, limits, abort.signal)).rejects.toThrow('cancelled')
   expect(journal.view().records.filter(item => item.kind === 'knowledge')).toEqual(source)
   expect(() => refinementSchema.parse({ entries: [], evidence: [] })).toThrow()
+})
+
+it('persists scoped child summaries and keeps legacy file assets readable on reopen', async () => {
+  const { controller, journal, ctx, assetId } = await harness()
+  await controller.bindChild('parent', 'source-reviewer', [assetId], 'reviewer')
+  const report = { summary: 'No complete validation evidence.', evidenceIds: [], uncertainty: 'Offline pending', nextSteps: ['Run an approved plan'] }
+  await controller.saveChildReport('source-reviewer', report)
+  await expect(controller.saveChildReport('source-reviewer', { ...report, evidenceIds: ['foreign'] })).rejects.toThrow(/foreign/)
+  expect(controller.view('parent').records.filter(item => item.kind === 'binding').map(item => item.value.report)).toContainEqual(report)
+  const records = journal.view()
+  await journal.close()
+  const reopened = await openSecurityJournal(ctx)
+  try {
+    expect(reopened.view()).toEqual(records)
+    expect(reopened.view().records.find(item => item.kind === 'asset')?.value).toMatchObject({ id: assetId, format: 'pe' })
+  } finally { await reopened.close() }
 })

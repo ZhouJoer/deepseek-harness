@@ -82,6 +82,8 @@ export interface AnalysisResult {
   failure?: string
   /** Settled cleanup facts, independent of the command exit status. */
   cleanup?: string
+  /** Distinguishes static observations, offline simulations and physical devices. */
+  method?: 'static' | 'simulation' | 'device'
 }
 /** One admitted operation's resources and cancellation lifetime. */
 export interface AnalysisContext {
@@ -98,6 +100,13 @@ export interface AnalysisProvider {
   operations: readonly string[]
   /** Model-visible parameter and prerequisite guidance; omitted providers require separate documentation. */
   inputGuide?: string
+  /**
+   * Identify the actual shared analysis resource.
+   * @param request - admitted operation.
+   * @param asset - measured input.
+   * @returns exclusive instance key, or null for immutable reads and disposable per-run resources.
+   */
+  resourceKey?(request: AnalysisOperation, asset: Asset): string | null
   /**
    * Validate and resolve provider-specific inputs before approval.
    * @param request - caller proposal.

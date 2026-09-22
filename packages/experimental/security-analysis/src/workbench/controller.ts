@@ -4,6 +4,7 @@ import { z } from 'zod'
 import {
   engagementSchema,
   fileAssetSchema,
+  sourceAssetSchema,
   webAssetSchema,
   reviewSchema,
   reportSchema,
@@ -14,6 +15,7 @@ import {
   validationPlanSchema,
   evidenceSchema,
   bindingSchema,
+  childReportSchema,
   knowledgeEntrySchema,
   operationSchema,
   type AnalysisOperation,
@@ -27,6 +29,7 @@ import {
 import type { SecurityJournal } from './journal.ts'
 import { canObserve, type DelegatedRole } from './roles.ts'
 import { findingHash, projectMarkdown } from './assessment.ts'
+import { importSource } from './source.ts'
 import { apkMembers } from './apk.ts'
 import { ArtifactStore } from './artifacts.ts'
 import {
@@ -57,6 +60,7 @@ const actions = z.discriminatedUnion('kind', [
     .strict(),
   z.object({ kind: z.literal('select'), engagementId: text }).strict(),
   z.object({ kind: z.literal('import'), path: text, label: text }).strict(),
+  z.object({ kind: z.literal('import-source'), path: text, label: text }).strict(),
   z.object({ kind: z.literal('import-legacy'), path: text, title: text }).strict(),
   z.object({ kind: z.literal('check'), check: checkInput }).strict(),
   z.object({ kind: z.literal('web-target'), environmentId: text, label: text, pathPrefix: text.default('/') }).strict(),
@@ -145,10 +149,11 @@ export class SecurityController {
     const { containerId: _container, exchangeRoot: _exchange, ...configuration } = environment
     return createHash('sha256').update(JSON.stringify(configuration)).digest('hex')
   }
+  private readonly observations = new Map<string, { fingerprint: string; pending: Promise<SecurityRecord> }>()
   private readonly delegated = new Map<AbortController, { project: string; done: Promise<unknown> }>()
   private readonly active = new Map<
     string,
-    { project: string; plan: string; controller: AbortController; done: Promise<void> }
+    { project: string; environment: string; plan: string; controller: AbortController; done: Promise<void> }
   >()
   constructor(
     private readonly journal: SecurityJournal,
@@ -175,10 +180,10 @@ export class SecurityController {
    * @returns the lifecycle result.
    */
   async manageEnvironment<T>(environmentId: string, run: (signal: AbortSignal) => Promise<T>, project: string = ''): Promise<T> {
-    if (this.active.has(environmentId)) throw new Error('Environment is already leased by another operation')
+    if ([...this.active.values()].some(run => run.environment === environmentId)) throw new Error('Environment is already leased by another operation')
     const controller = new AbortController()
     const settled = Promise.withResolvers<undefined>()
-    this.active.set(environmentId, { project, plan: '', controller, done: settled.promise })
+    this.active.set(environmentId, { project, environment: environmentId, plan: '', controller, done: settled.promise })
     try {
       return await run(controller.signal)
     } finally {
@@ -196,6 +201,23 @@ export class SecurityController {
       .view()
       .records.find(item => item.kind === 'binding' && item.value.sessionId === sessionId)
     return record?.kind === 'binding' ? record.value : undefined
+  }
+  /** Save a validated child summary without treating it as original evidence.
+   * @param sessionId - child Session bound by the Host.
+   * @param input - structured report returned by the child.
+   * @returns completion after the summary is persisted. */
+  async saveChildReport(sessionId: string, input: unknown): Promise<void> {
+    const report = childReportSchema.parse(input)
+    await this.journal.commit(randomUUID(), undefined, { sessionId, report }, (view) => {
+      const binding = view.records.find(item => item.kind === 'binding' && item.value.sessionId === sessionId)
+      if (binding?.kind !== 'binding' || binding.value.role === 'coordinator') throw new Error('A delegated Session is required')
+      for (const id of report.evidenceIds) {
+        if (!view.records.some(item => item.kind === 'evidence' && item.value.id === id &&
+          item.value.engagementId === binding.value.engagementId && binding.value.assetIds.includes(item.value.assetId)))
+          throw new Error('Child report cites unavailable or foreign evidence')
+      }
+      return [{ kind: 'binding', value: { ...binding.value, report } }]
+    })
   }
   /** List projects for operator selection.
    * @returns project labels available to the local operator, never delegated tool callers. */
@@ -221,7 +243,7 @@ export class SecurityController {
         const project = item.kind === 'engagement' ? item.value.id : item.value.engagementId
         if (project !== binding.engagementId) return false
         if (item.kind === 'engagement') return true
-        if (item.kind === 'binding') return item.value.sessionId === sessionId
+        if (item.kind === 'binding') return binding.role === 'coordinator' || item.value.sessionId === sessionId
         const asset =
           item.kind === 'asset'
             ? item.value.id
@@ -384,6 +406,14 @@ export class SecurityController {
               },
             ]
           }
+          case 'import-source': {
+            const artifact = await importSource(this.artifacts, action.path, this.options.importRoots,
+              { entries: this.options.maxDerivedAssets, bytes: this.options.maxArtifactBytes })
+            return [{ kind: 'asset', value: sourceAssetSchema.parse({
+              kind: 'source', id: randomUUID(), engagementId: project.id, label: action.label,
+              artifact, identity: 'measured',
+            }) }]
+          }
           case 'import': {
             const measured = await this.artifacts.import(action.path, this.options.importRoots)
             const sample = fileAssetSchema.parse({
@@ -417,7 +447,7 @@ export class SecurityController {
           }
           case 'template': {
             const selected = asset(action.assetId)
-            const web = 'kind' in selected
+            const web = 'kind' in selected && selected.kind === 'web'
             const stages = [
               [
                 'recon',
@@ -554,7 +584,7 @@ export class SecurityController {
             if (action.script !== undefined)
               operation = {
                 ...operation,
-                script: await this.artifacts.put(Buffer.from(action.script), 'text/javascript'),
+                script: await this.artifacts.put(Buffer.from(action.script), operation.provider === 'offline' && operation.operation === 'python' ? 'text/x-python' : 'text/javascript'),
               }
             const provider = this.providers.get(operation.provider)
             const context = {
@@ -802,14 +832,19 @@ export class SecurityController {
     const environment = this.environment(binding.engagementId, plan.operation.environmentId)
     if (this.environmentHash(environment) !== plan.environmentHash)
       throw new Error('Environment configuration changed; prepare another plan')
-    if (this.active.has(environment.id)) throw new Error('Environment is already leased by another operation')
+    const sample = this.view(sessionId).records.find(item => item.kind === 'asset' && item.value.id === plan.operation.assetId)
+    if (sample?.kind !== 'asset') throw new Error('Plan asset is unavailable')
+    const provider = this.providers.get(plan.operation.provider)
+    const key = provider.resourceKey ? provider.resourceKey(plan.operation, sample.value) : environment.id
+    const lease = key ?? randomUUID()
+    if (this.active.has(environment.id) || this.active.has(lease)) throw new Error('Analysis instance is already leased')
     const controller = new AbortController()
     const combined = AbortSignal.any([signal, controller.signal])
     let settle!: () => void
     const done = new Promise<void>((resolve) => {
       settle = resolve
     })
-    this.active.set(environment.id, { project: binding.engagementId, plan: planId, controller, done })
+    this.active.set(lease, { project: binding.engagementId, environment: environment.id, plan: planId, controller, done })
     let started = false
     try {
       combined.throwIfAborted()
@@ -848,11 +883,6 @@ export class SecurityController {
       })
       started = true
       combined.throwIfAborted()
-      const sample = this.view(sessionId).records.find(
-        item => item.kind === 'asset' && item.value.id === plan.operation.assetId,
-      )
-      if (sample?.kind !== 'asset') throw new Error('Plan asset is unavailable')
-      const provider = this.providers.get(plan.operation.provider)
       const context = {
         environment,
         asset: sample.value,
@@ -888,6 +918,7 @@ export class SecurityController {
               request: plan.operation.parameters,
               source: { sessionId, callId, channel: callId.startsWith('operator:') ? 'operator' : 'tool' },
               incomplete: result.incomplete || !!result.failure || combined.aborted,
+              failure: result.failure, cleanup: result.cleanup, method: result.method,
               createdAt: Date.now(),
             }),
           },
@@ -962,7 +993,7 @@ export class SecurityController {
       }
       throw error
     } finally {
-      this.active.delete(environment.id)
+      this.active.delete(lease)
       settle()
     }
   }
@@ -990,6 +1021,21 @@ export class SecurityController {
     callId: string,
     signal: AbortSignal,
   ): Promise<SecurityRecord> {
+    const key = sessionId + ':' + callId
+    const fingerprint = createHash('sha256').update(JSON.stringify(operation)).digest('hex')
+    const existing = this.observations.get(key)
+    if (existing) {
+      if (existing.fingerprint !== fingerprint) throw new Error('Observation callId was already used for different input')
+      return existing.pending
+    }
+    const pending = this.collectObservation(sessionId, operation, callId, signal, fingerprint)
+    this.observations.set(key, { fingerprint, pending })
+    try { return await pending }
+    finally { this.observations.delete(key) }
+  }
+
+  private async collectObservation(sessionId: string, operation: AnalysisOperation, callId: string,
+    signal: AbortSignal, fingerprint: string): Promise<SecurityRecord> {
     const view = this.view(sessionId)
     const binding = this.binding(sessionId)
     if (!binding) throw new Error('Select a security project first')
@@ -998,55 +1044,58 @@ export class SecurityController {
     if (sample?.kind !== 'asset') throw new Error('Asset is outside the session scope')
     if (!canObserve(binding.role, operation.provider, operation.operation))
       throw new Error('This role cannot collect the requested observation')
-    if (operation.script || !['binary', 'ghidra', 'android'].includes(operation.provider))
+    if (operation.script || !['binary', 'ghidra', 'android', 'source'].includes(operation.provider))
       throw new Error('Use an approved plan for dynamic or programmable operations')
+    const previous = view.records.find(item => item.kind === 'evidence' &&
+      item.value.source.sessionId === sessionId && item.value.source.callId === callId && !item.value.planId)
+    if (previous?.kind === 'evidence') {
+      if (previous.value.requestHash !== fingerprint) throw new Error('Observation callId was already used for different input')
+      return previous
+    }
     const environment = this.environment(binding.engagementId, operation.environmentId)
     const provider = this.providers.get(operation.provider)
-    if (this.active.has(environment.id)) throw new Error('Environment is already leased by another operation')
+    const key = provider.resourceKey ? provider.resourceKey(operation, sample.value) : environment.id
+    const lease = key ?? randomUUID()
+    if (this.active.has(environment.id) || this.active.has(lease)) throw new Error('Environment is already leased by another operation')
     const abort = new AbortController()
-    const combined = AbortSignal.any([signal, abort.signal])
-    let settle!: () => void
-    const done = new Promise<void>((resolve) => {
-      settle = resolve
-    })
-    this.active.set(environment.id, { project: binding.engagementId, plan: '', controller: abort, done })
+    const combined = AbortSignal.any([signal, abort.signal, AbortSignal.timeout(this.options.maxDurationMs)])
+    const settled = Promise.withResolvers<void>()
+    this.active.set(lease, { project: binding.engagementId, environment: environment.id, plan: '', controller: abort, done: settled.promise })
     try {
       combined.throwIfAborted()
-      const context = {
-        environment,
-        asset: sample.value,
-        artifacts: this.artifacts,
-        signal: combined,
-        durationMs: this.options.maxDurationMs,
-        maxOutputBytes: this.options.maxOutputBytes,
-      }
+      const context = { environment, asset: sample.value, artifacts: this.artifacts, signal: combined,
+        durationMs: this.options.maxDurationMs, maxOutputBytes: this.options.maxOutputBytes }
       const resolved = provider.resolve(operation, context)
       if (resolved.impact !== 'observe') throw new Error('Static observations cannot modify analysis state or targets')
-      const result = await provider.run(resolved, context)
+      let result: import('./providers.ts').AnalysisResult
+      try { result = await provider.run(resolved, context) }
+      catch (error) {
+        const bytes = Buffer.from(error instanceof Error ? error.message : String(error))
+          .subarray(0, Math.min(this.options.maxOutputBytes, this.options.maxArtifactBytes))
+        result = { bytes, mediaType: 'text/plain', summary: bytes.toString('utf8'), incomplete: true,
+          failure: bytes.toString('utf8'), toolVersion: 'unavailable after failure', method: 'static' }
+      }
       const artifact = await this.artifacts.put(result.bytes, result.mediaType)
       const record: SecurityRecord = {
         kind: 'evidence',
         value: evidenceSchema.parse({
-          id: randomUUID(),
-          engagementId: binding.engagementId,
-          assetId: sample.value.id,
-          title: operation.provider + ' ' + operation.operation,
-          summary: result.summary,
-          artifact,
-          provider: operation.provider,
-          operation: operation.operation,
-          toolVersion: result.toolVersion,
-          request: resolved.parameters,
+          id: randomUUID(), engagementId: binding.engagementId, assetId: sample.value.id,
+          title: operation.provider + ' ' + operation.operation, summary: result.summary,
+          artifact, provider: operation.provider, operation: operation.operation, toolVersion: result.toolVersion,
+          request: resolved.parameters, requestHash: fingerprint,
           source: { sessionId, callId, channel: callId.startsWith('operator:') ? 'operator' : 'tool' },
-          incomplete: result.incomplete || combined.aborted,
-          createdAt: Date.now(),
+          incomplete: result.incomplete || !!result.failure || combined.aborted,
+          failure: result.failure, cleanup: result.cleanup, method: result.method ?? 'static', createdAt: Date.now(),
         }),
       }
-      await this.journal.commit(sessionId + ':' + callId, undefined, { operation, artifact }, () => [record])
-      return record
+      const committed = await this.journal.commit(sessionId + ':' + callId, undefined, { operation }, () => [record])
+      const saved = committed.records.find(item => item.kind === 'evidence' &&
+        item.value.source.sessionId === sessionId && item.value.source.callId === callId && !item.value.planId)
+      if (!saved) throw new Error('Observation commit did not publish its evidence')
+      return saved
     } finally {
-      this.active.delete(environment.id)
-      settle()
+      this.active.delete(lease)
+      settled.resolve()
     }
   }
 }

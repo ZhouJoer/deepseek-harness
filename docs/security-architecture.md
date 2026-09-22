@@ -98,3 +98,11 @@ Web targets record the operator-selected lab instance, origin and path prefix. T
 The web-analyst role reads assigned evidence and proposes entry-point analysis. A separate reviewer Session records supporting/opposing evidence and uncertainty against the finding content hash. Conclusive status requires complete same-target evidence from a completed validation plan; revisions reset the finding and reject stale reviews. Reports snapshot one project revision and remain accessible through operator-level Remote reads independent of Session selection.
 
 Laboratory ownership is saved before resource creation. Restart marks unsettled generations interrupted; cleanup verifies each resource label before removal. Reset removes owned containers and networks; the next start changes instance identity. Build and lifecycle commands are operator-only. The roadmap distinguishes implemented controls from real container/model acceptance and deferred scanning providers.
+
+## Source analysis and isolated simulation
+
+A source directory is one immutable asset. Its manifest owns member paths and hashes, so cross-file observations share one asset identity. Source tools read only artifact bytes and return bounded line-addressed evidence. File, Web and source providers reject incompatible asset kinds.
+
+Offline Python and browser validation reuse plan approval, subprocess supervision, execution records and cleanup. Each plan pins its script, source manifest, image ID and resource limits. A disposable container has no network or device access; its browser runner serves snapshot files through request interception. Reports identify these observations as simulations and preserve failures rather than treating them as hardware results.
+
+Source reads can run concurrently. External providers name actual shared instances for leases, while environment lifecycle actions reject admission while that environment has active runs. Model-facing project pages and mutation receipts are bounded independently from the durable project. Child summaries are persisted on existing Session bindings after evidence scope checks.

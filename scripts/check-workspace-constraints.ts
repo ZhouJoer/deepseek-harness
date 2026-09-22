@@ -167,9 +167,9 @@ const packageFileExtras: Readonly<Record<string, readonly string[]>> = {
   // the Python/Ghidra helpers must remain available after package installation.
   '@deepseek-ai/dsh-experimental-security-analysis': [
     'lib/workbench.js', 'lib/environment.js', 'lib/ghidra.js', 'lib/frida.js',
-    'lib/android.js', 'lib/commands.js', 'lib/legacy.js',
-    'lib/model-*.js', 'lib/process-*.js', 'lib/types-*.js',
-    'resources/**/*.py', 'resources/**/*.js',
+    'lib/android.js', 'lib/commands.js', 'lib/legacy.js', 'lib/web.js', 'lib/laboratory.js', 'lib/offline.js',
+    'lib/model-*.js', 'lib/process-*.js', 'lib/types-*.js', 'lib/source-*.js', 'lib/assessment-*.js',
+    'resources/**/*.py', 'resources/**/*.js', 'resources/toolbox/Dockerfile', 'resources/offline/*',
   ],
   // The isolated Node bootstrap is a separately launched bundle.
   '@deepseek-ai/dsh-ptc-runtime-node': ['lib/process.js'],

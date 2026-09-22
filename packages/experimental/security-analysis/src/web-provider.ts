@@ -78,7 +78,7 @@ export class WebProvider implements AnalysisProvider {
   resolve(request: AnalysisOperation, context: AnalysisContext): AnalysisOperation {
     const asset = context.asset
     const target = context.environment.webTarget
-    if (!('kind' in asset) || !target || context.environment.kind !== 'docker' || !context.environment.containerId)
+    if (!('kind' in asset) || asset.kind !== 'web' || !target || context.environment.kind !== 'docker' || !context.environment.containerId)
       throw new Error('Start the managed Web laboratory before preparing a request')
     if (asset.environmentId !== context.environment.id || asset.origin !== target.origin || asset.instanceId !== target.instanceId)
       throw new Error('Laboratory identity changed; register the current target')

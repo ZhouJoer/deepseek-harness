@@ -26,7 +26,7 @@ Organize reconnaissance, surface analysis, assessment and controlled validation 
 
 Use [security-profile](../security-profile/README.md) in a dedicated `dsh` profile. Add [security-web-profile](../security-web-profile/README.md) for the conversation workbench. The default general profiles do not load these bundles.
 
-1. Create a project with its objective and configured environments. Import PE, ELF, APK or DEX files from the deployment's `importRoots`.
+1. Create a project with its objective and configured environments. Import PE, ELF, APK or DEX files, or an immutable source directory, from the deployment’s `importRoots`.
 2. Create the four-stage template for each asset. APK imports measure DEX and native library members separately and retain their parent relationship.
 3. Inspect environment health. Configure executable locations under `environments[].tools`; an installed tool is not proof that a target is accessible.
 4. Use static evidence to map entry points and assess hypotheses. Prepare a validation plan with its target, script, observations, impact, duration and cleanup policy.
@@ -37,9 +37,9 @@ The operator can also use `/security` to inspect state or `/security <JSON comma
 <a id="configure-analysis-providers"></a>
 ### Configure analysis providers
 
-The package exports separate `./web`, `./laboratory`, `./environment`, `./ghidra`, `./frida`, `./android` and `./commands` plugins. The [configuration source](src/index.ts) owns artifact, output, duration, approval lifetime and delegation limits. Only configured local, Docker and Android environments are eligible. The reverse-analysis Docker manager uses the exact installed image, bounded CPU/memory/PIDs, no network, a read-only workspace and a separate exchange directory. Docker control remains on the Host.
+The package exports separate `./offline`, `./web`, `./laboratory`, `./environment`, `./ghidra`, `./frida`, `./android` and `./commands` plugins. The [configuration source](src/index.ts) owns artifact, output, duration, approval lifetime and delegation limits. Only configured local, Docker and Android environments are eligible. Docker control remains on the Host.
 
-[GhidraMCP 1.4](https://github.com/LaurieWired/GhidraMCP/tree/1.4) requires the [managed patch](resources/ghidra/patch_upstream.py). Apply it to the pinned upstream Java file, build the extension against the corresponding Ghidra distribution, and open the imported program in the GUI. Set `DSH_GHIDRA_TOKEN`, `DSH_GHIDRA_SHA256` and `DSH_GHIDRA_PROGRAM` before launch. Configure the same token, measured hash and domain-file path under the Ghidra provider's `programs`. The patch binds a stable program, listens on loopback, authenticates every request and refuses a closed or mismatched program. GUI selection does not retarget queries. Queries, rename, comment and prototype operations use the dedicated adapter; database writes require a plan.
+[GhidraMCP 1.4](https://github.com/LaurieWired/GhidraMCP/tree/1.4) requires the [managed patch](resources/ghidra/patch_upstream.py). Apply it to the pinned upstream Java file, build the extension against the corresponding Ghidra distribution, and open the imported program in the GUI. Set `DSH_GHIDRA_TOKEN`, `DSH_GHIDRA_SHA256` `DSH_GHIDRA_PROGRAM` and `DSH_GHIDRA_PORT` before launch; port 0 selects an available port. Optional `DSH_GHIDRA_READY` names a new file that receives the actual port. Configure the same token, measured hash and domain-file path under the Ghidra provider's `programs`. The patch binds a stable program, listens on loopback, authenticates every request and refuses a closed or mismatched program. GUI selection does not retarget queries. Queries, rename, comment and prototype operations use the dedicated adapter; database writes require a plan.
 
 Frida uses official Python bindings through Harness subprocess. Configure a Python installation that contains Frida. Attach requests identify PID, name and start identity; the helper also verifies the executable hash or Android package identity. Custom scripts and spawn require a validation check. The helper unloads and detaches; it terminates only processes it spawned. A configured, hashed Java bridge bundle can be prepended before approval using `javaBridge: true`; [the entry source](resources/java_bridge_entry.js) must be bundled with `frida-compile` and `frida-java-bridge` before configuring its path, hash and version. The approved artifact contains the final script bytes.
 
@@ -50,7 +50,7 @@ JADX accepts APK/DEX assets and reports incomplete decompilation explicitly. adb
 | Tool | Operations and impact | Execution and cleanup | Verified combination |
 |---|---|---|---|
 | Built-in binary | Measured identity, bounded hex and ASCII/UTF-16LE strings | Immutable artifact reads; bounded output, no target execution | PE/ELF headers and byte-page fixtures |
-| GhidraMCP 1.4 | Bound program queries; database writes require a plan | Authenticated loopback, bounded HTTP; database mutations are not replayed | Patch applied to pinned source; GUI/extension build unverified |
+| GhidraMCP 1.4 | Bound program queries; database writes require a plan | Authenticated loopback, bounded HTTP; database mutations are not replayed | Extension built against Ghidra 11.3.2; independent ARM ELF import completed; DSH queries blocked after GUI closure |
 | Frida 17.18.0 | Process/module/export enumeration, trace, approved custom scripts and spawn | Python helper; configured duration/output bounds; unload, detach, stop owned processes | Windows local owned Python executable: normal completion and cancellation |
 | JADX | APK/DEX decompilation and source/resource extraction | Managed subprocess; bounded output and temporary-directory cleanup | Integration unverified; partial decompilation is marked incomplete |
 | Docker 29.7.2 | Start, inspect and stop an owned environment | Exact image digest, resource limits, no network, remove owned container | Local Docker Desktop with existing Kali ARM64 image: lifecycle and Python command |
@@ -67,7 +67,7 @@ The Host operator adds or removes installations in `environments[].tools` in the
 | `coordinator` | Plan, integrate and validate | All domain tools, web references, jobs/goal/todo; approved validation execution |
 | `reconnaissance` | `inventory` | Binary identity/hex/strings, Ghidra identity/functions/imports/exports/strings, fixed adb queries, environment health, evidence search |
 | `reverse-analyst` | `surface`, `assessment` | Binary inspection, all read-only Ghidra queries, JADX and fixed adb queries, environment health, evidence search |
-| `web-analyst` | `surface`, `assessment` | Assigned HTTP evidence and entry-point hypotheses; no unapproved requests |
+| `web-analyst` | `surface`, `assessment` | Assigned HTTP evidence and immutable source reads/search; no unapproved execution |
 | `researcher` | `assessment` | Project evidence, reviewed knowledge, public web search/fetch; no sample execution or static provider calls |
 | `reviewer` | `review` | Assigned evidence and knowledge retrieval; no collection, web lookup or validation execution |
 
@@ -90,6 +90,16 @@ Refinement skips unchanged inputs and merges only within one project. Structured
 The journal appends one complete command per storage-domain record. A dedicated SQLite ownership lock permits one Host per security root. Restart revokes approvals and marks unfinished executions for reconciliation; it never replays injection or process creation. Exact operation retries do not execute a second time. Use `import-legacy` to preserve a prototype JSON archive as an immutable, operator-declared record. Import the actual sample separately to obtain a measured identity; the archive is not promoted into verified evidence.
 
 -----
+
+### Source snapshots and offline checks
+
+`import-source` saves one directory asset with relative paths, SHA-256 hashes, immutable content artifacts and explicit link exclusions. `maxDerivedAssets` bounds visited entries; `maxArtifactBytes` bounds cumulative source bytes. The `source` provider offers bounded `list`, `read` and literal `search` operations. Results retain file hashes, line numbers and continuation positions. Old file assets remain readable.
+
+The `./offline` plugin accepts Python or browser scripts only through immutable approved plans. Configure a local `docker` installation and an existing image with Python, Node, Playwright and Chromium; the [image recipe](resources/offline/Dockerfile) and [browser runner](resources/offline/browser.mjs) define the runtime layout. Preparation pins the installed image ID. The provider never pulls images. Its configurable limits are `image`, `memoryMb`, `cpus`, `pids`, `temporaryMb` and `graceMs`.
+
+Each execution uses a fresh unprivileged container with no network, no devices, a read-only root and source mount, and bounded temporary storage. Browser requests are intercepted from the snapshot at `http://localhost`. Scripts inject simulated hardware, print runtime versions, events and assertions, and fail on rejected assertions. Evidence records distinguish simulation from static and device observations and retain failure and cleanup details. Container tests exercise Python and Chromium; they do not establish firmware or radio behavior. Host crashes still require operator reconciliation of remaining offline containers.
+
+Model scope and search results are paginated. Commands return bounded committed receipts rather than copying the project; callers fetch changed records afterward. Exact observation retries return the stored evidence ID. Completed child summaries remain on their Session bindings and appear in project reports; they do not become original evidence.
 
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
@@ -142,10 +152,10 @@ Tool definitions and workflow guidance remain stable. Project state enters conte
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- Ghidra installation, extension compilation, GUI launch and sample import require operator preparation. The authenticated patch has been applied to its pinned source; a real Ghidra GUI build and three-target four-stage acceptance remain unverified.
+- Ghidra installation, extension compilation, GUI launch and sample import require operator preparation. DSH function/decompilation/cross-reference acceptance remains pending; a successful import or operator probe does not establish DSH query capability.
 - Real Frida 17.18.0 observations and cleanup have been exercised on an owned Windows process. No Android device is available. The installed Kali image lacks Frida, JADX and Ghidra; its presence is not a supported analysis combination.
 - Real DeepSeek tutorial analysis exercised static evidence and child report collection, but produced incorrect ELF interpretations. Structured format parsing remains incomplete; a real-model GUI GIF is still outstanding. Keyless tests and simulated external responses are separate evidence.
-- Environment leases conservatively serialize operations, including reads. Automatic GUI provisioning, rich component/JNI linking, remote labs, semantic search, IoT specializations, fastboot writes and John password auditing are not available.
+- Immutable source and binary reads run independently. Providers identify shared external instances for exclusive leases; Ghidra leases use the actual loopback origin. Automatic GUI provisioning, rich component/JNI linking, remote labs, semantic search, device-specific IoT validation, fastboot writes and John password auditing remain unavailable.
 - Android split APK validation is refused because one imported base APK cannot establish the complete installed package identity. Local attach refuses platforms that cannot provide a start identity or executable identity.
 - Refinement processes a complete project knowledge set; exceeding `knowledgeInputBytes` fails without truncation. Automatic runs require a running Host and a configured model. Semantic equivalence is model-assessed; shared results still require operator review.
 - `/legacy` retains the isolated prototype for its recorded Sessions. Do not load it together with the workbench; both register security tool names.

@@ -106,10 +106,18 @@ Optional security profile service; default application compositions remain indep
 @Remote('execute') async execute(agent: Agent, planId: string, operationId: string, revision: number): Promise<WorkbenchView>
 
 /**
- * Read a verified artifact belonging to the selected project.
+ * Collect bounded static observations through the same authority as model tools.
+ * @param agent - authenticated project session.
+ * @param input - serialized analysis operation.
+ * @returns the committed project view.
+ */
+@Remote('observe') async observe(agent: Agent, input: string): Promise<WorkbenchView>
+
+/**
+ * Preview an artifact belonging to the selected project.
  * @param agent - authenticated session.
- * @param sha256 - evidence or script digest.
- * @returns bounded preview with a completeness flag.
+ * @param sha256 - content digest.
+ * @returns bounded bytes rendered as text.
  */
 @Remote('artifact') async artifact(agent: Agent, sha256: string): Promise<string>
 ```

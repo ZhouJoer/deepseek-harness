@@ -842,7 +842,7 @@ export interface WorkbenchConfig {
   importRoots: string[]
   /** Operator-selected execution environments; model commands cannot add environments. */
   environments: SecurityEnvironment[]
-  /** Maximum DEX and native library members extracted from one APK. */
+  /** Maximum source directory entries or members extracted from one APK. */
   maxDerivedAssets: number
   /** Maximum bytes in one imported sample or immutable artifact. */
   maxArtifactBytes: number
@@ -933,7 +933,7 @@ export interface ToolInstallation {
 }
 ```
 
-来源： [`packages/experimental/security-analysis/src/index.ts:33`](../packages/experimental/security-analysis/src/index.ts)
+来源： [`packages/experimental/security-analysis/src/index.ts:35`](../packages/experimental/security-analysis/src/index.ts)
 
 <a id="deepseek-aidsh-experimental-tool-agent-team"></a>
 

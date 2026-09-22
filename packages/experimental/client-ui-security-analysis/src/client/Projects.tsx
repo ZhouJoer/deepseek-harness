@@ -63,6 +63,13 @@ export function Projects(props: ProjectActions & PropsLocale<typeof NS>) {
       {error && <p role="alert">{error}</p>}
       <nav className={css.tabs}>{(['overview', 'assets', 'checks', 'findings', 'reviews', 'reports', 'laboratories'] as const).map(key => <button key={key} aria-pressed={tab === key} onClick={() =>{  setTab(key) }}>{t(key)}</button>)}</nav>
       {tab === 'overview' && project?.kind === 'engagement' && <article className={css.card}><h2>{project.value.title}</h2><p>{project.value.objective}</p><p>{t('revision')} {view.revision}</p></article>}
+      {tab === 'overview' && <>{view.records.filter(item => item.kind === 'binding' && item.value.report).map(item => item.kind === 'binding' && item.value.report && (
+        <article className={css.card} key={item.value.sessionId}>
+          <strong>{t('childSummary')} · {item.value.role}</strong><small>{item.value.sessionId}</small>
+          <p>{item.value.report.summary}</p><p>{item.value.report.uncertainty}</p>
+          <p>{item.value.report.evidenceIds.join(', ')}</p>
+        </article>
+      ))}</>}
       {(['assets', 'checks', 'findings', 'reviews'] as const).includes(tab as 'assets') && view.records.filter(item => item.kind === ({ assets: 'asset', checks: 'check', findings: 'finding', reviews: 'review' } as Record<string, string>)[tab]).map(item => <article className={css.card} key={'id' in item.value ? item.value.id : item.value.sessionId}>
         <pre>{JSON.stringify(item.value, null, 2)}</pre>
       </article>)}

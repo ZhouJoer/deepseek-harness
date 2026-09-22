@@ -49,6 +49,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     const actions: WorkbenchActions = {
       subscribeReset: listener => scoped.on('connection/reset', listener),
       load: id => unwrap(remote.view(id)),
+      observe: (id, input) => unwrap(remote.observe(id, input)),
       refine: id => unwrap(remote.refineKnowledge(id)),
       command: (id, command) => unwrap(remote.command(id, command)),
       configuration: id => unwrap(remote.configuration(id)),

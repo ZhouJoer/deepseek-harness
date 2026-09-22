@@ -13,6 +13,7 @@ import { KnowledgePanel } from './KnowledgePanel.tsx'
 export interface WorkbenchActions {
   /** Re-pull authoritative records after a new connection generation. */
   subscribeReset(this: void, listener: () => void): () => void
+  observe(sessionId: SessionId, input: string): Promise<WorkbenchView>
   load(sessionId: SessionId): Promise<WorkbenchView>
   refine(sessionId: SessionId): Promise<WorkbenchView>
   command(sessionId: SessionId, command: string): Promise<WorkbenchView>
@@ -268,6 +269,13 @@ export function Workbench(props: WorkbenchProps) {
                         </button>
                       </div>
                     )}
+                    {view.records.filter(item => item.kind === 'binding' && item.value.report).map(item => item.kind === 'binding' && item.value.report && (
+                      <article className={css.card} key={item.value.sessionId}>
+                        <strong>{t('childSummary')} · {item.value.role}</strong><small>{item.value.sessionId}</small>
+                        <p>{item.value.report.summary}</p><p>{item.value.report.uncertainty}</p>
+                        <p>{item.value.report.evidenceIds.join(', ')}</p>
+                      </article>
+                    ))}
                     <div className={css.metrics}>
                       {['recon', 'surface', 'assessment', 'validation'].map(phase => (
                         <article key={phase}>
@@ -297,6 +305,9 @@ export function Workbench(props: WorkbenchProps) {
                       >
                         {t('import')}
                       </button>
+                      <button disabled={busy > 0 || !project} onClick={() =>
+                        void perform(() => command({ kind: 'import-source', label: draft.name ?? '', path: draft.path ?? '' }))
+                      }>{t('importSource')}</button>
                     </div>
                     <div className={css.form}>
                       {select('environment', configuration.environments.map(item => ({ id: item.id, label: item.label })))}
@@ -308,10 +319,31 @@ export function Workbench(props: WorkbenchProps) {
                       <article key={item.value.id} className={css.card}>
                         <strong>{item.value.label}</strong>
                         <p>
-                          {'kind' in item.value ? item.value.origin + item.value.pathPrefix : item.value.format + ' · ' + t('measured')}
+                          {'kind' in item.value ? item.value.kind === 'web' ? item.value.origin + item.value.pathPrefix : t('sourceSnapshot') : item.value.format + ' · ' + t('measured')}
                         </p>
-                        <code>{'kind' in item.value ? item.value.instanceId : item.value.artifact.sha256}</code>
+                        <code>{'kind' in item.value && item.value.kind === 'web' ? item.value.instanceId : item.value.artifact.sha256}</code>
                         <small>{item.value.id}</small>
+                        {'kind' in item.value && item.value.kind === 'source' && (
+                          <div className={css.form}>
+                            {field('sourcePath')}
+                            {field('sourceLine')}
+                            {field('sourceQuery')}
+                            {(['list', 'read', 'search'] as const).map(operation => (
+                              <button key={operation}
+                                disabled={busy > 0 || !draft.environment || (operation === 'read' && !draft.sourcePath) || (operation === 'search' && !draft.sourceQuery)}
+                                onClick={() => void perform(async () => {
+                                  const parameters = operation === 'list' ? {} : operation === 'read'
+                                    ? { path: draft.sourcePath, startLine: Number(draft.sourceLine || 1) }
+                                    : { query: draft.sourceQuery, ...(draft.sourcePath ? { path: draft.sourcePath } : {}) }
+                                  const next = await props.observe(sessionId, JSON.stringify({
+                                    provider: 'source', operation, assetId: item.value.id,
+                                    environmentId: draft.environment, parameters, impact: 'observe',
+                                  }))
+                                  if (activeSession.current === sessionId) { setView(next); setTab('evidence') }
+                                })}>{t(operation === 'list' ? 'inspectSource' : operation === 'read' ? 'readSource' : 'searchSource')}</button>
+                            ))}
+                          </div>
+                        )}
                         <button
                           disabled={busy > 0}
                           onClick={() => void perform(() => command({ kind: 'template', assetId: item.value.id }))}
@@ -658,6 +690,11 @@ export function Workbench(props: WorkbenchProps) {
                           {item.kind === 'evidence' ? (
                             <>
                               <p>{item.value.summary}</p>
+                              {item.value.method && <p>{t(item.value.method === 'static' ? 'staticObservation' : item.value.method === 'simulation' ? 'offlineSimulation' : 'deviceObservation')}</p>}
+                              {item.value.provider === 'source' && <code>{JSON.stringify(item.value.request)}</code>}
+                              {item.value.failure && <p className={css.error}>{item.value.failure}</p>}
+                              {item.value.cleanup && <p>{t('cleanup')}: {item.value.cleanup}</p>}
+                              <small>{item.value.toolVersion}</small>
                               {item.value.incomplete && <p className={css.error}>{t('incomplete')}</p>}
                               <button
                                 onClick={() =>

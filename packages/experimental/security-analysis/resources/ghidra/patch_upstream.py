@@ -86,6 +86,17 @@ def patch(source: bytes) -> str:
         server = HttpServer.create(new InetSocketAddress("127.0.0.1", port), 0);
         dshContext("/dsh/identity", exchange -> {});
 ''')
+    text = text.replace("int port = options.getInt(PORT_OPTION_NAME, DEFAULT_PORT);",
+        'int port = Integer.parseInt(java.util.Objects.requireNonNull(System.getenv("DSH_GHIDRA_PORT"), "DSH_GHIDRA_PORT"));')
+    text = text.replace("        server.start();", r"""
+        server.start();
+        String readyPath = System.getenv("DSH_GHIDRA_READY");
+        if (readyPath != null) {
+            java.nio.file.Files.writeString(java.nio.file.Path.of(readyPath),
+                Integer.toString(server.getAddress().getPort()), StandardCharsets.UTF_8,
+                java.nio.file.StandardOpenOption.CREATE_NEW);
+        }
+""")
     # The inserted helper keeps the real createContext call.
     before, body = text.split("    private void startServer()", 1)
     body = body.replace("server.createContext(", "dshContext(")

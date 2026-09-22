@@ -67,6 +67,10 @@
     "./laboratory": {
       "types": "./lib/types/laboratory.d.ts",
       "default": "./lib/laboratory.js"
+    },
+    "./offline": {
+      "types": "./lib/types/offline-provider.d.ts",
+      "default": "./lib/offline.js"
     }
   },
   "files": [
@@ -78,20 +82,24 @@
     "lib/android.js",
     "lib/commands.js",
     "lib/legacy.js",
+    "lib/web.js",
+    "lib/laboratory.js",
+    "lib/offline.js",
     "lib/model-*.js",
     "lib/process-*.js",
     "lib/types-*.js",
+    "lib/source-*.js",
+    "lib/assessment-*.js",
     "resources/**/*.py",
     "resources/**/*.js",
+    "resources/toolbox/Dockerfile",
+    "resources/offline/*",
     "lib/types/**/*.js",
     "lib/types/**/*.d.ts",
     "lib/typert.host.js",
     "lib/typert.host.d.ts",
     "lib/typert.remote-client.js",
-    "lib/typert.remote-client.d.ts",
-    "lib/web.js",
-    "lib/laboratory.js",
-    "resources/toolbox/Dockerfile"
+    "lib/typert.remote-client.d.ts"
   ],
   "license": "MIT",
   "dependencies": {

@@ -6,6 +6,7 @@ import type { AnalysisOperation } from './model.ts'
 
 /** Built-in identity, byte-view and string observations; never loads sample code. */
 export class BinaryProvider implements AnalysisProvider {
+  resourceKey(): null { return null }
   readonly id = 'binary'
   readonly inputGuide = 'identity requires {}. hex and strings accept byte offset and length; length defaults to maxOutputBytes/8 and cannot exceed it. strings also accepts minLength (default 4), encoding ascii or utf16le (default ascii); only printable ASCII characters are extracted. Overlap pages to check strings crossing a page edge. Input is the immutable imported artifact; no executable is needed.'
   readonly operations = ['identity', 'hex', 'strings']

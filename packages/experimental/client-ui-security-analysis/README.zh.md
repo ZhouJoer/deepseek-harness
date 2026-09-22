@@ -30,6 +30,8 @@ kind: "package-reference"
 
 -----
 
+源码目录资产支持在会话工作台清点文件、按行读取和字面文本搜索。证据卡片标记静态观察、离线模拟及设备验证，并显示失败与清理详情。项目总览和报告保留已完成子 Session 摘要；原始子任务交互仍通过 Session 导航查看。
+
 <a id="understand-the-implementation"></a>
 ## 实现
 

@@ -26,7 +26,7 @@ kind: "package-reference"
 
 在专用 `dsh` profile 中使用 [security-profile](../security-profile/README.zh.md)，添加 [security-web-profile](../security-web-profile/README.zh.md) 即可打开会话内工作台。默认通用 profile 不加载这些组合。
 
-1. 创建项目，填写目标并选择已配置环境。从部署允许的 `importRoots` 导入 PE、ELF、APK 或 DEX。
+1. 创建项目并指定目标和已配置环境。从部署的 `importRoots` 导入 PE、ELF、APK、DEX 文件，或不可变源码目录。
 2. 为每个资产生成四阶段检查模板。APK 导入会分别测量 DEX 和 native 库，并保存父子关系。
 3. 检查环境健康状态。在 `environments[].tools` 配置可执行文件；工具已安装不代表目标当前可访问。
 4. 根据静态证据整理入口并评估假设，准备包含目标、脚本、预期观察、影响、时限及清理方式的验证计划。
@@ -37,9 +37,9 @@ kind: "package-reference"
 <a id="configure-analysis-providers"></a>
 ### 配置分析 provider
 
-包分别导出 `./web`、`./laboratory`、`./environment`、`./ghidra`、`./frida`、`./android` 和 `./commands` 插件。[配置源码](src/index.ts) 定义制品、输出、时长、批准有效期和委派限额。只允许已配置的本机、Docker 和 Android 环境。Docker 使用指定的已安装镜像，限制 CPU、内存和 PID，禁用网络，并挂载只读工作目录及独立交换目录。Docker 控制权保留在 Host。
+包分别导出 `./offline`、`./web`、`./laboratory`、`./environment`、`./ghidra`、`./frida`、`./android` 和 `./commands` 插件。[配置源码](src/index.ts) 定义制品、输出、时长、审批有效期和委派限制。仅允许已配置的本地、Docker 和 Android 环境；Docker 控制留在 Host。
 
-[GhidraMCP 1.4](https://github.com/LaurieWired/GhidraMCP/tree/1.4) 需要应用[受管理补丁](resources/ghidra/patch_upstream.py)。对固定上游 Java 文件应用补丁，使用对应 Ghidra 发行版构建扩展，然后在 GUI 打开导入的程序。启动前设置 `DSH_GHIDRA_TOKEN`、`DSH_GHIDRA_SHA256` 和 `DSH_GHIDRA_PROGRAM`。在 Ghidra provider 的 `programs` 中配置相同 token、实测哈希和 domain-file 路径。补丁绑定稳定程序，只监听本地地址，认证每个请求，并拒绝已关闭或身份不符的程序。切换 GUI 当前程序不会改变查询目标。查询、改名、注释及原型操作走专用适配器；数据库写入需要计划。
+[GhidraMCP 1.4](https://github.com/LaurieWired/GhidraMCP/tree/1.4) 需要应用[受管理补丁](resources/ghidra/patch_upstream.py)。对固定上游 Java 文件应用补丁，使用对应 Ghidra 发行版构建扩展，然后在 GUI 打开导入的程序。启动前设置 `DSH_GHIDRA_TOKEN`、`DSH_GHIDRA_SHA256` 、`DSH_GHIDRA_PROGRAM` 和 `DSH_GHIDRA_PORT`；端口 0 选择空闲端口。可选 `DSH_GHIDRA_READY` 指定保存实际端口的新文件。在 Ghidra provider 的 `programs` 中配置相同 token、实测哈希和 domain-file 路径。补丁绑定稳定程序，只监听本地地址，认证每个请求，并拒绝已关闭或身份不符的程序。切换 GUI 当前程序不会改变查询目标。查询、改名、注释及原型操作走专用适配器；数据库写入需要计划。
 
 Frida 通过 Harness subprocess 使用官方 Python bindings，需要配置已安装 Frida 的 Python。attach 请求明确 PID、名称和启动身份；helper 还核对可执行文件哈希或 Android 包身份。自定义脚本与 spawn 必须属于验证阶段。helper 卸载脚本并 detach，只终止自己启动的进程。配置带哈希的 Java bridge bundle 后，可用 `javaBridge: true` 在批准前拼入脚本；应先用 `frida-compile` 和 `frida-java-bridge` 打包[入口源码](resources/java_bridge_entry.js)，再配置路径、哈希及版本。批准的制品保存最终脚本字节。
 
@@ -50,7 +50,7 @@ JADX 接受 APK/DEX，并明确标记不完整反编译。adb 只操作指定设
 | 工具 | 操作及影响 | 执行与清理 | 已验证组合 |
 |---|---|---|---|
 | 内置二进制检查 | 实测身份、有界十六进制和 ASCII/UTF-16LE 字符串 | 读取不可变制品；限制输出，不执行目标 | PE/ELF 头与字节分页 fixture |
-| GhidraMCP 1.4 | 绑定程序查询；分析数据库修改需要计划 | 经认证的本地 HTTP、输出及时限约束；不重放数据库修改 | 已对固定源码应用补丁；GUI/扩展构建未验证 |
+| GhidraMCP 1.4 | 绑定程序查询；数据库写操作需要计划 | 认证回环 HTTP、有界响应；不重放数据库修改 | 已针对 Ghidra 11.3.2 构建扩展并完成独立 ARM ELF 导入；GUI 关闭后的 DSH 查询被阻塞 |
 | Frida 17.18.0 | 进程、模块、导出枚举，trace，经批准的自定义脚本及 spawn | Python helper；配置时限及输出限额；卸载、detach、停止本任务创建的进程 | Windows 本机自有 Python 可执行文件：正常完成与取消 |
 | JADX | APK/DEX 反编译、源码及资源提取 | 受管理子进程；限制输出并清理临时目录 | 集成未验证；部分反编译结果标记为不完整 |
 | Docker 29.7.2 | 启动、检查、停止本任务拥有的环境 | 固定镜像摘要、资源限制、无网络、移除自有容器 | 本机 Docker Desktop 与已有 Kali ARM64 镜像：生命周期及 Python 命令 |
@@ -67,7 +67,7 @@ Host 操作者在[示例 overlay](../../../apps/cli/config/examples/security-ana
 | `coordinator` | 规划、汇总与验证 | 全部领域工具、网页资料、jobs/goal/todo；执行已批准的验证计划 |
 | `reconnaissance` | `inventory` | 二进制身份/十六进制/字符串，Ghidra 身份/函数/导入/导出/字符串，固定 adb 查询，环境检查，证据检索 |
 | `reverse-analyst` | `surface`、`assessment` | 二进制检查、全部只读 Ghidra 查询、JADX 和固定 adb 查询、环境检查、证据检索 |
-| `web-analyst` | `surface`、`assessment` | 指定 HTTP 证据与入口假设；不能发起未经批准的请求 |
+| `web-analyst` | `surface`、`assessment` | 已分配的 HTTP 证据与不可变源码读取、搜索；不得执行未审批操作 |
 | `researcher` | `assessment` | 项目证据、已审核知识、公开网页搜索与读取；不能执行样本或调用静态 provider |
 | `reviewer` | `review` | 指定资产的证据与知识检索；不能采集、访问网页或执行验证 |
 
@@ -90,6 +90,16 @@ Host 运行期间，知识整理按 `knowledgeIntervalMs` 定期执行（默认 
 日志以一个 storage-domain 记录追加一个完整命令。独立 SQLite 占用锁保证每个安全目录只有一个 Host。重启撤销批准，并将未结算执行标记为待核对，不会重放注入或进程创建。相同操作重试不会再次执行。`import-legacy` 将原型 JSON 归档保留为不可变的用户声明记录；必须另行导入实际样本才能获得实测身份，原归档不会提升为已验证证据。
 
 -----
+
+### 源码快照与离线检查
+
+`import-source` 将目录保存为一个资产，包含相对路径、SHA-256 哈希、不可变内容制品和明确的链接排除记录。`maxDerivedAssets` 限制遍历条目，`maxArtifactBytes` 限制源码总字节数。`source` provider 提供有界的 `list`、`read` 和字面文本 `search` 操作；结果保留文件哈希、行号和续读位置。旧文件资产仍可读取。
+
+`./offline` 插件仅通过已审批的不可变计划接收 Python 或浏览器脚本。配置本地 `docker` 和包含 Python、Node、Playwright、Chromium 的现有镜像；[镜像配方](resources/offline/Dockerfile) 与[浏览器运行器](resources/offline/browser.mjs) 定义运行时布局。准备阶段固定已安装镜像 ID，provider 不拉取镜像。可配置限制为 `image`、`memoryMb`、`cpus`、`pids`、`temporaryMb` 和 `graceMs`。
+
+每次执行使用新的非特权容器，禁用网络和设备访问，根目录与源码挂载只读，临时存储有界。浏览器请求从快照拦截到 `http://localhost`。脚本注入模拟硬件，打印运行时版本、事件与断言，并在断言失败时返回失败。证据区分模拟、静态和设备观察，保留失败及清理详情。容器测试覆盖 Python 和 Chromium，但不能证明固件或无线行为；Host 崩溃后仍需操作者核对残留离线容器。
+
+模型的项目视图与搜索结果分页返回。命令返回有界的已提交确认，调用方随后读取变更记录。完全相同的观察重试返回已保存证据 ID。已完成子任务的摘要保留在 Session 绑定并进入项目报告，不会成为原始证据。
 
 <a id="understand-the-implementation"></a>
 ## 实现
@@ -121,6 +131,7 @@ Host 运行期间，知识整理按 `knowledgeIntervalMs` 定期执行（默认 
 独立复核记录绑定发现内容、同目标证据和复核子 Session。报告将项目修订保存为含证据引用的 Markdown 与 JSON。确认/反驳须具备完整验证计划证据和独立复核，调用方不能在新发现中直接设置这些结论。生成报告只记录当前结论，不表示覆盖完整。
 
 <a id="model-experience"></a>
+
 ## 模型体验
 
 ### 安全上下文
@@ -141,10 +152,10 @@ Host 运行期间，知识整理按 `knowledgeIntervalMs` 定期执行（默认 
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- Ghidra 安装、扩展编译、GUI 启动和程序导入仍需要用户准备。认证补丁已在固定源码上应用验证；真实 Ghidra GUI 构建及三类目标完整四阶段验收尚未完成。
+- Ghidra 安装、扩展编译、GUI 启动和样本导入需要操作者准备。DSH 函数、反编译和交叉引用验收仍待完成；导入成功或操作者探查不能证明 DSH 查询能力。
 - 已在本任务创建的 Windows 进程上实际验证 Frida 17.18.0 观察与清理。目前没有 Android 设备；现有 Kali 镜像缺少 Frida、JADX 和 Ghidra，镜像存在不等于分析环境受支持。
 - 真实 DeepSeek 教程分析已跑通静态证据和子 agent 报告回收，但出现错误的 ELF 解读。结构化格式解析尚未完成，真实模型 GUI GIF 仍待录制。keyless 测试与外部响应模拟分别作为证据。
-- 环境租约保守地串行化操作，包括读取。自动 GUI 部署、完整组件/JNI 关联、远程实验室、语义检索、IoT 专项、fastboot 写设备及 John 密码审计尚不可用。
+- 不可变源码和二进制读取可独立运行。Provider 标识共享外部实例并使用独占租约；Ghidra 按实际回环地址租约。自动 GUI 部署、丰富的组件/JNI 关联、远程实验室、语义搜索、设备专属 IoT 验证、fastboot 写入和 John 密码审计仍不可用。
 - Android split APK 验证会被拒绝，因为单个导入的 base APK 不能证明完整安装包身份。本机 attach 会拒绝无法提供启动身份或可执行文件身份的平台。
 - 整理处理项目的完整知识集合；超过 `knowledgeInputBytes` 时直接失败，不截断内容。自动任务需要 Host 持续运行且已配置模型。语义等价由模型判断，共享结果仍需用户审核。
 - `/legacy` 为已录制 Session 保留隔离的原型。不能与工作台一起加载，两者注册相同的安全工具名。

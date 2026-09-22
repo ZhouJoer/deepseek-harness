@@ -36,6 +36,15 @@ export function projectMarkdown(records: SecurityRecord[], revision: number): st
   for (const item of records) if (item.kind === 'execution' || item.kind === 'laboratory') lines.push('- ' + clean(item.value.id) + ': ' + clean(item.kind === 'execution' ? item.value.status : item.value.state) + ' — ' + clean(item.value.detail))
   lines.push('', '## Evidence index', '', '| Evidence | Target | Plan | SHA-256 | Incomplete |', '| --- | --- | --- | --- | --- |')
   for (const item of records) if (item.kind === 'evidence') lines.push('| ' + [item.value.id, item.value.assetId, item.value.planId ?? 'none', item.value.artifact.sha256, String(item.value.incomplete)].join(' | ') + ' |')
+  lines.push('', '## Observation methods', '')
+  for (const item of records) if (item.kind === 'evidence') lines.push('- ' + clean(item.value.id) + ': ' +
+    (item.value.method ?? 'unspecified') + '; ' + clean(item.value.toolVersion) +
+    (item.value.failure ? '; failure: ' + clean(item.value.failure) : '') +
+    (item.value.cleanup ? '; cleanup: ' + clean(item.value.cleanup) : ''))
+  lines.push('', '## Child Session summaries', '')
+  for (const item of records) if (item.kind === 'binding' && item.value.report) lines.push(
+    '- ' + clean(item.value.sessionId) + ' (' + item.value.role + '): ' + clean(item.value.report.summary) +
+    '; evidence: ' + item.value.report.evidenceIds.join(', ') + '; uncertainty: ' + clean(item.value.report.uncertainty))
   lines.push('', '## Independent reviews', '')
   for (const item of records) if (item.kind === 'review') lines.push('- ' + clean(item.value.id) + ': ' + item.value.verdict + '; finding ' + clean(item.value.findingId) + ' @ ' + item.value.findingHash + '; reviewer ' + clean(item.value.reviewerSessionId) + '; ' + clean(item.value.explanation) + '; uncertainty: ' + clean(item.value.uncertainty))
   lines.push('')

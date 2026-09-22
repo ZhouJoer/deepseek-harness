@@ -75,3 +75,11 @@ The sidebar **Security analysis** entry opens persistent projects independently 
 6. Generate a report under **Reports**. Markdown and JSON remain readable from the project sidebar after refresh; Markdown includes conclusions, coverage, blockers, cleanup details and an evidence index.
 
 Nuclei and Metasploit execution, reviewed module catalogues, Vulhub orchestration and arbitrary external targets are unavailable. The build recipe installs their binaries, which does not establish usable provider support. John accepts only the fixed capability test; offline password auditing is deferred. If a build fails, inspect its recorded error and stop owned resources before retrying. Host restart marks interrupted labs for reconciliation and never replays a check.
+
+## Source and static frontend projects
+
+Import the authorized directory with **Import source directory** under **Assets**. Select its environment, then list files, read a relative path from a chosen line, or search literal text. Evidence previews include member hashes, line numbers and continuation positions; changing the original directory does not change the imported snapshot.
+
+For device applications, assign frontend and device logic questions separately. Treat Web Bluetooth and GATT as device protocols rather than assuming an HTTP service. Have DSH prepare Python or browser scripts with simulated clocks, storage, WLAN or GATT. Review the exact script and pinned image before approval. Missing images or runtimes are capability blockers.
+
+Keep successful assertions, failures, skipped scenarios and simulation assumptions in the report. An independent reviewer must read original evidence; a child summary alone cannot establish a finding. Hardware-dependent conclusions remain pending until a separate authorized device test. Ghidra capability checks can be deferred independently of source analysis.

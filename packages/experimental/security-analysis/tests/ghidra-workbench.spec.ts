@@ -66,3 +66,46 @@ it('retains explicit truncation and refuses pagination above the configured budg
   request.parameters.limit = 101
   expect(() => provider.resolve(request, context)).toThrow(/limit/)
 })
+
+it.each([hash + '\n/other/program\nARM', 'b'.repeat(64) + '\n' + binding.programId + '\nARM'])('rejects mismatched identity response fields', async (body) => {
+  vi.spyOn(globalThis, 'fetch').mockResolvedValue(response(body))
+  const { provider, context, request } = fixture('identity')
+  context.maxOutputBytes = 512
+  await expect(provider.run(provider.resolve(request, context), context)).rejects.toThrow(/another sample/)
+})
+it('uses the actual Ghidra origin as the exclusive resource', () => {
+  const { provider, context, request } = fixture()
+  expect(provider.resourceKey(request, context.asset)).toBe('ghidra:http://127.0.0.1:8080')
+  expect(provider.resourceKey({ ...request, environmentId: 'another' }, context.asset)).toBe(provider.resourceKey(request, context.asset))
+})
+it('propagates cancellation to the active request and reports closed servers', async () => {
+  const { provider, context, request } = fixture()
+  const abort = new AbortController()
+  const entered = Promise.withResolvers<undefined>()
+  context.signal = abort.signal
+  const fetch = vi.spyOn(globalThis, 'fetch').mockImplementation(async (_input, options) => {
+    entered.resolve(undefined)
+    return new Promise((_resolve, reject) =>{  options!.signal!.addEventListener('abort', () =>{  reject(options!.signal!.reason as Error) }, { once: true }) })
+  })
+  const pending = expect(provider.run(provider.resolve(request, context), context)).rejects.toThrow('Operator cancelled')
+  await entered.promise
+  abort.abort(new Error('Operator cancelled'))
+  await pending
+  fetch.mockRejectedValueOnce(new TypeError('fetch failed'))
+  await expect(provider.run(provider.resolve(request, context), { ...context, signal: new AbortController().signal })).rejects.toThrow('fetch failed')
+})
+it('aborts an unresponsive Ghidra request at its deadline', async () => {
+  const { provider, context, request } = fixture()
+  const timeout = new AbortController()
+  const deadline = vi.spyOn(AbortSignal, 'timeout').mockReturnValue(timeout.signal)
+  const entered = Promise.withResolvers<undefined>()
+  vi.spyOn(globalThis, 'fetch').mockImplementation(async (_input, options) => {
+    entered.resolve(undefined)
+    return new Promise((_resolve, reject) =>{  options!.signal!.addEventListener('abort', () =>{  reject(options!.signal!.reason as Error) }, { once: true }) })
+  })
+  const pending = expect(provider.run(provider.resolve(request, context), context)).rejects.toThrow('deadline')
+  await entered.promise
+  timeout.abort(new Error('deadline'))
+  await pending
+  expect(deadline).toHaveBeenCalledWith(context.durationMs)
+})

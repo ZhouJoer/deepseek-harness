@@ -13,7 +13,7 @@ const roleTools: Record<SecurityRole, readonly string[]> = {
     'todo_write', 'get_goal', 'create_goal', 'update_goal', 'job_list', 'job_output', 'job_kill'],
   reconnaissance: [...evidenceTools, 'security_environment', 'security_static'],
   'reverse-analyst': [...evidenceTools, 'security_environment', 'security_static'],
-  'web-analyst': evidenceTools,
+  'web-analyst': [...evidenceTools, 'security_static'],
   researcher: researchTools,
   reviewer: [...evidenceTools, 'security_review'],
 }
@@ -33,7 +33,10 @@ export function toolsForRole(role: SecurityRole | undefined): readonly string[] 
  * @returns whether the role can collect this observation.
  */
 export function canObserve(role: SecurityRole, provider: string, operation: string): boolean {
-  if (role === 'researcher' || role === 'reviewer' || role === 'web-analyst') return false
+  if (role === 'researcher' || role === 'reviewer') return false
+  if (provider === 'source') return ['list', 'read', 'search'].includes(operation) &&
+    (role !== 'reconnaissance' || operation !== 'read')
+  if (role === 'web-analyst') return false
   if (!['binary', 'ghidra', 'android'].includes(provider)) return false
   if (provider === 'ghidra' && !['identity', 'functions', 'imports', 'exports', 'strings', 'decompile', 'disassemble', 'xrefs-to', 'xrefs-from'].includes(operation)) return false
   if (provider === 'android' && !['device', 'packages', 'package-info', 'decompile'].includes(operation)) return false
@@ -57,8 +60,8 @@ const assignments: Record<DelegatedRole, readonly [SecurityTask, ...SecurityTask
 }
 const rolePrompts: Record<DelegatedRole, string> = {
   reconnaissance: 'Inventory the assigned immutable sample: identity, composition, architecture clues, dependencies and exposed names. Record unknowns. Do not infer reachable vulnerabilities from strings or imported symbols.',
-  'reverse-analyst': 'Follow entry points, parsing, trust checks and data flow in the assigned sample. Cite function addresses and evidence IDs. Distinguish decompiler guesses from observed instructions. Keep JNI links tentative until module identity and signatures agree.',
-  'web-analyst': 'Analyze the assigned laboratory endpoint using collected request and response evidence. Map URLs, methods and parameters. Propose bounded HTTP or approved-template checks through the coordinator. Do not infer a confirmed vulnerability from a product version or scanner match.',
+  'reverse-analyst': 'Follow entry points, parsing, trust checks and data flow in the assigned sample or source snapshot. Cite file hashes and line numbers for source, or function addresses for binaries, with evidence IDs. Distinguish decompiler guesses from observed instructions. Keep JNI links tentative until module identity and signatures agree.',
+  'web-analyst': 'Analyze the assigned frontend source snapshot or laboratory endpoint. Inspect actual browser APIs, protocol messages, rendering, asynchronous state and inputs; distinguish BLE and other device protocols from HTTP. Cite source hashes and lines or request and response evidence. Propose bounded HTTP or approved-template checks through the coordinator. Do not infer a confirmed vulnerability from a product version or scanner match.',
   researcher: 'Search existing project evidence and reviewed experience first, then public primary sources. Report affected versions, prerequisites, publication dates and source URLs. A CVE match or shared method is reference material, not a finding in this sample. Never send sample contents, hashes or private identifiers to public search.',
   reviewer: 'Independently assess the evidence, including contrary observations and missing coverage. Check sample identity, completeness, reproduction conditions and cleanup. Reject unsupported confirmation; report inconclusive when proof is absent. Use security_scope to obtain finding hashes. Persist each review through security_review with the exact finding hash, supporting and opposing evidence, verdict and uncertainty. Request further collection through nextSteps. Do not act as the operator or grant approval.',
 }

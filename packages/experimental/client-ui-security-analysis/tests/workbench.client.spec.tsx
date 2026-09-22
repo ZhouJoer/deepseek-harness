@@ -16,6 +16,7 @@ const project = recordSchema.parse({ kind: 'engagement', value: { id: 'project',
 const view: WorkbenchView = { revision: 8, records: [project] }
 function actions(overrides: Partial<WorkbenchActions> = {}) {
   return {
+    observe: vi.fn(async () => view),
     subscribeReset: () => () => {},
     refine: vi.fn(async () => view), load: vi.fn(async () => view), command: vi.fn(async () => view),
     configuration: vi.fn(async () => JSON.stringify({ environments: [{ id: 'local', label: 'Lab', tools: [], kind: 'local' }], providers: [] })),
@@ -115,4 +116,26 @@ it('saves retrospective fields without evidence or reasoning fields', async () =
   expect((JSON.parse(vi.mocked(api.command).mock.calls[0]![1]) as { action: unknown }).action).toEqual({ kind: 'remember', entry: {
     category: 'retrospective', title: 'Parser review', summary: 'Found a length check gap', conditions: 'Binary parser', actions: ['Check bytes'], pitfalls: ['Trusted input sizes'], tags: [],
   } })
+})
+
+it('reads an immutable source location and shows its observation method', async () => {
+  const asset = recordSchema.parse({ kind: 'asset', value: { kind: 'source', id: 'source', engagementId: 'project', label: 'Sources',
+    artifact: { sha256: 'a'.repeat(64), size: 100, mediaType: 'application/json' }, identity: 'measured' } })
+  const evidence = recordSchema.parse({ kind: 'evidence', value: { id: 'observation', engagementId: 'project', assetId: 'source',
+    title: 'Read lines', summary: 'Saved source lines', provider: 'source', operation: 'read', toolVersion: 'source v1',
+    request: { path: 'app.py', startLine: 9 }, source: { sessionId: 'parent', callId: 'read' },
+    artifact: { sha256: 'b'.repeat(64), size: 100, mediaType: 'application/json' }, method: 'static', incomplete: false, createdAt: 1 } })
+  const api = actions({ load: vi.fn(async () => ({ ...view, records: [project, asset] })),
+    observe: vi.fn(async () => ({ revision: 9, records: [project, asset, evidence] })) })
+  render(<Workbench {...props(api)} />)
+  fireEvent.click(screen.getByRole('button', { name: '安全分析' }))
+  await screen.findByText('Review the sample')
+  fireEvent.click(screen.getByRole('button', { name: '资产' }))
+  fireEvent.change(screen.getByLabelText('运行环境'), { target: { value: 'local' } })
+  fireEvent.change(screen.getByLabelText('快照中的相对文件路径'), { target: { value: 'app.py' } })
+  fireEvent.change(screen.getByLabelText('起始行号'), { target: { value: '9' } })
+  fireEvent.click(screen.getByRole('button', { name: '按行读取' }))
+  await screen.findByText('静态观察')
+  expect(JSON.parse(vi.mocked(api.observe).mock.calls[0]![1])).toMatchObject({
+    provider: 'source', operation: 'read', assetId: 'source', parameters: { path: 'app.py', startLine: 9 } })
 })

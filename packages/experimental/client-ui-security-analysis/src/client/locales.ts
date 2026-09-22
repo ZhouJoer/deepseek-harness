@@ -2,6 +2,18 @@
 export const NS = 'security-workbench'
 /** Chinese operator-facing security copy. */
 export const zh = {
+  importSource: '导入源码目录',
+  sourceSnapshot: '不可变源码快照',
+  childSummary: '子任务摘要',
+  inspectSource: '清点源码文件',
+  sourcePath: '快照中的相对文件路径',
+  sourceLine: '起始行号',
+  sourceQuery: '源码搜索文本',
+  readSource: '按行读取',
+  searchSource: '搜索源码',
+  staticObservation: '静态观察',
+  offlineSimulation: '离线模拟',
+  deviceObservation: '设备验证',
   webLabel: 'Web 目标名称',
   pathPrefix: '允许的路径前缀',
   registerWeb: '登记已启动靶场目标',
@@ -150,6 +162,18 @@ export const zh = {
 export type SecurityKey = keyof typeof zh
 /** English operator-facing security copy. */
 export const en: Record<SecurityKey, string> = {
+  importSource: 'Import source directory',
+  sourceSnapshot: 'Immutable source snapshot',
+  childSummary: 'Child task summary',
+  inspectSource: 'Inventory source files',
+  sourcePath: 'Relative file path in snapshot',
+  sourceLine: 'Starting line',
+  sourceQuery: 'Source search text',
+  readSource: 'Read lines',
+  searchSource: 'Search source',
+  staticObservation: 'Static observation',
+  offlineSimulation: 'Offline simulation',
+  deviceObservation: 'Device validation',
   webLabel: 'Web target name',
   pathPrefix: 'Allowed path prefix',
   registerWeb: 'Register running lab target',

@@ -6,7 +6,7 @@ import Schema from '@deepseek-ai/schemastery'
 import { z } from 'zod'
 import type {} from './workbench/index.ts'
 import type { AnalysisContext, AnalysisProvider } from './workbench/providers.ts'
-import { operationSchema, type AnalysisOperation } from './workbench/model.ts'
+import { operationSchema, type AnalysisOperation, type Asset } from './workbench/model.ts'
 
 /** One managed GUI program; credentials never enter tool results. */
 export interface GhidraBinding {
@@ -89,6 +89,11 @@ export class GhidraProvider implements AnalysisProvider {
       )
         throw new Error('Ghidra requires an authenticated literal loopback origin')
     }
+  }
+  resourceKey(_request: AnalysisOperation, asset: Asset): string {
+    const binding = this.programs.find(program => program.sha256 === fileAsset(asset).artifact.sha256)
+    if (!binding) throw new Error('No managed Ghidra program matches this sample')
+    return 'ghidra:' + new URL(binding.baseUrl).origin
   }
   resolve(request: AnalysisOperation, context: AnalysisContext): AnalysisOperation {
     if (!this.operations.includes(request.operation)) throw new Error('Unsupported Ghidra operation')
@@ -190,13 +195,14 @@ export class GhidraProvider implements AnalysisProvider {
     const bytes = Buffer.concat(chunks)
     const text = bytes.toString('utf8')
     if (/^(Error|Failed|No program)/iu.test(text)) throw new Error('Ghidra analysis failed: ' + text)
-    if (request.operation === 'identity' && text.split('\n')[0] !== binding.sha256)
+    if (request.operation === 'identity' && (text.split('\n')[0] !== binding.sha256 || text.split('\n')[1] !== binding.programId))
       throw new Error('Ghidra returned another sample identity')
     return {
       bytes,
       mediaType: 'text/plain',
       summary: text.slice(0, 4096),
       incomplete,
+      method: 'static' as const,
       toolVersion: 'Ghidra ' + version + '; GhidraMCP 1.4 + dsh binding v1',
     }
   }
