@@ -26,7 +26,7 @@ View security projects, checks, environments and evidence inside the conversatio
 
 Compose `@deepseek-ai/dsh-base`, an application bundle, and `@deepseek-ai/dsh-experimental-security-profile` in a dedicated profile. For Web, append `@deepseek-ai/dsh-experimental-security-web-profile`. Launch through `dsh --profile <name>`. See [security analysis](../security-analysis/README.md).
 
-Open Security analysis above the message composer, including in a new empty Session. Create or select a project, import a sample and create its check template. Preview, approve, revoke and execute plans under Findings. Search evidence and review shared knowledge under Knowledge. Knowledge text preserves line breaks for reading project recaps. Project stop waits for cleanup; refresh after a disconnect to reload authoritative state.
+Open Security analysis above the message composer, including in a new empty Session. Create or select a project, import a sample and create its check template. Preview, approve, revoke and execute plans under Findings. Use Retrospectives and experience to switch categories, search concise cards, expand recommendations, add structured notes or refine existing notes. The sidebar separates Material search and reviewed shared knowledge from the notes. Legacy prose stays hidden until refinement. The maintenance bar reports automatic refinement availability and the last result. Project stop waits for cleanup; refresh after a disconnect to reload authoritative state.
 
 -----
 

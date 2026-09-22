@@ -26,6 +26,13 @@ Optional security profile service; default application compositions remain indep
 
 ```ts cordis-catalog
 /**
+ * Refine and deduplicate the selected project's notes using a logged model Session.
+ * @param agent - authenticated coordinating Session.
+ * @returns the committed project view after refinement.
+ */
+@Remote('refineKnowledge') async refineProjectKnowledge(agent: Agent): Promise<WorkbenchView>
+
+/**
  * List persistent security projects for the authenticated operator.
  * @returns project identities and objectives.
  */

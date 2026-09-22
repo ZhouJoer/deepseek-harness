@@ -854,6 +854,16 @@ export interface WorkbenchConfig {
   maxConcurrentDelegations: number
   /** Lifetime of an operator approval in milliseconds. */
   approvalTtlMs: number
+  /** Periodic refinement cadence; zero disables automatic runs. */
+  knowledgeIntervalMs: number
+  /** Maximum complete refinement prompt size. */
+  knowledgeInputBytes: number
+  /** Maximum tokens produced by one refinement request. */
+  knowledgeOutputTokens: number
+  /** Optional dedicated refinement provider, paired with knowledgeModel. */
+  knowledgeProvider?: string
+  /** Optional dedicated refinement model; omission uses the default Agent model. */
+  knowledgeModel?: string
 }
 
 /** An explicit local execution world; container images never silently change. */
@@ -921,7 +931,7 @@ export interface ToolInstallation {
 }
 ```
 
-Source: [`packages/experimental/security-analysis/src/index.ts:28`](../packages/experimental/security-analysis/src/index.ts)
+Source: [`packages/experimental/security-analysis/src/index.ts:33`](../packages/experimental/security-analysis/src/index.ts)
 
 <a id="deepseek-aidsh-experimental-tool-agent-team"></a>
 

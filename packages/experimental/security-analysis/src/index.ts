@@ -1,6 +1,10 @@
 /** Host service exposing the security workbench to tools and generated Remote clients. @module */
 import './service.ts'
 import assert from 'node:assert/strict'
+import { randomUUID } from 'node:crypto'
+import { brandString } from '@deepseek-ai/dsh-brand'
+import type { SessionId } from '@deepseek-ai/dsh-session'
+import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { Context } from '@deepseek-ai/cordis'
 import Schema from '@deepseek-ai/schemastery'
 import { z } from 'zod'
@@ -23,6 +27,7 @@ import { SecurityController, commandSchema } from './workbench/controller.ts'
 import { SecuritySearchIndex } from './workbench/search.ts'
 import type { SecurityEnvironment } from './workbench/providers.ts'
 import { operationSchema, type WorkbenchView } from './workbench/model.ts'
+import { refineKnowledge, refinementPrompt } from './workbench/knowledge.ts'
 
 /** Explicit host locations and operational limits. */
 export interface WorkbenchConfig {
@@ -46,6 +51,16 @@ export interface WorkbenchConfig {
   maxConcurrentDelegations: number
   /** Lifetime of an operator approval in milliseconds. */
   approvalTtlMs: number
+  /** Periodic refinement cadence; zero disables automatic runs. */
+  knowledgeIntervalMs: number
+  /** Maximum complete refinement prompt size. */
+  knowledgeInputBytes: number
+  /** Maximum tokens produced by one refinement request. */
+  knowledgeOutputTokens: number
+  /** Optional dedicated refinement provider, paired with knowledgeModel. */
+  knowledgeProvider?: string
+  /** Optional dedicated refinement model; omission uses the default Agent model. */
+  knowledgeModel?: string
 }
 
 declare module '@deepseek-ai/dsh-jobs' {
@@ -67,7 +82,7 @@ const GUIDANCE = `Start with security_scope. Only the coordinator performs the c
 
 Use security_capabilities to inspect installed declarations, provider operations and role limits before choosing tools. Use security_help for command fields and security_static for bounded static observations. Delegate inventory to reconnaissance, entry-point and data-flow questions to reverse-analyst, public-source applicability research to researcher, and independent evidence review to reviewer with security_delegate. Give one asset, a precise question and completion criterion. Collect job_output and inspect uncertainty before integrating the result. Prepare validation yourself only after assessment; obtain independent review before a final conclusion. Use jobs, goal and todo to coordinate work; the domain check records own recovery. Search project evidence before repeating work. Separate observations, hypotheses, and conclusions. Cite evidence IDs and state uncertainty.
 
-Use security_command to import approved files, create checks, record findings, and prepare immutable validation plans. Only the operator can approve plans or publish shared knowledge.
+Use security_command to import approved files, create checks, record findings, and prepare immutable validation plans. Save concise retrospectives and reusable experience with the remember action: category, title, summary, conditions, actions, pitfalls and tags. Retrospectives contain outcomes, problems and improvements; experience contains applicable conditions, recommended practices and cautions. Never include reasoning traces, evidence, citations or execution logs in these entries. Only the operator can approve plans or publish shared knowledge.
 
 Use security_execute only for an approved plan. Treat interruption as unresolved target state; reconcile before retrying. A successful tool call does not itself confirm a vulnerability.
 
@@ -82,6 +97,11 @@ export default class SecurityWorkbench extends TypertRemoteService {
     maxConcurrentDelegations: Schema.number().step(1).min(1).default(3),
     approvalTtlMs: Schema.number().step(1).min(1).default(3600000),
     delegationTimeoutMs: Schema.number().step(1).min(1).default(300000),
+    knowledgeIntervalMs: Schema.number().step(1).min(0).max(2147483647).default(3600000),
+    knowledgeInputBytes: Schema.number().step(1).min(4096).default(131072),
+    knowledgeOutputTokens: Schema.number().step(1).min(1).default(8192),
+    knowledgeProvider: Schema.string().pattern(/\S/u),
+    knowledgeModel: Schema.string().pattern(/\S/u),
     root: Schema.string().required(),
     importRoots: Schema.array(Schema.string()).required(),
     environments: Schema.array(
@@ -118,12 +138,15 @@ export default class SecurityWorkbench extends TypertRemoteService {
   private index: SecuritySearchIndex | undefined
   private readonly shutdown = new AbortController()
   private readonly pending = new Set<Promise<unknown>>()
+  private readonly refinements = new Map<string, Promise<void>>()
 
   constructor(
     ctx: Context,
     private readonly config: WorkbenchConfig,
   ) {
     super(ctx, 'securityWorkbench')
+    if ((config.knowledgeProvider === undefined) !== (config.knowledgeModel === undefined))
+      throw new Error('knowledgeProvider and knowledgeModel must be configured together')
     if (![config.root, ...config.importRoots, ...config.environments.map(env => env.cwd)].every(isAbsolute)) {
       throw new Error('Security root, import roots and environment working directories must be absolute')
     }
@@ -218,7 +241,7 @@ export default class SecurityWorkbench extends TypertRemoteService {
       defineTool({
         name: 'security_command',
         description:
-          'Submit a JSON security command with operationId, expectedRevision and action. Actions: import, template, check, finish, reopen, reconcile, finding, plan, stop, revoke, knowledge. Plans require checkId, operation, hypothesis, expectedObservation, impact, cleanup and durationMs. Operator approval is separate.',
+          'Submit a JSON security command with operationId, expectedRevision and action. Actions: import, template, check, finish, reopen, reconcile, finding, plan, stop, revoke, remember. Use remember for concise structured retrospectives or reusable experience without reasoning traces or evidence. Plans require checkId, operation, hypothesis, expectedObservation, impact, cleanup and durationMs. Operator approval is separate.',
         parameters: {
           command: {
             type: 'string',
@@ -570,6 +593,23 @@ export default class SecurityWorkbench extends TypertRemoteService {
       this.controller = controller
       this.ctx.effect(() => controller.providers.register(new BinaryProvider()))
       this.index = new SecuritySearchIndex(join(this.config.root, 'search.sqlite'))
+      if (this.config.knowledgeIntervalMs > 0) this.ctx.effect(() => {
+        let sweep: Promise<void> | undefined
+        const tick = () => {
+          if (sweep || this.shutdown.signal.aborted) return
+          sweep = (async () => {
+            for (const project of controller.projects()) {
+              if (this.shutdown.signal.aborted) break
+              if (project.stopped) continue
+              try { await this.refine(project.id) }
+              catch (error) { this.ctx.logger.warn('Knowledge refinement failed: %s', String(error)) }
+            }
+          })().finally(() => { sweep = undefined })
+        }
+        const timer = setInterval(tick, this.config.knowledgeIntervalMs)
+        timer.unref()
+        return () =>{  clearInterval(timer) }
+      })
       return controller
     } catch (error) {
       await this.journal?.close()
@@ -577,6 +617,86 @@ export default class SecurityWorkbench extends TypertRemoteService {
       this.ownership = undefined
       throw error
     }
+  }
+
+  private refine(project: string): Promise<void> {
+    const existing = this.refinements.get(project)
+    if (existing) return existing
+    const controller = this.controller
+    const journal = this.journal
+    assert(controller && journal, 'Refinement requires initialized storage')
+    if (this.shutdown.signal.aborted) return Promise.reject(new Error('Security service is closing'))
+    const abort = new AbortController()
+    const signal = AbortSignal.any([abort.signal, this.shutdown.signal])
+    const timer = setTimeout(() =>{  abort.abort(new Error('Knowledge refinement timed out')) }, this.config.delegationTimeoutMs)
+    const pending = refineKnowledge(journal, project, prompt => this.generateKnowledge(prompt, signal), {
+      maxInputBytes: this.config.knowledgeInputBytes, maxOutputBytes: this.config.maxOutputBytes,
+    }, signal)
+    const release = controller.trackDelegation(project, abort, pending)
+    const settled = pending.finally(() => {
+      clearTimeout(timer)
+      release()
+      this.refinements.delete(project)
+      this.pending.delete(settled)
+    })
+    this.refinements.set(project, settled)
+    this.pending.add(settled)
+    return settled
+  }
+
+  private async generateKnowledge(prompt: string, signal: AbortSignal): Promise<string> {
+    const result = { output: '', completed: false }
+    const handle = await this.ctx.agents.create({
+      sessionId: brandString<SessionId>(randomUUID()),
+      agentOptions: { maxTokens: this.config.knowledgeOutputTokens,
+        ...(this.config.knowledgeProvider === undefined || this.config.knowledgeModel === undefined
+          ? {} : { provider: this.config.knowledgeProvider, model: this.config.knowledgeModel }),
+      },
+      signal,
+      setup: (ctx, agent) => {
+        ctx.effect(() => ctx.tools.restrict({ allow: [] }))
+        ctx.systemPrompt.section({
+          name: 'security:workbench',
+          order: ctx.systemPrompt.getSectionOrder('DEPLOYMENT_PERSONA_SUFFIX'),
+          text: refinementPrompt,
+          interpolate: false,
+        })
+        ctx.on('session/event', (session, event) => {
+          if (session.id !== agent.id) return
+          if (event.type === 'assistant/message') result.output = event.data.message.content.filter(block => block.type === 'text').map(block => block.text).join('')
+          if (event.type === 'turn/end') result.completed = event.data.reason.kind === 'completed'
+        })
+      },
+    })
+    const cancel = () =>{  handle.agent.cancel({ kind: 'parent' }) }
+    signal.addEventListener('abort', cancel, { once: true })
+    try {
+      signal.throwIfAborted()
+      handle.agent.followup(createUserMessage({ content: [{ type: 'text', text: prompt }], source: { kind: 'user' } }))
+      await handle.agent.whenIdle()
+      signal.throwIfAborted()
+      if (!result.completed) throw new Error('Knowledge model did not complete')
+      return result.output
+    } finally {
+      signal.removeEventListener('abort', cancel)
+      await handle.dispose()
+    }
+  }
+
+  /**
+   * Refine and deduplicate the selected project's notes using a logged model Session.
+   * @param agent - authenticated coordinating Session.
+   * @returns the committed project view after refinement.
+   */
+  @Remote('refineKnowledge')
+  async refineProjectKnowledge(agent: Agent): Promise<WorkbenchView> {
+    const controller = await this.ready
+    const binding = controller.binding(agent.id)
+    if (binding?.role !== 'coordinator') throw new Error('Coordinator role required')
+    const project = controller.projects().find(item => item.id === binding.engagementId)
+    if (!project || project.stopped) throw new Error('Project is stopped or unavailable')
+    await this.refine(binding.engagementId)
+    return controller.view(agent.id)
   }
 
   /**
@@ -694,6 +814,7 @@ export default class SecurityWorkbench extends TypertRemoteService {
         tools: tools.map(tool => tool.id),
       })),
       providers: controller.providers.list().map(id => ({ id, operations: controller.providers.get(id).operations })),
+      knowledgeIntervalMs: this.config.knowledgeIntervalMs,
     })
   }
   /**

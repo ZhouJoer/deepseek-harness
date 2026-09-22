@@ -50,12 +50,22 @@ afterEach(async () => {
 
 class ScopeModel extends LlmAdapter {
   readonly requests: GenerateOptions[] = []
+  refinementOutput: ((prompt: string) => string) | undefined
+  refinementWait: ((signal: AbortSignal | undefined) => Promise<void>) | undefined
   override resolveModel(provider: string, model: string): Promise<LlmResolvedModelInfo> {
     return Promise.resolve({ provider, id: model, name: model, inputModalities: ['text'] })
   }
   async *stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
     this.requests.push(options)
-    if (options.tools?.some(tool => tool.name === 'structured_output')) {
+    const refinement = options.messages.flatMap(message => message.content).filter(block => block.type === 'text').map(block => block.text).find(text => text.includes('\nNotes: '))
+    if (refinement && this.refinementOutput) {
+      await this.refinementWait?.(options.signal)
+      const text = this.refinementOutput(refinement)
+      yield { type: 'block-start', index: 0, blockType: 'text' }
+      yield { type: 'text-delta', index: 0, text }
+      yield { type: 'block-end', index: 0, block: { type: 'text', text } }
+      yield { type: 'finish', reason: { kind: 'stop' } }
+    } else if (options.tools?.some(tool => tool.name === 'structured_output')) {
       const call = { type: 'tool-call' as const, id: ToolCallId('report'), name: 'structured_output',
         arguments: JSON.stringify({ summary: 'Assigned evidence review completed.', evidenceIds: [], uncertainty: 'No observations collected.', nextSteps: [] }) }
       yield { type: 'block-start', index: 0, blockType: 'tool-call' }
@@ -109,7 +119,7 @@ function independentTool(ctx: Context, name: string, execute = vi.fn(async () =>
   return execute
 }
 
-async function load(inheritJobTool = false) {
+async function load(inheritJobTool = false, knowledgeIntervalMs = 0) {
   const root = await mkdtemp(join(tmpdir(), 'dsh-workbench-loader-'))
   roots.push(root)
   const model = new ScopeModel()
@@ -172,7 +182,7 @@ async function load(inheritJobTool = false) {
                 : name === 'ghidra'
                   ? { programs: [] }
                   : name === 'security'
-                    ? { root: join(root, 'workbench'), importRoots: [root], environments: [{ id: 'local', kind: 'local', label: 'Host', cwd: root, tools: [] }] }
+                    ? { knowledgeIntervalMs, knowledgeProvider: 'fixture', knowledgeModel: 'fixture', root: join(root, 'workbench'), importRoots: [root], environments: [{ id: 'local', kind: 'local', label: 'Host', cwd: root, tools: [] }] }
                     : {},
       })),
     ),
@@ -355,12 +365,12 @@ describe('security workbench Loader composition', () => {
 
 it('settles an operator laboratory job when the Host is disposed', async () => {
   const { ctx, controller } = await load()
-  const started = Promise.withResolvers<void>()
+  const started = Promise.withResolvers<undefined>()
   const manager = controller.laboratories.get('local')
-  const action = vi.spyOn(manager, 'action').mockImplementation(() => controller.manageEnvironment('shutdown-fixture', signal => {
-    started.resolve()
-    return new Promise(resolve => {
-      signal.addEventListener('abort', () => resolve({ revision: 0, records: [] }), { once: true })
+  const action = vi.spyOn(manager, 'action').mockImplementation(() => controller.manageEnvironment('shutdown-fixture', (signal) => {
+    started.resolve(undefined)
+    return new Promise((resolve) => {
+      signal.addEventListener('abort', () => { resolve({ revision: 0, records: [] }) }, { once: true })
     })
   }))
   try {
@@ -369,4 +379,72 @@ it('settles an operator laboratory job when the Host is disposed', async () => {
     await ctx.fiber.dispose()
     expect(await pending).toEqual({ revision: 0, records: [] })
   } finally { action.mockRestore() }
+})
+
+it('runs logged tool-free refinement through the Loader and disposes its model Session', async () => {
+  const { ctx, agent, controller, model } = await load()
+  const send = operator(controller, agent)
+  await send({ kind: 'create', title: 'Notes', objective: 'Learn from parser review', environmentIds: ['local'], maxAttempts: 2 })
+  const entry = { category: 'experience', title: 'Bounds', summary: 'Check lengths', conditions: 'Binary parsers', actions: ['Validate before reading'], pitfalls: [], tags: [] }
+  await send({ kind: 'remember', entry })
+  const note = controller.view(agent.id).records.find(item => item.kind === 'knowledge')!
+  model.refinementOutput = () => JSON.stringify({ entries: [{ sourceIds: ['id' in note.value ? note.value.id : ''], entry: { ...entry, summary: 'Validate available bytes before each read.' } }] })
+  const logged: string[] = []
+  let worker: Agent | undefined
+  ctx.on('agent/created', ({ agent: created }) => { if (created.id !== agent.id) worker = created })
+  ctx.on('session/event', (session, event) => {
+    if (session.id !== agent.id && event.type === 'user/message') logged.push(JSON.stringify(event.data))
+  })
+  const result = await ctx.securityWorkbench.refineProjectKnowledge(agent)
+  expect(result.records.find(item => item.kind === 'knowledge')?.value).toMatchObject({ content: 'Validate available bytes before each read.' })
+  expect(logged.join('')).toContain('Refine the supplied project notes')
+  expect(model.requests.at(-1)?.tools ?? []).toHaveLength(0)
+  expect(JSON.stringify(model.requests.at(-1)?.messages)).not.toContain('Start with security_scope')
+  expect(worker).toBeDefined()
+  expect(ctx.agents.get(worker!.id)).toBeUndefined()
+  await ctx.securityWorkbench.refineProjectKnowledge(agent)
+  expect(model.requests).toHaveLength(1)
+})
+
+it('periodically refines changed notes and stops its timer when unloaded', async () => {
+  const { ctx, agent, controller, model } = await load(false, 40)
+  const send = operator(controller, agent)
+  await send({ kind: 'create', title: 'Periodic notes', objective: 'Learn from review', environmentIds: [], maxAttempts: 1 })
+  const entry = { category: 'experience', title: 'Validate input', summary: 'Check lengths', conditions: 'Parsers', actions: ['Check bytes'], pitfalls: [], tags: [] }
+  model.refinementOutput = (prompt) => {
+    const notes = JSON.parse(prompt.split('\nNotes: ')[1]!) as { id: string }[]
+    return JSON.stringify({ entries: [{ sourceIds: notes.map(note => note.id), entry }] })
+  }
+  await send({ kind: 'remember', entry })
+  await vi.waitFor(() =>{  expect(controller.view(agent.id).records.find(item => item.kind === 'knowledge-maintenance')?.value).toMatchObject({ status: 'completed' }) })
+  expect(model.requests).toHaveLength(1)
+  const registry = ctx.agents
+  await ctx.fiber.dispose()
+  expect(registry.get(agent.id)).toBeUndefined()
+})
+
+it('cancels an active refinement and drains the worker before project stop returns', async () => {
+  const { ctx, agent, controller, model } = await load()
+  const send = operator(controller, agent)
+  await send({ kind: 'create', title: 'Cancellation', objective: 'Review notes', environmentIds: [], maxAttempts: 1 })
+  const entry = { category: 'experience', title: 'Bounds', summary: 'Check lengths', conditions: 'Parsers', actions: ['Check bytes'], pitfalls: [], tags: [] }
+  await send({ kind: 'remember', entry })
+  const before = controller.view(agent.id).records.filter(item => item.kind === 'knowledge')
+  const started = Promise.withResolvers<undefined>()
+  model.refinementOutput = () => JSON.stringify({ entries: [] })
+  model.refinementWait = signal => new Promise((resolve, reject) => {
+    if (!signal) { reject(new Error('Missing model cancellation signal')); return }
+    started.resolve(undefined)
+    if (signal.aborted) resolve()
+    else signal.addEventListener('abort', () => { resolve() }, { once: true })
+  })
+  let worker: Agent | undefined
+  ctx.on('agent/created', ({ agent: created }) => { if (created.id !== agent.id) worker = created })
+  const pending = ctx.securityWorkbench.refineProjectKnowledge(agent)
+  const rejected = expect(pending).rejects.toThrow()
+  await started.promise
+  await send({ kind: 'stop' })
+  await rejected
+  expect(controller.view(agent.id).records.filter(item => item.kind === 'knowledge')).toEqual(before)
+  expect(ctx.agents.get(worker!.id)).toBeUndefined()
 })

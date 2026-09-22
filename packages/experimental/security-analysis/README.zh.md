@@ -81,6 +81,12 @@ Host 操作者在[示例 overlay](../../../apps/cli/config/examples/security-ana
 
 provider 原始输出先保存，再提交证据引用。证据记录保留样本、工具版本、参数、来源 Session/call、完整性和批准计划。`security_evidence` 分页读取原始字节。检索根据项目记录及原始证据重建 SQLite FTS，支持中文分词和标识符。共享经验必须经过用户审核，始终是参考材料，不是本项目证据。
 
+复盘和经验通过 `remember` 命令保存 `category`、`title`、`summary`、`conditions`、`actions`、`pitfalls` 和 `tags`。复盘记录结果、问题和改进，经验记录可复用做法和注意事项。条目不包含思维链、证据或执行日志。旧版自由文本可由提炼任务读取，完成提炼后才在界面中显示。
+
+Host 运行期间，知识整理按 `knowledgeIntervalMs` 定期执行（默认 3,600,000 毫秒；设为零关闭自动整理），工作台也支持手动整理。独立且禁用工具的 Agent Session 记录完整模型请求与响应。`knowledgeProvider` 和 `knowledgeModel` 可成对指定专用模型路由；省略时使用默认 Agent 模型。`knowledgeInputBytes` 默认为 131,072 字节，`knowledgeOutputTokens` 默认为 8,192 token；`maxOutputBytes` 限制完整响应大小，`delegationTimeoutMs` 限制运行时间。
+
+整理跳过未变化的内容，只在同一项目内合并条目。结构化分类不可改变，响应必须且只能包含每个来源条目一次。无效、超限、已取消或与并发编辑冲突的结果不能覆盖记录。成功整理以原子操作保存条目和重复替代关系；已共享内容变化后需要重新审核。journal 保留历史修订。失败任务可手动重试或等待下一周期。用户停止项目时会取消并等待活动整理任务结束。
+
 日志以一个 storage-domain 记录追加一个完整命令。独立 SQLite 占用锁保证每个安全目录只有一个 Host。重启撤销批准，并将未结算执行标记为待核对，不会重放注入或进程创建。相同操作重试不会再次执行。`import-legacy` 将原型 JSON 归档保留为不可变的用户声明记录；必须另行导入实际样本才能获得实测身份，原归档不会提升为已验证证据。
 
 -----
@@ -140,6 +146,7 @@ provider 原始输出先保存，再提交证据引用。证据记录保留样�
 - 真实 DeepSeek 教程分析已跑通静态证据和子 agent 报告回收，但出现错误的 ELF 解读。结构化格式解析尚未完成，真实模型 GUI GIF 仍待录制。keyless 测试与外部响应模拟分别作为证据。
 - 环境租约保守地串行化操作，包括读取。自动 GUI 部署、完整组件/JNI 关联、远程实验室、语义检索、IoT 专项、fastboot 写设备及 John 密码审计尚不可用。
 - Android split APK 验证会被拒绝，因为单个导入的 base APK 不能证明完整安装包身份。本机 attach 会拒绝无法提供启动身份或可执行文件身份的平台。
+- 整理处理项目的完整知识集合；超过 `knowledgeInputBytes` 时直接失败，不截断内容。自动任务需要 Host 持续运行且已配置模型。语义等价由模型判断，共享结果仍需用户审核。
 - `/legacy` 为已录制 Session 保留隔离的原型。不能与工作台一起加载，两者注册相同的安全工具名。
 
 <a id="dev-note"></a>

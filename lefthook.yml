@@ -52,4 +52,4 @@ pre-merge-commit:
 pre-push:
   jobs:
     - name: typecheck
-      run: sh scripts/git-typecheck.sh
+      run: node scripts/typecheck.mjs
