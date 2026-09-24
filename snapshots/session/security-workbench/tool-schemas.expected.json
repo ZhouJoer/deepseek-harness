@@ -90,13 +90,13 @@
     },
     {
       "name": "security_command",
-      "description": "Submit a JSON security command with operationId, expectedRevision and action. Actions: import, import-source, template, check, finish, reopen, reconcile, finding, plan, stop, revoke, remember, report. Returns committed revision and changed record IDs; read full records with security_scope. Use remember for concise structured retrospectives or reusable experience without reasoning traces or evidence. Plans require checkId, operation, hypothesis, expectedObservation, impact, cleanup and durationMs. Operator approval is separate.",
+      "description": "Submit a JSON security command with operationId, expectedRevision and action. Use the latest returned revision from security_static, security_command or security_scope; concurrent changes can still require a fresh revision. Request security_help with the needed action for its exact fields. Actions: import, import-source, template, check, finish, reopen, reconcile, finding, revise-finding, conclude, plan, stop, revoke, remember, report. Use conclude with reviewId to apply a persisted independent review to its finding. Use reconcile only for interrupted checks. Use import-source for an absolute source file or directory; import only the selection authorized by the user. Returns committed revision and changed record IDs; read full records with security_scope. Use remember for concise structured retrospectives or reusable experience without reasoning traces or evidence. Plans require checkId, operation, hypothesis, expectedObservation, impact, cleanup and durationMs. Operator approval is separate.",
       "parameters": {
         "type": "object",
         "properties": {
           "command": {
             "type": "string",
-            "description": "Complete JSON command; obtain the revision using security_scope."
+            "description": "Complete JSON command; use the latest returned revision as expectedRevision. Refresh security_scope after a revision conflict."
           }
         },
         "required": [
@@ -106,7 +106,7 @@
     },
     {
       "name": "security_delegate",
-      "description": "Delegate one bounded static analysis or evidence review. The child receives only assigned assets and returns evidence references, uncertainty and next steps.",
+      "description": "Delegate one bounded static analysis or evidence review. The child receives only assigned assets and returns evidence references, uncertainty and next steps. Evidence-only reviewers return a structured report without persisting a finding verdict. For a formal finding review, first save a suspected finding with evidence, then delegate its review.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -178,10 +178,10 @@
           "length": {
             "type": "integer"
           },
-          "lineCount": {
+          "startLine": {
             "type": "integer"
           },
-          "startLine": {
+          "lineCount": {
             "type": "integer"
           }
         },
@@ -215,10 +215,15 @@
     },
     {
       "name": "security_help",
-      "description": "Read the exact JSON command schema used by security_command.",
+      "description": "Read the exact JSON command envelope used by security_command. Set action to the needed command kind, such as import-source, check or finding, to receive only its fields. Omit action only when the full command catalog is needed.",
       "parameters": {
         "type": "object",
-        "properties": {}
+        "properties": {
+          "action": {
+            "type": "string",
+            "description": "Command action kind to inspect; omission returns the full command schema."
+          }
+        }
       }
     },
     {
@@ -273,7 +278,7 @@
     },
     {
       "name": "security_static",
-      "description": "Collect read-only source, binary, Ghidra or Android evidence for an assigned asset. Raw output is stored before a summary is returned.",
+      "description": "Collect read-only source, binary, Ghidra or Android evidence for an imported asset. Raw output is stored before a summary and current project revision are returned. Use that revision for a following command; concurrent changes can still cause a revision conflict.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -290,7 +295,8 @@
             "type": "string"
           },
           "assetId": {
-            "type": "string"
+            "type": "string",
+            "description": "Imported asset ID returned by security_command or security_scope, not a path or filename. For source files not yet imported, first use security_command action import-source."
           },
           "environmentId": {
             "type": "string"
@@ -306,6 +312,22 @@
           "assetId",
           "environmentId",
           "parameters"
+        ]
+      }
+    },
+    {
+      "name": "skill",
+      "description": "Load the full instructions for an available skill. Call this with the exact skill name from the session skill catalog before acting on a task that names or clearly matches that skill.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "The exact skill name from the available skills list."
+          }
+        },
+        "required": [
+          "name"
         ]
       }
     },

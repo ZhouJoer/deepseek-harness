@@ -282,7 +282,14 @@ async function writeHeaderSidecars(
   for (const index of scenario.manifest.header.childToolSchemas ?? []) {
     const child = actualLogs[index]
     if (child === undefined) throw new Error(`${scenario.name}: write-back has no child ${index} schemas`)
-    const schemas = normalizedToolSchemas(child.content, ctx)
+    const headers = normalizedHeaders(child.content, ctx)
+    if (headers.length === 0) throw new Error(`${scenario.name}: child ${index} has no request header`)
+    const schemas = headers.map((header) => {
+      const tools = (header as JsonObject).tools
+      if (tools === undefined) return []
+      if (!Array.isArray(tools)) throw new Error(`${scenario.name}: child ${index} tools must be an array`)
+      return tools
+    })
     await writeFile(
       join(scenario.dir, `tool-schemas.${index}.expected.json`),
       formatToolSchemasSnapshot(schemas[0] as unknown[], schemas.slice(1)),
@@ -710,6 +717,12 @@ async function verifyProviderCwdResume(
   }
 }
 
+/** An explicitly empty child schema pin accepts an omitted tools field. */
+function headerForChildSchemaComparison(header: unknown, schemas: readonly unknown[] | undefined): unknown {
+  if (schemas?.length !== 0 || Object.hasOwn(header as object, 'tools')) return header
+  return { ...header as JsonObject, tools: [] }
+}
+
 async function verifyHeaders(scenario: HeadlessScenario, actualLogs: readonly SessionLog[], ctx: NormalizeContext): Promise<void> {
   const pin = pinOf(scenario)
   const fixture = await readFile(join(pin.dir, await primaryFixtureFile(pin.dir)), 'utf8')
@@ -753,7 +766,7 @@ async function verifyHeaders(scenario: HeadlessScenario, actualLogs: readonly Se
       const selectedSchemas = childSchemas.get(logIndex)?.[index]
       const base = reconstructed[index] ?? reconstructed[0]
       const expected = selectedSchemas === undefined ? base : { ...base as JsonObject, tools: selectedSchemas }
-      expect(header, `${scenario.name}: request header ${index + 1}`).toEqual(expected)
+      expect(headerForChildSchemaComparison(header, selectedSchemas), `${scenario.name}: request header ${index + 1}`).toEqual(expected)
     }
     if (prompts.length > 0) {
       expect(
@@ -941,6 +954,16 @@ describe('headless recorded-session snapshots', () => {
     }
   })
 
+  it('compares tool-free child headers only against an explicitly empty schema pin', () => {
+    const config = { provider: 'test', model: 'test' }
+    expect(headerForChildSchemaComparison({ config }, [])).toEqual({ config, tools: [] })
+    expect(headerForChildSchemaComparison({ config, tools: [] }, [])).toEqual({ config, tools: [] })
+    expect(headerForChildSchemaComparison({ config }, undefined)).toEqual({ config })
+    for (const tools of [null, 'invalid', [{ name: 'unexpected' }]]) {
+      expect(headerForChildSchemaComparison({ config, tools }, [])).not.toEqual({ config, tools: [] })
+    }
+  })
+
   it('writes header sidecars without replacing a retained Session generation', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'dsh-headless-sidecars-'))
     try {
@@ -998,6 +1021,27 @@ describe('headless recorded-session snapshots', () => {
         .toContain('"name": "fresh_tool"')
       expect(await readFile(join(directory, 'session.v1.jsonl'), 'utf8')).toBe(retained)
       expect(sessionFixtureNames(await readdir(directory))).toEqual(['session.v1.jsonl'])
+      scenario.manifest.header.childToolSchemas = [1]
+      const childHeader = { ...header, id: 'tool-free-child', parentSession: header.id }
+      const childRecords = records(content).map((record) => {
+        if (record.type === 'session') return childHeader
+        if (record.type !== 'request/header') return record
+        return { ...record, data: { header: { config: { provider: 'test', model: 'test' } }, reason: 'initial' } }
+      })
+      const child = { header: childHeader, content: childRecords.map(record => JSON.stringify(record)).join('\n') }
+      const context = { sessionIds: [header.id, childHeader.id], cwd: header.cwd }
+      await writeHeaderSidecars(scenario, [{ content, header }, child], context)
+      expect(parseToolSchemasSnapshot(await readFile(join(directory, 'tool-schemas.1.expected.json'), 'utf8')))
+        .toEqual({ initial: [], changes: [] })
+      for (const tools of [null, 'invalid']) {
+        const malformed = { ...child, content: childRecords.map(record => JSON.stringify(record.type === 'request/header'
+          ? { ...record, data: { header: { config: {}, tools }, reason: 'initial' } } : record)).join('\n') }
+        await expect(writeHeaderSidecars(scenario, [{ content, header }, malformed], context))
+          .rejects.toThrow('tools must be an array')
+      }
+      const noRequest = { ...child, content: JSON.stringify(childHeader) }
+      await expect(writeHeaderSidecars(scenario, [{ content, header }, noRequest], context))
+        .rejects.toThrow('has no request header')
     } finally {
       await rm(directory, { recursive: true, force: true })
     }

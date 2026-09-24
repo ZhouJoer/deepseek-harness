@@ -1,7 +1,7 @@
 /** Immutable source snapshots and bounded, line-addressed observations. @module */
 import assert from 'node:assert/strict'
 import { lstat, readdir, realpath } from 'node:fs/promises'
-import { isAbsolute, join, relative, sep } from 'node:path'
+import { basename, isAbsolute, join, relative, sep } from 'node:path'
 import { z } from 'zod'
 import { artifactSchema, type Artifact, type AnalysisOperation } from './model.ts'
 import type { ArtifactStore } from './artifacts.ts'
@@ -21,28 +21,42 @@ export const sourceManifestSchema = z.object({
 /**
  * Snapshot regular files without following links or executing source.
  * @param store - immutable artifact owner.
- * @param path - selected directory.
+ * @param path - selected source file or directory; a file is the only member and uses its basename.
  * @param roots - operator-approved import roots.
  * @param limits - maximum visited entries and cumulative file bytes.
  * @returns measured manifest artifact.
  */
 export async function importSource(store: ArtifactStore, path: string, roots: string[],
   limits: { entries: number; bytes: number }): Promise<Artifact> {
-  if (!isAbsolute(path)) throw new Error('Select an absolute source directory')
+  if (!isAbsolute(path)) throw new Error('Select an absolute source file or directory')
   const root = await realpath(path)
   const approved = await Promise.all(roots.map(value => realpath(value)))
   if (!approved.some((value) => {
     const tail = relative(value, root)
     return tail !== '..' && !tail.startsWith('..' + sep) && !isAbsolute(tail)
-  })) throw new Error('Source directory is outside the configured import roots')
-  if (!(await lstat(root)).isDirectory()) throw new Error('Source import requires a directory')
+  })) throw new Error('Source path is outside the configured import roots')
+  const selected = await lstat(path)
+  if (!selected.isFile() && !selected.isDirectory()) throw new Error('Source import requires a regular file or directory')
   const manifest: z.infer<typeof sourceManifestSchema> = { version: 1, files: [], excluded: [] }
   let entries = 0
   let bytes = 0
+  const importFile = async (absolute: string, path: string, size: number): Promise<void> => {
+    if (bytes + size > limits.bytes) throw new Error('Source snapshot exceeds the configured byte limit')
+    const imported = await store.import(absolute, [root])
+    bytes += imported.artifact.size
+    if (bytes > limits.bytes) throw new Error('Source snapshot exceeds the configured byte limit')
+    const content = await store.read(imported.artifact)
+    let text = !content.includes(0)
+    if (text) {
+      try { new TextDecoder('utf-8', { fatal: true }).decode(content) }
+      catch (error) { if (!(error instanceof TypeError)) throw error; text = false }
+    }
+    manifest.files.push({ path, artifact: imported.artifact, text })
+  }
   const visit = async (directory: string, prefix: string): Promise<void> => {
     const names = (await readdir(directory)).sort()
     for (const name of names) {
-      if (++entries > limits.entries) throw new Error('Source directory exceeds the configured entry limit')
+      if (++entries > limits.entries) throw new Error('Source snapshot exceeds the configured entry limit')
       const path = memberPath.parse(prefix + name)
       const absolute = join(directory, name)
       const stat = await lstat(absolute)
@@ -54,29 +68,24 @@ export async function importSource(store: ArtifactStore, path: string, roots: st
         if (tail === '..' || tail.startsWith('..' + sep) || isAbsolute(tail)) throw new Error('Source directory changed during import')
         await visit(absolute, path + '/')
       } else {
-        if (bytes + stat.size > limits.bytes) throw new Error('Source snapshot exceeds the configured byte limit')
-        const imported = await store.import(absolute, [root])
-        bytes += imported.artifact.size
-        if (bytes > limits.bytes) throw new Error('Source snapshot exceeds the configured byte limit')
-        const content = await store.read(imported.artifact)
-        let text = !content.includes(0)
-        if (text) {
-          try { new TextDecoder('utf-8', { fatal: true }).decode(content) }
-          catch (error) { if (!(error instanceof TypeError)) throw error; text = false }
-        }
-        manifest.files.push({ path, artifact: imported.artifact, text })
+        await importFile(absolute, path, stat.size)
       }
     }
   }
-  await visit(root, '')
+  if (selected.isFile()) {
+    if (++entries > limits.entries) throw new Error('Source snapshot exceeds the configured entry limit')
+    await importFile(root, memberPath.parse(basename(root)), selected.size)
+  } else {
+    await visit(root, '')
+  }
   return store.put(Buffer.from(JSON.stringify(sourceManifestSchema.parse(manifest))), 'application/vnd.dsh.source-tree+json')
 }
 
 /** Read the manifest of the assigned source asset.
  * @param context - admitted asset and artifact store.
- * @returns verified directory entries. */
+ * @returns verified source entries. */
 export async function sourceManifest(context: AnalysisContext): Promise<z.infer<typeof sourceManifestSchema>> {
-  if (!('kind' in context.asset) || context.asset.kind !== 'source') throw new Error('Select an imported source directory')
+  if (!('kind' in context.asset) || context.asset.kind !== 'source') throw new Error('Select an imported source file or directory')
   return sourceManifestSchema.parse(JSON.parse((await context.artifacts.read(context.asset.artifact)).toString('utf8')))
 }
 
@@ -87,7 +96,7 @@ export class SourceProvider implements AnalysisProvider {
   readonly operations = ['list', 'read', 'search']
   readonly inputGuide = 'list accepts offset and limit. read requires path and accepts startLine (1-based), limit. search requires a literal query and accepts path, offset and limit. Paths belong to the immutable source manifest, never the live filesystem. Results include file hashes, line numbers, exclusions and continuation positions.'
   resolve(request: AnalysisOperation, context: AnalysisContext): AnalysisOperation {
-    if (!('kind' in context.asset) || context.asset.kind !== 'source') throw new Error('Select an imported source directory')
+    if (!('kind' in context.asset) || context.asset.kind !== 'source') throw new Error('Select an imported source file or directory')
     if (request.script || request.impact !== 'observe') throw new Error('Source inspection is read-only')
     const page = { offset: z.number().int().nonnegative().default(0), limit: z.number().int().positive().default(100) }
     const schema = request.operation === 'list' ? z.object(page).strict()

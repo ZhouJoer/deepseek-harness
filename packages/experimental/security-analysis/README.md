@@ -26,13 +26,17 @@ Investigate owned source, binary and Web targets with independent providers and 
 
 Use [security-profile](../security-profile/README.md) in a dedicated `dsh` profile. Add [security-web-profile](../security-web-profile/README.md) for the conversation workbench. The default general profiles do not load these bundles.
 
-1. Create a project with its objective and configured environments. Import PE, ELF, APK or DEX files, or an immutable source directory, from the deployment’s `importRoots`.
+Load `security-investigation` through the ordinary `skill` tool, then combine `security-web`, `security-firmware` and `security-iot-offline` as the materials and question require. These [methods](src/methods.ts) guide evidence-driven hypotheses, distinguishing checks, tool selection and bounded delegation. They do not install tools or grant permissions: existing role checks, project scope and execution approval remain authoritative. Skill instructions are guidance, not security isolation.
+
+1. Describe the task in the Web conversation for a configured workspace, or create a project with its objective and configured environments. Import PE, ELF, APK or DEX files, or an immutable source file or directory, from the deployment’s `importRoots`.
 2. Choose the next analysis question and provider for each asset. APK imports measure DEX and native library members separately and retain their parent relationship.
 3. Inspect environment health. Configure executable locations under `environments[].tools`; an installed tool is not proof that a target is accessible.
 4. Use implementation evidence to assess hypotheses. When runtime validation is needed, prepare a plan with its target, script, observations, impact, duration and cleanup policy.
 5. Inspect and approve the immutable plan in the workbench. Stop or revoke blocks new execution and waits for active provider cleanup. Reconcile interrupted checks before retrying.
 
-The operator can also use `/security` to inspect state or `/security <JSON command>` to submit the same revision-checked commands. `security_help` exposes the command schema. Models cannot create operator approval or publish shared knowledge. A normal command must carry a stable operation ID and the observed revision; stop and revoke accept stale revisions because they only reduce execution authority.
+Automatic Web task intake uses an operator-saved workspace resource selection or explicit `taskIntake.workspaces` entries (`cwd`, `environmentIds`) and `taskIntake.maxAttempts`. Saved selections persist across restarts and take precedence over deployment defaults; saving no environments disables intake for that workspace. Changes apply to new tasks and do not change existing project authority. The first admitted security tool binds a logged user request to resources selected for that exact working directory. Internal messages and delegated Sessions cannot initialize tasks; an existing or explicitly left binding is preserved. The security profile maps its launch directory to `local`. CLI entry uses explicit project creation. Intake neither imports the workspace nor registers network targets or approves execution.
+
+The operator can also use `/security` to inspect state or `/security <JSON command>` to submit the same revision-checked commands. `security_help` accepts an optional `action` to return only that command schema; omitting it returns the complete schema. Static collection receipts include the current revision for subsequent commands; concurrent changes still require a refresh. Models cannot create operator approval or publish shared knowledge. A normal command must carry a stable operation ID and the observed revision; stop and revoke accept stale revisions because they only reduce execution authority.
 
 <a id="configure-analysis-providers"></a>
 ### Configure analysis providers
@@ -75,6 +79,8 @@ Structured reports use the in-process driver’s child-scoped `structured_output
 
 Each child receives a fresh Session with role-specific instructions and a compatible task. The [prompt and permission definitions](src/workbench/roles.ts) require one asset, a question, completion criteria, time/output limits, evidence references, uncertainty and next steps. Role admission is checked on every tool execution and again on static collection in the domain; hiding schemas alone does not authorize operations. Children cannot delegate, execute plans, approve or publish. The coordinator submits candidate records from their reports. Research prompts exclude private sample content from public queries; network data-loss prevention is not implemented.
 
+A reviewer can inspect existing evidence before a finding exists and return a structured report with evidence references and uncertainty. That report creates neither a finding nor a recorded finding verdict. For a formal verdict, the coordinator first saves a suspected finding with evidence; the reviewer calls `security_review` with its real finding ID and current hash.
+
 The built-in `binary` provider needs no external installation. Call `security_static` with `provider: "binary"`, the assigned asset/environment and `operation: "identity"`, `"hex"` or `"strings"`. Identity reports measured SHA-256 and selected PE/ELF header fields. Hex/string parameters accept byte `offset` and `length`; strings also accept `minLength` and `encoding` (`ascii` or `utf16le`, printable ASCII characters only). Omitted length is one eighth of the output budget. Partial pages retain offsets and incompleteness; overlap pages to inspect strings crossing a page edge. These observations do not establish full file validity, reachability or a vulnerability.
 
 ### Evidence and recovery
@@ -93,7 +99,7 @@ The journal appends one complete command per storage-domain record. A dedicated 
 
 ### Source snapshots and offline checks
 
-`import-source` saves one directory asset with relative paths, SHA-256 hashes, immutable content artifacts and explicit link exclusions. `maxDerivedAssets` bounds visited entries; `maxArtifactBytes` bounds cumulative source bytes. The `source` provider offers bounded `list`, `read` and literal `search` operations. Results retain file hashes, line numbers and continuation positions. Old file assets remain readable.
+`import-source` saves the selected source file or directory as one asset with relative paths, SHA-256 hashes and immutable content artifacts. A selected file produces one manifest member named by its basename; neighboring files are not imported. Directory traversal records excluded links without following them. `maxDerivedAssets` bounds visited entries; `maxArtifactBytes` bounds cumulative source bytes. The `source` provider offers bounded `list`, `read` and literal `search` operations. Results retain file hashes, line numbers and continuation positions. Old file assets remain readable.
 
 The `./offline` plugin accepts Python or browser scripts only through immutable approved plans. Configure a local `docker` installation and an existing image with Python, Node, Playwright and Chromium; the [image recipe](resources/offline/Dockerfile) and [browser runner](resources/offline/browser.mjs) define the runtime layout. Preparation pins the installed image ID. The provider never pulls images. Its configurable limits are `image`, `memoryMb`, `cpus`, `pids`, `temporaryMb` and `graceMs`.
 
@@ -128,7 +134,7 @@ The [journal](src/workbench/journal.ts) owns durable checks and attempts. Jobs, 
 
 The ./web and ./laboratory plugins provide approved HTTP evidence collection and explicit operator-owned lab lifecycle. Use the [Web lab guide](../../../docs/user/guide/security-analysis.md#local-web-laboratory) for setup and the [delivery scope](../../../docs/roadmaps/security-analysis.md#web-delivery-scope-2026-09-22) for unverified or deferred work. The versioned recipe uses official Kali, records installed packages and gates the build on a known yescrypt test vector. The operator can reuse `existingImage` (default `vxcontrol/kali-linux:latest`) from the local Docker image store without a toolbox pull or build. Reuse pins its image ID, measures tools in an owned network-disabled container and records yescrypt failure without blocking HTTP; a missing Python runtime rejects registration. Every reuse or build creates a separate generation, preserving existing labs during upgrades. Nuclei and Metasploit installation does not expose their execution.
 
-Independent reviews bind finding content, same-target evidence and a reviewer Session. A complete static implementation observation can support a reviewed confirmed or refuted result; identity, version and string inventory alone cannot. Runtime conclusions require a completed approved validation plan. Report generation uses one isolated, tool-free model pass over judgments and coverage, then validates every finding's disposition. Markdown contains a short security brief, with excess target findings in an optional appendix; JSON retains the project records. `reportMaxChars` is a soft writing target of 1,200 characters, `reportInputBytes` to 131,072, `reportOutputTokens` to 4,096, `reportMaxFindings` to five and `reportMaxLessons` to three. Without a dedicated route, the report uses the initiating Agent model. Failed or over-budget generation publishes no report.
+Independent reviews bind finding content, same-target evidence and a reviewer Session. A complete static implementation observation can support a reviewed confirmed or refuted result; identity, version and string inventory alone cannot. Runtime conclusions require a completed approved validation plan. Report generation uses one isolated, tool-free model pass over judgments and coverage, then validates every finding's disposition. Report inputs distinguish the requested objective from committed finding status and accepted review verdicts; completed static review does not imply runtime validation. It accepts a JSON object alone or inside one JSON or unlabelled Markdown code fence; surrounding prose, multiple blocks and invalid report fields are rejected. Markdown contains a short security brief, with excess target findings in an optional appendix; JSON retains the project records. `reportMaxChars` is a soft writing target of 1,200 characters, `reportInputBytes` to 131,072, `reportOutputTokens` to 4,096, `reportMaxFindings` to five and `reportMaxLessons` to three. Without a dedicated route, the report uses the initiating Agent model. Failed or over-budget generation publishes no report.
 
 <a id="model-experience"></a>
 
@@ -138,15 +144,15 @@ Independent reviews bind finding content, same-target evidence and a reviewer Se
 
 #### What the model sees
 
-The coordinator uses `security_scope` and other domain tools to plan checks, search evidence, prepare plans and review conclusions. Children see assigned assets and return summaries, evidence references, uncertainty and next steps. External output, shared knowledge and child reports are untrusted data and cannot expand authority.
+The coordinator uses `security_scope` and other domain tools to plan checks, search evidence, prepare plans and review conclusions. The skill catalog presents method summaries; the `skill` tool loads a selected method's complete instructions. Children see assigned assets and return summaries, evidence references, uncertainty and next steps. External output, shared knowledge and child reports are untrusted data and cannot expand authority.
 
 #### Token effect
 
-Domain tool schemas and retrieved evidence consume context according to `modelResultBytes`; original collection uses `maxOutputBytes`. `analysisTurnTokens` defaults to 120,000 provider-reported tokens, including cache reads, per project analysis turn. After the limit, the next model step is rejected; saved evidence remains available for a narrower follow-up. The package does not change token accounting.
+Skill summaries consume catalog context; method bodies add context when loaded. Domain tool responses use `modelResultBytes`; original collection uses `maxOutputBytes`. `analysisTurnTokens` defaults to 120,000 provider-reported tokens, including cache reads, per project analysis turn. After the limit, the next model step is rejected; saved evidence remains available for a narrower follow-up. The package does not change token accounting.
 
 #### KV Cache effect
 
-Tool definitions and workflow guidance remain stable. Project state enters context through logged tool results.
+Tool definitions and workflow guidance remain stable. Skill catalogs are logged context; loaded methods and project state enter through logged tool results.
 
 ## Known Limitations and Deferred Work
 

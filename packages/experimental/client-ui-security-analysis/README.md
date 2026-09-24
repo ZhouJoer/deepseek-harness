@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-View security projects, checks, environments and evidence inside the conversation. This optional extension retains ordinary chat and tool cards. The security domain checks authority for every action. External tools require separate configuration.
+Describe a security task in chat and review its findings, evidence and reports. Configure resources once per workspace. The optional panel retains ordinary conversation and tool cards; detailed assets, checks, environments and review controls are available when needed. The security domain checks authority for every action. External tools require separate configuration.
 
 ## Table of Contents
 
@@ -26,11 +26,11 @@ View security projects, checks, environments and evidence inside the conversatio
 
 Compose `@deepseek-ai/dsh-base`, an application bundle, and `@deepseek-ai/dsh-experimental-security-profile` in a dedicated profile. For Web, append `@deepseek-ai/dsh-experimental-security-web-profile`. Launch through `dsh --profile <name>`. See [security analysis](../security-analysis/README.md).
 
-Open Security analysis above the message composer, including in a new empty Session. Create or select a project, import a sample and create its check template. Use New project or Leave current project to clear the conversation selection; saved project records remain available in the sidebar. Preview, approve, revoke and execute plans under Findings. Use Retrospectives and experience to switch categories, search concise cards, expand recommendations, add structured notes or refine existing notes. The sidebar separates Material search and reviewed shared knowledge from the notes. Legacy prose stays hidden until refinement. The maintenance bar reports automatic refinement availability and the last result. Project stop waits for cleanup; refresh after a disconnect to reload authoritative state.
+Open Security analysis above the message composer, including in a new empty Session. Select the workspace resources and save them, then describe the task in chat. The default tabs show the task overview, findings, evidence and reports. The overview distinguishes confirmed findings, pending review and blocked work. Expand detailed controls for manual project selection, assets, checks, environments, reviews and knowledge. Leaving a project preserves its records and disables automatic intake for that Session. Project stop waits for cleanup; refresh after a disconnect to reload authoritative state.
 
 -----
 
-Source directory assets provide file inventory, line reads and literal searches from the conversation workbench. Evidence cards label static observations, offline simulations and device validation, with failure and cleanup details. Project overviews and reports retain completed child Session summaries; original child interaction remains in Session navigation.
+Source file or directory assets provide file inventory, line reads and literal searches from the conversation workbench. Evidence cards label static observations, offline simulations and device validation, with failure and cleanup details. Project overviews and reports retain completed child Session summaries; original child interaction remains in Session navigation.
 
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
@@ -78,7 +78,7 @@ Tool definitions and workflow guidance remain stable. Project state enters conte
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- The panel reloads on open, connection reset, refresh and mutations; provider progress still requires refresh. Use ordinary jobs and Session navigation for child details. Tool availability and outstanding environment acceptance are documented in [security analysis](../security-analysis/README.md).
+- The panel reloads on open, connection reset, refresh, mutations and the end of the current turn while open; intermediate provider progress requires refresh. Use ordinary jobs and Session navigation for child details. Tool availability and outstanding environment acceptance are documented in [security analysis](../security-analysis/README.md).
 
 <a id="dev-note"></a>
 ### Dev Note

@@ -72,6 +72,84 @@ async function harness(generateReport?: (prompt: string, signal: AbortSignal) =>
 
 describe('security workbench', () => {
 
+  it('initializes simultaneous tasks independently without a shared revision conflict', async () => {
+    const { controller, journal } = await harness()
+    const action = { kind: 'create' as const, title: 'Task', objective: 'Inspect the source', environmentIds: ['local'], maxAttempts: 3 }
+    const signal = new AbortController().signal
+    await Promise.all([
+      controller.admitTask('first-task', 'intake-first', action, signal),
+      controller.admitTask('second-task', 'intake-second', action, signal),
+    ])
+    const first = controller.binding('first-task')
+    const second = controller.binding('second-task')
+    expect(first?.role).toBe('coordinator')
+    expect(second?.role).toBe('coordinator')
+    expect(first?.engagementId).not.toBe(second?.engagementId)
+    expect(journal.view().records.filter(item => item.kind === 'engagement')).toHaveLength(3)
+    const revision = journal.view().revision
+    await controller.admitTask('first-task', 'intake-first', action, signal)
+    expect(journal.view().revision).toBe(revision)
+  })
+
+  it('keeps the first project when two admitted messages target the same Session', async () => {
+    const { controller, journal } = await harness()
+    const action = { kind: 'create' as const, title: 'First task', objective: 'Inspect the source', environmentIds: ['local'], maxAttempts: 3 }
+    const signal = new AbortController().signal
+    await Promise.all([
+      controller.admitTask('new-task', 'intake-first', action, signal),
+      controller.admitTask('new-task', 'intake-second', { ...action, title: 'Second task' }, signal),
+    ])
+    expect(journal.view().records.filter(item => item.kind === 'engagement')).toHaveLength(2)
+    expect(controller.view('new-task').records.find(item => item.kind === 'engagement')?.value)
+      .toMatchObject({ title: 'First task' })
+  })
+
+  it('preserves a leave operation committed before a queued task admission', async () => {
+    const { controller, journal, send } = await harness()
+    const action = { kind: 'create' as const, title: 'New task', objective: 'Inspect the source', environmentIds: ['local'], maxAttempts: 3 }
+    await Promise.all([
+      send({ kind: 'leave' }, true),
+      controller.admitTask('parent', 'intake-after-leave', action, new AbortController().signal),
+    ])
+    expect(controller.binding('parent')).toBeUndefined()
+    expect(controller.view('parent').records).toEqual([])
+    expect(journal.view().records.find(item => item.kind === 'binding' && item.value.sessionId === 'parent')?.value)
+      .toMatchObject({ active: false })
+    expect(journal.view().records.filter(item => item.kind === 'engagement')).toHaveLength(1)
+  })
+
+  it('cancels an intake waiting behind another journal commit without creating a project', async () => {
+    const { controller, journal } = await harness()
+    const entered = Promise.withResolvers<undefined>()
+    const release = Promise.withResolvers<undefined>()
+    const blocker = journal.commit('hold-intake', undefined, { test: 'hold-intake' }, async (view) => {
+      entered.resolve(undefined)
+      await release.promise
+      return view.records.filter(item => item.kind === 'binding' && item.value.sessionId === 'parent')
+    })
+    onTestFinished(async () => { release.resolve(undefined); await blocker })
+    await entered.promise
+    const abort = new AbortController()
+    const action = { kind: 'create' as const, title: 'Cancelled task', objective: 'Inspect the source', environmentIds: ['local'], maxAttempts: 3 }
+    const pending = controller.admitTask('cancelled-task', 'intake-cancelled', action, abort.signal)
+    const rejected = expect(pending).rejects.toThrow('Task cancelled')
+    abort.abort(new Error('Task cancelled'))
+    release.resolve(undefined)
+    await blocker
+    await rejected
+    expect(controller.binding('cancelled-task')).toBeUndefined()
+    expect(journal.view().records.filter(item => item.kind === 'engagement')).toHaveLength(1)
+    await expect(controller.admitTask('cancelled-task', 'intake-aborted', action, abort.signal)).rejects.toThrow('Task cancelled')
+  })
+
+  it('rejects task resources absent from the deployment', async () => {
+    const { controller } = await harness()
+    await expect(controller.admitTask('new-task', 'intake-unavailable', {
+      kind: 'create', title: 'Task', objective: 'Inspect the source', environmentIds: ['unknown'], maxAttempts: 3,
+    }, new AbortController().signal)).rejects.toThrow('Unknown environment')
+    expect(controller.binding('new-task')).toBeUndefined()
+  })
+
   it('leaves a project without deleting its records and can select it again', async () => {
     const { controller, send, journal } = await harness()
     const original = controller.binding('parent')?.engagementId

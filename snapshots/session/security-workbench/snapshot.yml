@@ -6,5 +6,7 @@ recording: authored
 header:
   class: security-workbench
   pin: true
+  childSystemPrompts: [1]
+  childToolSchemas: [1]
 replay:
   override: true

@@ -21,6 +21,9 @@
   config:
     allowParallelInProgress: true
 
+- id: tool-skill
+  name: '@deepseek-ai/dsh-tool-skill'
+
 - id: tool-web
   name: '@deepseek-ai/dsh-tool-web'
   config:

@@ -62,7 +62,7 @@ const actions = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('select'), engagementId: text }).strict(),
   z.object({ kind: z.literal('leave') }).strict(),
   z.object({ kind: z.literal('import'), path: text, label: text }).strict(),
-  z.object({ kind: z.literal('import-source'), path: text, label: text }).strict(),
+  z.object({ kind: z.literal('import-source'), path: text.describe('Absolute source file or directory inside the configured import roots. A selected file imports only that file.'), label: text }).strict(),
   z.object({ kind: z.literal('import-legacy'), path: text, title: text }).strict(),
   z.object({ kind: z.literal('check'), check: checkInput }).strict(),
   z.object({ kind: z.literal('web-target'), environmentId: text, label: text, pathPrefix: text.default('/') }).strict(),
@@ -262,6 +262,50 @@ export class SecurityController {
     }
   }
   /**
+   * Initialize a task authorized by a trusted user carrier and Host workspace mapping.
+   * @param sessionId - Session receiving the committed user message.
+   * @param operationId - stable identity of this message's intake operation.
+   * @param action - creation fields resolved by the Host, never a model tool request.
+   * @param signal - cancellation checked before admission and inside the serialized commit.
+   * @returns current Session scope; existing active or inactive bindings remain unchanged.
+   */
+  async admitTask(sessionId: string, operationId: string,
+    action: Extract<SecurityCommand['action'], { kind: 'create' }>, signal: AbortSignal): Promise<WorkbenchView> {
+    signal.throwIfAborted()
+    await this.journal.commit(operationId, undefined, { sessionId, intake: action }, (view) => {
+      signal.throwIfAborted()
+      const binding = view.records.find(item => item.kind === 'binding' && item.value.sessionId === sessionId)
+      return binding ? [binding] : this.createRecords(sessionId, action)
+    })
+    return this.view(sessionId)
+  }
+
+  private createRecords(sessionId: string, action: Extract<SecurityCommand['action'], { kind: 'create' }>): SecurityRecord[] {
+    if (action.environmentIds.some(id => !this.options.environments.some(env => env.id === id)))
+      throw new Error('Unknown environment')
+    const project = engagementSchema.parse({
+      title: action.title,
+      objective: action.objective,
+      environmentIds: action.environmentIds,
+      maxAttempts: action.maxAttempts,
+      id: randomUUID(),
+      stopped: false,
+    })
+    return [
+      { kind: 'engagement', value: project },
+      {
+        kind: 'binding',
+        value: bindingSchema.parse({
+          sessionId,
+          engagementId: project.id,
+          role: 'coordinator',
+          assetIds: [],
+        }),
+      },
+    ]
+  }
+
+  /**
    * Issue a structured command. Only the user-facing carrier sets operator.
    * @param sessionId - authenticated session identity.
    * @param input - untrusted command JSON.
@@ -281,30 +325,7 @@ export class SecurityController {
       action.kind === 'stop' || action.kind === 'revoke' ? undefined : command.expectedRevision,
       { sessionId, operator, action },
       async (view) => {
-        if (action.kind === 'create') {
-          if (action.environmentIds.some(id => !this.options.environments.some(env => env.id === id)))
-            throw new Error('Unknown environment')
-          const project = engagementSchema.parse({
-            title: action.title,
-            objective: action.objective,
-            environmentIds: action.environmentIds,
-            maxAttempts: action.maxAttempts,
-            id: randomUUID(),
-            stopped: false,
-          })
-          return [
-            { kind: 'engagement', value: project },
-            {
-              kind: 'binding',
-              value: bindingSchema.parse({
-                sessionId,
-                engagementId: project.id,
-                role: 'coordinator',
-                assetIds: [],
-              }),
-            },
-          ]
-        }
+        if (action.kind === 'create') return this.createRecords(sessionId, action)
         if (action.kind === 'select') {
           this.project(view, action.engagementId)
           return [

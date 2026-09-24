@@ -1,4 +1,4 @@
-/** Immutable directory admission, member integrity, and bounded source queries. @module */
+/** Immutable source admission, member integrity, and bounded source queries. @module */
 import { mkdtemp, mkdir, rm, writeFile, symlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -9,7 +9,7 @@ import { importSource, SourceProvider, sourceManifestSchema } from '../src/workb
 import { sourceAssetSchema } from '../src/workbench/model.ts'
 import type { AnalysisContext } from '../src/workbench/providers.ts'
 
-async function fixture() {
+async function fixture(selection: 'directory' | 'file' = 'directory') {
   const root = await mkdtemp(join(tmpdir(), 'dsh-source-'))
   onTestFinished(() => rm(root, { recursive: true, force: true }))
   const source = join(root, 'source')
@@ -17,7 +17,7 @@ async function fixture() {
   await writeFile(join(source, 'main.py'), 'name = "测试"\nprint(name)\n')
   await writeFile(join(source, 'binary.dat'), Buffer.from([0, 255]))
   const store = new ArtifactStore(join(root, 'store'), 65536)
-  const artifact = await importSource(store, source, [root], { entries: 10, bytes: 65536 })
+  const artifact = await importSource(store, selection === 'file' ? join(source, 'main.py') : source, [root], { entries: 10, bytes: 65536 })
   const context: AnalysisContext = {
     asset: sourceAssetSchema.parse({ kind: 'source', id: 'source', engagementId: 'project', label: 'Source', artifact, identity: 'measured' }),
     environment: { id: 'local', kind: 'local', label: 'Fixture', cwd: root, tools: [] },
@@ -39,6 +39,41 @@ describe('immutable source', () => {
       nextLine: 2, hasMore: true,
     })
     expect(result).toMatchObject({ incomplete: true, method: 'static' })
+  })
+  it('snapshots only the selected file and retains its measured lines after live edits', async () => {
+    const { source, store, artifact, run } = await fixture('file')
+    const manifest = sourceManifestSchema.parse(JSON.parse((await store.read(artifact)).toString()))
+    expect(manifest.files.map(file => file.path)).toEqual(['main.py'])
+    expect(manifest.excluded).toEqual([])
+    await writeFile(join(source, 'main.py'), 'changed')
+    const read: unknown = JSON.parse(Buffer.from((await run('read', { path: 'main.py', limit: 1 })).bytes).toString())
+    expect(read).toMatchObject({ items: [{ path: 'main.py', line: 1, text: 'name = "测试"' }], hasMore: true })
+    const search: unknown = JSON.parse(Buffer.from((await run('search', { query: 'print(' })).bytes).toString())
+    expect(search).toMatchObject({ items: [{ path: 'main.py', line: 2, text: 'print(name)' }], hasMore: false })
+    await expect(run('read', { path: 'binary.dat' })).rejects.toThrow(/absent/)
+  })
+  it('applies approved roots, entry limits, and exact byte limits to a selected file', async () => {
+    const { store, source, root } = await fixture()
+    const path = join(source, 'main.py')
+    const artifact = await store.import(path, [root])
+    const bytes = artifact.artifact.size
+    await expect(importSource(store, path, [root], { entries: 1, bytes })).resolves.toMatchObject({
+      mediaType: 'application/vnd.dsh.source-tree+json',
+    })
+    await expect(importSource(store, path, [join(root, 'store')], { entries: 1, bytes })).rejects.toThrow(/outside/)
+    await expect(importSource(store, path, [root], { entries: 0, bytes })).rejects.toThrow(/entry limit/)
+    await expect(importSource(store, path, [root], { entries: 1, bytes: bytes - 1 })).rejects.toThrow(/byte limit/)
+    await expect(importSource(store, 'main.py', [root], { entries: 1, bytes })).rejects.toThrow(/absolute/)
+  })
+  it('rejects selected links and files reached through a link outside the approved roots', async () => {
+    const { store, source, root } = await fixture()
+    const outside = join(root, 'outside')
+    await mkdir(outside)
+    await writeFile(join(outside, 'private.js'), 'not admitted')
+    const linked = join(source, 'linked')
+    await symlink(outside, linked, process.platform === 'win32' ? 'junction' : 'dir')
+    await expect(importSource(store, linked, [root], { entries: 10, bytes: 65536 })).rejects.toThrow(/regular file or directory/)
+    await expect(importSource(store, join(linked, 'private.js'), [source], { entries: 10, bytes: 65536 })).rejects.toThrow(/outside/)
   })
   it('searches literal text with original file hashes and line numbers', async () => {
     const { run } = await fixture()

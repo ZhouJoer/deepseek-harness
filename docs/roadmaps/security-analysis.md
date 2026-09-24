@@ -8,7 +8,7 @@ English | [中文](security-analysis.zh.md)
 
 ## Summary
 
-This roadmap tracks the optional DeepSeek Harness security extension as of 2026-09-21. It is a delivery plan, not a support claim. The objective is a recoverable long-running security check: reconnaissance → surface analysis → assessment and retrieval → controlled validation. The [package reference](../../packages/experimental/security-analysis/README.md) owns current runtime behavior and the tool compatibility matrix; the [user guide](../user/guide/security-analysis.md) owns setup.
+The [security enhancement and interaction simplification plan](security-harness-simplification.md) owns the current refactoring order and implementation checklist. This roadmap retains the specialist capability backlog and recorded delivery scope; its priority labels do not override that plan. The [package reference](../../packages/experimental/security-analysis/README.md) owns current runtime behavior and the tool compatibility matrix; the [user guide](../user/guide/security-analysis.md) owns setup.
 
 ## Contents
 

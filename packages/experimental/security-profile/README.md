@@ -24,7 +24,7 @@ View security projects, checks, environments and evidence inside the conversatio
 <a id="use-this-package"></a>
 ## Use this package
 
-This bundle ships disabled and must be selected explicitly. Compose `@deepseek-ai/dsh-base`, an application bundle, and `@deepseek-ai/dsh-experimental-security-profile` in a dedicated profile. For Web, append `@deepseek-ai/dsh-experimental-security-web-profile`. Launch through `dsh --profile <name>`. See [security analysis](../security-analysis/README.md).
+This bundle ships disabled and must be selected explicitly. Compose `@deepseek-ai/dsh-base`, an application bundle, and `@deepseek-ai/dsh-experimental-security-profile` in a dedicated profile. For Web, append `@deepseek-ai/dsh-experimental-security-web-profile`. Launch through `dsh --profile <name>`. The Web conversation automatically starts tasks for the launch directory with the configured `local` environment; customize `taskIntake` for other workspace mappings. See [security analysis](../security-analysis/README.md).
 
 -----
 
@@ -34,7 +34,7 @@ This bundle ships disabled and must be selected explicitly. Compose `@deepseek-a
 <details>
 <summary>Implementation details</summary>
 
-The Host patch mounts domain services and dedicated providers. The exported plugin supplies the Web profile with a security-only preset roster: jobs, goal, todo, web lookup and compaction accompany domain tools, while shell, filesystem mutation, PTC and arbitrary MCP tools are absent. Role permissions remain in the domain service. Default profiles and agent-loop are unchanged. No invariant companion is published because this package owns disposable composition registrations; the domain owns business state.
+The Host patch mounts domain services and dedicated providers. The exported plugin supplies the Web profile with a security-only preset roster: jobs, goal, todo, on-demand security methods, web lookup and compaction accompany domain tools, while shell, filesystem mutation, PTC and arbitrary MCP tools are absent. Role permissions remain in the domain service. Default profiles and agent-loop are unchanged. No invariant companion is published because this package owns disposable composition registrations; the domain owns business state.
 
 </details>
 
@@ -55,11 +55,11 @@ The Host patch mounts domain services and dedicated providers. The exported plug
 
 #### What the model sees
 
-This package supplies no direct model input; `security_scope` belongs to the domain service. Domain tools record model-visible results in the Session.
+The preset exposes the shared `skill` loader. Security method summaries enter the logged skill catalog; selected method bodies are loaded as tool results. `security_scope` belongs to the domain service and records project state in the Session.
 
 #### Token effect
 
-Domain tool schemas and retrieved evidence consume context according to the configured output limit. This package does not change token accounting.
+Method summaries, loaded bodies, domain tool schemas and retrieved evidence consume context according to their configured limits. This profile sets `analysisTurnTokens` to 360,000 cumulative provider-reported tokens per analysis turn, including repeated cache reads; it is not an output-token or context-window limit. The service default remains 120,000. Adjust the profile limit to the model and task; this package does not change token accounting.
 
 #### KV Cache effect
 

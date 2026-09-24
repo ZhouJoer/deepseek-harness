@@ -10,7 +10,7 @@ description: "启动独立安全工作台，并准备经授权的逆向分析检
 
 ## 1. 准备 profile
 
-在仓库根目录执行 `pnpm run build` 构建。编辑[示例 overlay](../../../apps/cli/config/examples/security-analysis/cordis.yml)，填入实际 Python、JADX 和 Android platform tools 的路径。`python` 必须安装官方 Frida bindings。工具安装情况和目标是否就绪分开检查。示例仅登记 fastboot 与 john 的版本查询。
+在仓库根目录执行 `pnpm run build` 构建。源码启动器仍加载已构建的工作区插件；修改 Host 或 Client 插件后，需要先重新构建再重启，刷新页面不能替代构建。编辑[示例 overlay](../../../apps/cli/config/examples/security-analysis/cordis.yml)，填入实际 Python、JADX 和 Android platform tools 的路径。`python` 必须安装官方 Frida bindings。工具安装情况和目标是否就绪分开检查。示例仅登记 fastboot 与 john 的版本查询。
 
 通过现有 Web 应用加载安全组合：
 
@@ -24,9 +24,9 @@ pnpm security
 
 ## 2. 设置范围
 
-选择工作区并打开 Session，然后点击消息输入框上方的**安全分析**。创建项目，填写目标并选择允许使用的已配置环境。点击**新建项目**或**退出当前项目**会清除本会话的项目选择；旧检查和发现仍保留在原项目。侧栏独立浏览历史项目，不会改变会话选择。在 `importRoots` 范围内输入样本绝对路径进行导入。按研究问题添加检查；四阶段模板只是可选起点。APK 成员分别计算实测身份，并关联到父资产。
+选择工作区并打开 Session，然后点击消息输入框上方的**安全分析**。保存该工作区可用的已配置环境，再回到对话描述任务、目标和限制。安全 profile 为启动目录预选 `local`。首次安全工具调用会初始化任务；四个默认页签展示总览、发现、证据和报告。资源修改只影响新任务。通过**手动设置与项目切换**选择已有项目；**高级详情**包含资产、检查、环境、复核和知识。**退出当前项目**保留记录，并阻止本 Session 自动重新加入。只导入 `importRoots` 内用户指定的样本；选择工作区不会导入文件。
 
-打开**环境与工具**检查所选环境。缺失安装和设备断连显示为诊断。Android 设备 ID 和 Docker 镜像须在 Host overlay 中明确配置；默认示例只创建本机环境。使用 Ghidra 或设备前，请阅读 [provider 配置](../../../packages/experimental/security-analysis/README.zh.md#configure-analysis-providers)。
+打开**高级详情** → **环境与工具**检查所选环境。缺失安装和设备断连显示为诊断。Android 设备 ID 和 Docker 镜像须在 Host overlay 中明确配置；默认示例只创建本机环境。使用 Ghidra 或设备前，请阅读 [provider 配置](../../../packages/experimental/security-analysis/README.zh.md#configure-analysis-providers)。
 
 ## 3. 收集并评估证据
 
@@ -44,17 +44,17 @@ pnpm security
 
 安全 profile 保留 DSH 聊天界面，在消息输入框上方增加**安全分析**入口。选择工作区并打开 Session 后，首条消息发送前即可看到入口。如果没有显示，请确认打开的是 `pnpm security` 输出的 3081 端口认证链接，构建更新后的客户端包并重启，再刷新浏览器。
 
-1. 打开工作台，创建名为 `Demo` 的项目，目标填“检查自有静态样本”，环境选 `local`。创建项目不需要模型密钥。
-2. 在**资产**中导入 [static-demo.txt](../../../packages/experimental/security-analysis/tests/fixtures/static-demo.txt) 的绝对路径。在 PowerShell 执行 `Resolve-Path packages/experimental/security-analysis/tests/fixtures/static-demo.txt` 可取得路径。资产应显示实测 SHA-256；这是不含可执行代码的文本测试样本，不代表真实漏洞。
-3. 可选地点击**生成四阶段检查计划**，再进入**检查**。模板会创建带依赖关系的四项待执行检查；研究过程中可按需要选择或修订检查。试用**停止项目**和**恢复项目**，刷新后状态应保留。
-4. 进入**环境与工具**检查 `local`。外部工具缺失时应明确显示诊断；这不影响内置二进制 provider 读取已导入样本。
+1. 打开工作台，展开**手动设置与项目切换**并创建名为 `Demo` 的项目，目标填“检查自有静态样本”，环境选 `local`。这条手动配置路径不需要模型密钥。
+2. 在**高级详情** → **资产**中导入 [static-demo.txt](../../../packages/experimental/security-analysis/tests/fixtures/static-demo.txt) 的绝对路径。在 PowerShell 执行 `Resolve-Path packages/experimental/security-analysis/tests/fixtures/static-demo.txt` 可取得路径。资产应显示实测 SHA-256；这是不含可执行代码的文本测试样本，不代表真实漏洞。
+3. 可选地点击**生成四阶段检查计划**，再进入**高级详情** → **检查**。模板会创建带依赖关系的四项待执行检查；研究过程中可按需要选择或修订检查。试用**停止项目**和**恢复项目**，刷新后状态应保留。
+4. 进入**高级详情** → **环境与工具**检查 `local`。外部工具缺失时应明确显示诊断；这不影响内置二进制 provider 读取已导入样本。
 5. 配置模型后，在聊天中发送以下要求。通过实际工具卡片和证据 ID 核实调用，不能只看模型声称“已调用”的文字。
 
 ```text
 Read security_scope and security_capabilities. For the imported static-demo.txt asset, use security_static with provider binary, operation strings and parameters {}. Do not run external tools or dynamic validation. Report the sample SHA-256, the saved evidence ID and the observed DSH_SECURITY_DEMO_V1 and DEMO_PARSER_ENTRY strings. Do not infer a vulnerability from this fixture.
 ```
 
-在**知识**中搜索 `DEMO_PARSER_ENTRY`，应能找到采集的项目证据并查看原始制品。验证委派时，让协调者把同一资产的清点交给 `reconnaissance`，任务为 `inventory`，收取 `job_output` 后，再交给 `reviewer` 以 `review` 任务复核证据。结果应包含子 Session 链接、证据引用和不确定性；子 agent 不能执行或批准验证计划。
+在**高级详情** → **知识**中搜索 `DEMO_PARSER_ENTRY`，应能找到采集的项目证据并查看原始制品。验证委派时，让协调者把同一资产的清点交给 `reconnaissance`，任务为 `inventory`，收取 `job_output` 后，再交给 `reviewer` 以 `review` 任务复核证据。结果应包含子 Session 链接、证据引用和不确定性；子 agent 不能执行或批准验证计划。
 
 Ghidra GUI 分析、JADX 和 Frida 需要配置对应外部工具。仅配置 Python 可执行文件不能证明 Frida bindings 或设备已经就绪。上述步骤不需要 Android 设备，通过它们也不代表外部工具验收矩阵已完成。
 
@@ -69,16 +69,16 @@ Windows Frida 的正常结束和取消，以及 Docker 生命周期已有本地�
 
 1. 确保 Docker Desktop 引擎已运行，Host PATH 包含 Docker CLI 和凭据助手。选择 **复用本地 Kali 镜像**，检测已安装的 `vxcontrol/kali-linux:latest`，无需重新构建或拉取该镜像。Host 靶场配置 `existingImage` 可指定其他本地镜像。登记固定不可变镜像 ID，记录工具版本和固定 yescrypt 向量的实测结果；可选工具缺失或 yescrypt 检测失败不阻塞 HTTP 采集。**构建新工具箱与靶场配方** 仍可生成官方 Kali 新镜像，该构建要求 yescrypt 检测通过。每次登记或构建产生独立版本，标签或配置变化不会改变已有靶场。准备期间可能下载固定版本的 Juice Shop 靶机镜像。
 2. 启动已准备的靶场，再核对状态。严格隔离网络不支持直接发布浏览器端口，受控回环代理尚待实现。工具容器和靶机使用专属内部网络。清空会移除容器和网络；再次启动将产生新的目标标识。
-3. 返回聊天工作台并刷新。在 **资产** 中选择靶场环境，填写 Web 目标名称和允许的路径前缀（初次可用 /），登记已启动目标。重置后须重新登记。
+3. 返回聊天工作台并刷新。在 **高级详情** → **资产** 中选择靶场环境，填写 Web 目标名称和允许的路径前缀（初次可用 /），登记已启动目标。重置后须重新登记。
 4. 添加检查并准备计划：provider 为 web，operation 为 request，parameters 为 {"path":"/","method":"GET"}。填写假设、预期响应、持续时间、影响和清理说明，核对并批准具体版本后执行。HTTP 采集支持 GET 和 HEAD；记录重定向但不跟随。
-5. 根据已保存证据记录疑似发现。请协调者委派新的 reviewer 子 Session 复核；复核者调用 security_review，提交发现哈希、`basis`（`static` 或 `runtime`）、支持/反对证据和不确定性。在 **独立复核** 页面应用结论。静态结论须有完整的实现材料；运行验证结论须有已完成批准计划的完整证据。修改发现会使复核失效。
+5. 根据已保存证据记录疑似发现。请协调者委派新的 reviewer 子 Session 复核；复核者调用 security_review，提交发现哈希、`basis`（`static` 或 `runtime`）、支持/反对证据和不确定性。在 **高级详情** → **独立复核** 页面应用结论。静态结论须有完整的实现材料；运行验证结论须有已完成批准计划的完整证据。修改发现会使复核失效。
 6. 使用会话模型或配置的专用模型，在 **报告** 页面生成报告。项目侧栏保留简短 Markdown 报告、完整 JSON 和可选的补充发现附表。正文概括安全判断、修复、可复用经验与未覆盖范围。输入或输出超出配置限额时，不会发布新报告。项目分析轮次达到 token 限额后会在下一次模型请求前停止；可用已保存证据继续提出更聚焦的问题。
 
 Nuclei 与 Metasploit 执行、审核模块目录、Vulhub 编排及任意外部目标尚不可用。配方安装其二进制不代表 provider 能力已可用。John 仅进行固定能力检测，离线密码审计后续实现。构建失败时查看记录的错误，先停止已拥有资源再重试。Host 重启将未完成靶场标为待核对，不会重放检查。
 
 ## 源码与静态前端项目
 
-在**资产**中使用**导入源码目录**导入已授权目录。选择环境后可清点文件、从指定行读取相对路径或搜索字面文本。证据预览包含成员哈希、行号及续读位置；修改原始目录不会改变已导入快照。
+在**高级详情** → **资产**中导入已授权的源码文件或目录。选择单个文件时仅导入该文件。选择环境后可清点文件、从指定行读取相对路径或搜索字面文本。证据预览包含成员哈希、行号及续读位置；修改原始源码不会改变已导入快照。
 
 设备应用应分别委派前端与设备逻辑问题。Web Bluetooth 和 GATT 应按设备协议分析，不能假定存在 HTTP 服务。让 DSH 生成注入假时钟、存储、WLAN 或 GATT 的 Python 或浏览器脚本，审批前检查具体脚本与固定镜像。镜像或运行时缺失属于能力阻塞。
 

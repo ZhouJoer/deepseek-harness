@@ -56,6 +56,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       refine: id => unwrap(remote.refineKnowledge(id)),
       command: (id, command) => unwrap(remote.command(id, command)),
       configuration: id => unwrap(remote.configuration(id)),
+      configureWorkspace: (id, input) => unwrap(remote.configureWorkspace(id, input)),
       environment: (id, environment, action) => unwrap(remote.environment(id, environment, action)),
       execute: (id, plan, operation, revision) => unwrap(remote.execute(id, plan, operation, revision)),
       search: (id, query, shared) => unwrap(remote.search(id, query, shared)),

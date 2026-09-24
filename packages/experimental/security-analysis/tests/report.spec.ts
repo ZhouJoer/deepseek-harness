@@ -23,6 +23,29 @@ function answer(findings = [0, 1], excludedIndices: number[] = []) {
     lessons: ['遇到可变长度字段，应沿输入到拷贝位置核对实际边界。'], uncovered: ['源码与 Web 未检查。'] })
 }
 
+it.each(['json', ''])('accepts a single %s code fence around an otherwise valid report', (language) => {
+  const response = ' \r\n```' + language + '\r\n' + answer() + '\r\n```\r\n '
+  expect(renderReport(fixture(), response, limits)).toEqual(renderReport(fixture(), answer(), limits))
+})
+
+it.each([
+  ['leading prose', 'Here is the report:\n```json\n' + answer() + '\n```'],
+  ['trailing prose', '```json\n' + answer() + '\n```\nReport complete.'],
+  ['multiple blocks', '```json\n' + answer() + '\n```\n```json\n{}\n```'],
+  ['another language', '```javascript\n' + answer() + '\n```'],
+  ['an unclosed fence', '```json\n' + answer()],
+  ['invalid JSON', '```json\n{"assessment":}\n```'],
+])('rejects report output containing %s', (_case, response) => {
+  expect(() => renderReport(fixture(), response, limits)).toThrow()
+})
+
+it('retains schema, finding accounting and complete response byte limits for fenced reports', () => {
+  const records = fixture()
+  expect(() => renderReport(records, '```json\n{}\n```', limits)).toThrow(/assessment/u)
+  expect(() => renderReport(records, '```json\n' + answer([1], []) + '\n```', limits)).toThrow(/every finding/u)
+  const response = '```json\n' + answer() + '\n```'
+  expect(() => renderReport(records, response, { ...limits, outputBytes: Buffer.byteLength(answer()) })).toThrow(/byte budget/u)
+})
 it('produces a short brief and a complete appendix without audit identifiers', () => {
   const records = fixture()
   const prompt = reportPrompt(records, limits)
@@ -57,7 +80,9 @@ it('reports imported source coverage without evidence identities or raw observat
 })
 
 it('uses one separator when model fields already end with punctuation', () => {
-  const response = JSON.parse(answer()) as { findings: { mechanism: string; conditions: string; impact: string; location: string; fix: string }[] }
+  const response = JSON.parse(answer()) as {
+    findings: { mechanism: string; conditions: string; impact: string; location: string; fix: string }[]
+  }
   for (const finding of response.findings) {
     finding.mechanism += '。'
     finding.conditions += '。'
@@ -76,7 +101,7 @@ it('requires a disposition for every finding and preserves confirmed risks', () 
   expect(() => renderReport(records, answer([0, 0], []), limits)).toThrow(/every finding/)
 })
 
-it('uses the accepted review pointer rather than a later unaccepted review', () => {
+it('separates requested conditions from accepted review facts and ignores unaccepted or stale reviews', () => {
   const records = fixture()
   const finding = records.find(item => item.kind === 'finding')
   if (finding?.kind !== 'finding') throw new Error('Finding missing')
@@ -88,12 +113,35 @@ it('uses the accepted review pointer rather than a later unaccepted review', () 
     explanation: 'Relevant branch checks no remaining bytes.' }) })
   records.push({ kind: 'review', value: reviewSchema.parse({ ...base, id: 'later', basis: 'runtime',
     explanation: 'Unaccepted and unrelated later assessment.' }) })
+  const project = records.find(item => item.kind === 'engagement')
+  if (project?.kind !== 'engagement') throw new Error('Project missing')
+  project.value.objective = '仅静态检查此文件。没有独立复核时保持待复核状态。'
   const prompt = reportPrompt(records, limits)
-  expect(prompt).toContain('Relevant branch checks no remaining bytes.')
+  const data = JSON.parse(prompt.split('\nData: ')[1]!) as { project: unknown; findings: unknown[] }
+  expect(data.project).toEqual({ title: '目标安全简报', requestedObjective: project.value.objective })
+  expect(data.findings[0]).toMatchObject({ status: 'confirmed', review: {
+    accepted: true, verdict: 'confirmed', basis: 'static', explanation: 'Relevant branch checks no remaining bytes.', uncertainty: '',
+  } })
+  expect(data.findings[1]).toMatchObject({ status: 'suspected', review: null })
   expect(prompt).not.toContain('Unaccepted and unrelated later assessment.')
-  expect(renderReport(records, answer(), limits).markdown).toContain('静态分析')
+  expect(prompt).toMatchSnapshot('accepted static review with a conditional user request')
+  const output = renderReport(records, answer(), limits).markdown
+  expect(output).toContain('已确认，静态分析')
+  expect(output).not.toContain('运行验证')
+  finding.value.explanation = 'The material claim changed after review.'
+  finding.value.status = 'suspected'
+  const changed = JSON.parse(reportPrompt(records, limits).split('\nData: ')[1]!) as { findings: unknown[] }
+  expect(changed.findings[0]).toMatchObject({ status: 'suspected', review: null })
 })
 
+it('rejects model-written finding status instead of replacing committed conclusions', () => {
+  const records = fixture()
+  const before = JSON.stringify(records)
+  const response = JSON.parse(answer()) as { findings: Record<string, unknown>[] }
+  response.findings[0]!.status = 'suspected'
+  expect(() => renderReport(records, JSON.stringify(response), limits)).toThrow(/status/u)
+  expect(JSON.stringify(records)).toBe(before)
+})
 it('states missing coverage when there are no findings', () => {
   const records = fixture().filter(item => item.kind !== 'finding')
   expect(reportPrompt(records, limits)).toContain('lessons and uncovered are arrays of strings')

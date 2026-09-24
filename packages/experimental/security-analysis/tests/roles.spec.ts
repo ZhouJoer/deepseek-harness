@@ -33,5 +33,7 @@ describe('security role assignments', () => {
     expect(prompt).toContain('Assigned asset: sample')
     expect(prompt).toContain('"completionCriterion":"Cite contrary evidence"')
     expect(prompt).toContain('not additional authority')
+    expect(prompt).toContain('Without a recorded finding, return the evidence assessment through structured_output')
+    expect(prompt).toContain('Never invent finding IDs or hashes')
   })
 })

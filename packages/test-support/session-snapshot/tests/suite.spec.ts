@@ -878,7 +878,13 @@ describe('tool-schema snapshots', () => {
     expect(parseToolSchemasSnapshot(formatted)).toEqual(snapshot)
   })
 
+  it('round-trips an explicitly empty tool catalog', () => {
+    expect(parseToolSchemasSnapshot(formatToolSchemasSnapshot([]))).toEqual({ initial: [], changes: [] })
+  })
+
   it('rejects invalid top-level and field shapes', () => {
+    expect(() => parseToolSchemasSnapshot('{"changes":[]}')).toThrow(/array-valued/)
+    expect(() => parseToolSchemasSnapshot('{"initial":null,"changes":[]}')).toThrow(/array-valued/)
     expect(() => parseToolSchemasSnapshot('null')).toThrow(/must be an object/)
     expect(() => parseToolSchemasSnapshot('"invalid"')).toThrow(/must be an object/)
     expect(() => parseToolSchemasSnapshot('[]')).toThrow(/must be an object/)

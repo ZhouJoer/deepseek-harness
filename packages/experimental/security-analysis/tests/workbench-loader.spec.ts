@@ -32,8 +32,11 @@ import { JobId } from '@deepseek-ai/dsh-jobs'
 import { startInProcessRun } from '@deepseek-ai/dsh-subagent-in-process-driver'
 import { createScope, bindScopeParent, scopeOf } from '@deepseek-ai/dsh-scope'
 import Approval from '@deepseek-ai/dsh-user-approval'
+import Skills from '@deepseek-ai/dsh-skill'
+import * as ToolSkill from '@deepseek-ai/dsh-tool-skill'
 import Security from '../src/workbench/index.ts'
 import { findingHash } from '../src/workbench/assessment.ts'
+import type { SessionBinding } from '../src/workbench/model.ts'
 import * as Ghidra from '../src/ghidra-provider.ts'
 import * as Frida from '../src/frida-provider.ts'
 import * as Android from '../src/android-provider.ts'
@@ -52,8 +55,13 @@ afterEach(async () => {
 
 class ScopeModel extends LlmAdapter {
   readonly requests: GenerateOptions[] = []
+  firstSkill: string | undefined
+  scopeCalls = 1
   usageTokens = 0
   reportFailure = false
+  childReport: NonNullable<SessionBinding['report']> = {
+    summary: 'Assigned evidence review completed.', evidenceIds: [], uncertainty: 'No observations collected.', nextSteps: [],
+  }
   refinementOutput: ((prompt: string) => string) | undefined
   reportOutput: ((prompt: string) => string) | undefined
   refinementWait: ((signal: AbortSignal | undefined) => Promise<void>) | undefined
@@ -78,13 +86,15 @@ class ScopeModel extends LlmAdapter {
       yield { type: 'finish', reason: { kind: 'stop' } }
     } else if (options.tools?.some(tool => tool.name === 'structured_output')) {
       const call = { type: 'tool-call' as const, id: ToolCallId('report'), name: 'structured_output',
-        arguments: JSON.stringify({ summary: 'Assigned evidence review completed.', evidenceIds: [], uncertainty: 'No observations collected.', nextSteps: [] }) }
+        arguments: JSON.stringify(this.childReport) }
       yield { type: 'block-start', index: 0, blockType: 'tool-call' }
       yield { type: 'tool-call-delta', index: 0, id: call.id, name: call.name, argumentsDelta: call.arguments }
       yield { type: 'block-end', index: 0, block: call }
       yield { type: 'finish', reason: { kind: 'tool-calls' } }
-    } else if (this.requests.length === 1) {
-      const call = { type: 'tool-call' as const, id: ToolCallId('scope-call'), name: 'security_scope', arguments: '{}' }
+    } else if (this.requests.length <= this.scopeCalls) {
+      const call = { type: 'tool-call' as const, id: ToolCallId('scope-call-' + String(this.requests.length)),
+        name: this.firstSkill ? 'skill' : 'security_scope',
+        arguments: this.firstSkill ? JSON.stringify({ name: this.firstSkill }) : '{}' }
       yield { type: 'block-start', index: 0, blockType: 'tool-call' }
       yield { type: 'tool-call-delta', index: 0, id: call.id, name: call.name, argumentsDelta: call.arguments }
       yield { type: 'block-end', index: 0, block: call }
@@ -131,7 +141,7 @@ function independentTool(ctx: Context, name: string, execute = vi.fn(async () =>
 }
 
 async function load(inheritJobTool = false, knowledgeIntervalMs = 0,
-  options: { dedicatedModel?: boolean; analysisTurnTokens?: number } = {}) {
+  options: { dedicatedModel?: boolean; analysisTurnTokens?: number; skills?: boolean; taskIntake?: 'current' | 'other' } = {}) {
   const root = await mkdtemp(join(tmpdir(), 'dsh-workbench-loader-'))
   roots.push(root)
   const model = new ScopeModel()
@@ -178,6 +188,10 @@ async function load(inheritJobTool = false, knowledgeIntervalMs = 0,
     ['offline', Offline],
     ['laboratory', Laboratory],
   ])
+  if (options.skills) {
+    modules.set('skills', Skills)
+    modules.set('tool-skill', ToolSkill)
+  }
   const configPath = join(root, 'cordis.yml')
   await writeFile(
     configPath,
@@ -197,6 +211,9 @@ async function load(inheritJobTool = false, knowledgeIntervalMs = 0,
                   : name === 'security'
                     ? { knowledgeIntervalMs, ...(options.dedicatedModel === false ? {} : { knowledgeProvider: 'fixture', knowledgeModel: 'fixture' }),
                       ...(options.analysisTurnTokens === undefined ? {} : { analysisTurnTokens: options.analysisTurnTokens }),
+                      ...(options.taskIntake ? { taskIntake: { maxAttempts: 3, workspaces: [
+                        { cwd: options.taskIntake === 'current' ? root : join(root, 'other'), environmentIds: ['local'] },
+                      ] } } : {}),
                       root: join(root, 'workbench'), importRoots: [root],
                       environments: [{ id: 'local', kind: 'local', label: 'Host', cwd: root, tools: [] }] }
                     : {},
@@ -241,6 +258,11 @@ function execute(ctx: Context, agent: Agent, name: string, args: Record<string, 
   })
 }
 
+function webPrompt(text: string) {
+  const source = { kind: 'user' as const, rpcId: 'fixture-prompt' }
+  return createUserMessage({ content: [{ type: 'text', text }], source })
+}
+
 function operator(controller: Awaited<Security['ready']>, agent: Agent) {
   return (action: Record<string, unknown>) => controller.command(agent.id, {
     operationId: JSON.stringify(action), expectedRevision: controller.view(agent.id).revision, action,
@@ -248,7 +270,7 @@ function operator(controller: Awaited<Security['ready']>, agent: Agent) {
 }
 
 describe('security workbench Loader composition', () => {
-  it('creates scoped reconnaissance and reviewer children with the driver-owned structured tool', async () => {
+  it('persists scoped child evidence reports without requiring or creating a finding review', async () => {
     const { ctx, agent, controller, model } = await load(true)
     expect(ctx.tools.schemas().some(tool => tool.name === 'job_output')).toBe(false)
     expect(ctx.tools.get('job_output', agent)).toBeDefined()
@@ -265,6 +287,13 @@ describe('security workbench Loader composition', () => {
     await send({ kind: 'import', path: join(root, 'delegation.bin'), label: 'sample' })
     const asset = controller.view(agent.id).records.find(item => item.kind === 'asset')!
     if (asset.kind !== 'asset') throw new Error('Missing asset')
+    const evidence = await controller.observe(agent.id, { provider: 'binary', operation: 'hex', assetId: asset.value.id,
+      environmentId: 'local', parameters: {}, impact: 'observe' }, 'delegation-evidence', new AbortController().signal)
+    if (evidence.kind !== 'evidence') throw new Error('Missing evidence')
+    model.childReport = { summary: 'Assigned evidence review completed.', evidenceIds: [evidence.value.id],
+      uncertainty: 'No candidate finding exists; this evidence assessment does not conclude a finding.',
+      nextSteps: ['The coordinator can record a suspected finding if the evidence supports a candidate.'] }
+    expect(controller.view(agent.id).records.filter(item => item.kind === 'finding' || item.kind === 'review')).toEqual([])
     for (const role of ['reconnaissance', 'reviewer'] as const) {
       const result = await execute(ctx, agent, 'security_delegate', {
         assetId: asset.value.id, role, question: 'Inspect the assigned scope.', criterion: 'Return a scoped structured report.',
@@ -275,7 +304,8 @@ describe('security workbench Loader composition', () => {
       expect(job.status, JSON.stringify(job)).toBe('completed')
       expect(ctx.jobs.read(JobId(jobId), agent).text).toContain('Assigned evidence review completed.')
       expect(controller.view(agent.id).records.filter(item => item.kind === 'binding').filter(item => item.value.role === role)
-        .map(item => item.value.report?.summary)).toContain('Assigned evidence review completed.')
+        .map(item => item.value.report)).toContainEqual(model.childReport)
+      expect(controller.view(agent.id).records.filter(item => item.kind === 'finding' || item.kind === 'review')).toEqual([])
       const child = model.requests.at(-1)!
       const names = child.tools?.map(tool => tool.name)
       expect(names).toContain('structured_output')
@@ -285,6 +315,39 @@ describe('security workbench Loader composition', () => {
     }
   })
 
+  it('returns one requested command envelope while preserving full help and rejecting unknown actions', async () => {
+    const { ctx, agent } = await load()
+    const selected = await execute(ctx, agent, 'security_help', { action: 'check' })
+    expect(selected.isError, JSON.stringify(selected)).toBe(false)
+    const schema: unknown = JSON.parse(selected.content.filter(block => block.type === 'text').map(block => block.text).join(''))
+    expect(schema).toMatchObject({
+      type: 'object', required: ['operationId', 'expectedRevision', 'action'], additionalProperties: false,
+      properties: {
+        operationId: { type: 'string', minLength: 1 },
+        expectedRevision: { type: 'integer', minimum: 0 },
+        action: { required: ['kind', 'check'], additionalProperties: false, properties: {
+          kind: { const: 'check' },
+          check: { required: ['assetId', 'title', 'phase', 'criterion', 'dependencies', 'evidenceIds'],
+            properties: { assetId: { type: 'string' }, evidenceIds: { type: 'array', items: { type: 'string' } } } },
+        } },
+      },
+    })
+    expect(schema).not.toHaveProperty('properties.action.oneOf')
+    expect(schema).not.toHaveProperty('properties.action.properties.path')
+    expect(schema).not.toHaveProperty('properties.action.properties.finding')
+    const plan = await execute(ctx, agent, 'security_help', { action: 'plan' })
+    expect(plan.isError, JSON.stringify(plan)).toBe(false)
+    const planSchema: unknown = JSON.parse(plan.content.filter(block => block.type === 'text').map(block => block.text).join(''))
+    expect(planSchema).toHaveProperty('properties.action.properties.kind.const', 'plan')
+    expect(planSchema).toHaveProperty('$defs')
+    const full = await execute(ctx, agent, 'security_help')
+    expect(full.isError, JSON.stringify(full)).toBe(false)
+    const fullSchema: unknown = JSON.parse(full.content.filter(block => block.type === 'text').map(block => block.text).join(''))
+    expect(fullSchema).toHaveProperty('properties.action.oneOf')
+    const unknown = await execute(ctx, agent, 'security_help', { action: 'not-a-command' })
+    expect(unknown.isError).toBe(true)
+    expect(JSON.stringify(unknown)).toContain('Unknown security command action: not-a-command')
+  })
   it('loads independent providers and logs model-visible scope through the unchanged loop', async () => {
     const { ctx, agent, controller, model } = await load()
     expect(controller.providers.list().sort()).toEqual(['android', 'binary', 'frida', 'ghidra', 'offline', 'source', 'web'])
@@ -297,6 +360,282 @@ describe('security workbench Loader composition', () => {
     expect(model.requests[0]?.tools?.map(tool => tool.name)).not.toContain('shell')
     expect(agent.session.snapshotEvents().some(event => event.type === 'tool/result')).toBe(true)
     expect((await execute(ctx, agent, 'security_help')).isError).toBe(false)
+  })
+  it('creates a workspace task from the Web prompt and logs its scope without granting model authority', async () => {
+    const { ctx, agent, controller, model } = await load(false, 0, { taskIntake: 'current', skills: true })
+    const objective = 'Check this Web application for authorization failures.'
+    agent.followup(webPrompt(objective))
+    await agent.whenIdle()
+    expect(controller.projects()).toHaveLength(1)
+    const project = controller.projects()[0]!
+    expect(project).toMatchObject({ title: objective, objective, environmentIds: ['local'], maxAttempts: 3 })
+    expect(controller.binding(agent.id)?.engagementId).toBe(project.id)
+    const scope = agent.session.snapshotEvents().find(event => event.type === 'tool/result')
+    if (scope?.type !== 'tool/result') throw new Error('Missing scope result')
+    expect(scope.data.message.content[0].isError).not.toBe(true)
+    expect(JSON.stringify(scope.data.message)).toContain(objective)
+    expect(model.requests[1]?.messages).toContainEqual(scope.data.message)
+    for (const action of [
+      { kind: 'create', title: 'Model project', objective: 'Widen scope', environmentIds: ['local'], maxAttempts: 3 },
+      { kind: 'approve', planId: 'model-plan' },
+    ]) {
+      const denied = await execute(ctx, agent, 'security_command', {
+        command: JSON.stringify({ operationId: 'model-' + action.kind,
+          expectedRevision: controller.view(agent.id).revision, action }),
+      })
+      expect(denied.isError).toBe(true)
+      expect(JSON.stringify(denied)).toContain('operator')
+    }
+    agent.followup(webPrompt('Focus on administrator-only routes.'))
+    await agent.whenIdle()
+    expect(controller.projects()).toEqual([project])
+    await operator(controller, agent)({ kind: 'leave' })
+    agent.followup(webPrompt('Continue discussing the supplied material.'))
+    await agent.whenIdle()
+    expect(controller.binding(agent.id)).toBeUndefined()
+    expect(controller.projects()).toEqual([project])
+  })
+
+  it.each(['disabled', 'unmapped'] as const)('starts a task after saving resources for a %s workspace', async (mapping) => {
+    const { ctx, agent, controller, model } = await load(false, 0, mapping === 'unmapped' ? { taskIntake: 'other' } : {})
+    expect(JSON.parse(await ctx.securityWorkbench.configuration(agent))).toMatchObject({
+      workspace: { cwd: agent.session.header.cwd, configured: false, revision: 0, environmentIds: [] },
+    })
+    agent.followup(webPrompt('Inspect the current workspace.'))
+    await agent.whenIdle()
+    expect(controller.projects()).toEqual([])
+    expect(controller.binding(agent.id)).toBeUndefined()
+    const saved = await ctx.securityWorkbench.configureWorkspace(agent, JSON.stringify({
+      expectedRevision: 0, environmentIds: ['local'], maxAttempts: 5,
+    }))
+    expect(JSON.parse(saved)).toMatchObject({
+      workspace: { configured: true, revision: 1, environmentIds: ['local'], maxAttempts: 5 },
+    })
+    expect(controller.projects()).toEqual([])
+    model.scopeCalls = model.requests.length + 1
+    const objective = 'Check the supplied application for missing authorization.'
+    agent.followup(webPrompt(objective))
+    await agent.whenIdle()
+    expect(controller.projects()).toHaveLength(1)
+    expect(controller.projects()[0]).toMatchObject({ objective, environmentIds: ['local'], maxAttempts: 5 })
+    expect(controller.binding(agent.id)?.engagementId).toBe(controller.projects()[0]!.id)
+    const result = agent.session.snapshotEvents().filter(event => event.type === 'tool/result').at(-1)!
+    expect(JSON.stringify(result)).toContain(objective)
+  })
+
+  it('keeps an empty resource selection disabled instead of restoring the static mapping', async () => {
+    const { ctx, agent, controller } = await load(false, 0, { taskIntake: 'current' })
+    expect(JSON.parse(await ctx.securityWorkbench.configuration(agent))).toMatchObject({
+      workspace: { configured: true, revision: 0, environmentIds: ['local'] },
+    })
+    const saved = await ctx.securityWorkbench.configureWorkspace(agent, JSON.stringify({
+      expectedRevision: 0, environmentIds: [], maxAttempts: 4,
+    }))
+    expect(JSON.parse(saved)).toMatchObject({
+      workspace: { configured: true, revision: 1, environmentIds: [], maxAttempts: 4 },
+    })
+    await expect(ctx.securityWorkbench.configureWorkspace(agent, JSON.stringify({
+      expectedRevision: 0, environmentIds: ['local'], maxAttempts: 2,
+    }))).rejects.toThrow('Workspace resource configuration changed')
+    expect(await ctx.securityWorkbench.configuration(agent)).toBe(saved)
+    agent.followup(webPrompt('Inspect the supplied firmware.'))
+    await agent.whenIdle()
+    expect(controller.projects()).toEqual([])
+    expect(controller.binding(agent.id)).toBeUndefined()
+  })
+
+  it('applies saved resources to future tasks without changing an existing project', async () => {
+    const { ctx, agent, controller, model } = await load(false, 0, { taskIntake: 'current' })
+    agent.followup(webPrompt('Inspect this application with the selected resources.'))
+    await agent.whenIdle()
+    const project = controller.projects()[0]!
+    expect(project).toMatchObject({ environmentIds: ['local'], maxAttempts: 3 })
+    await ctx.securityWorkbench.configureWorkspace(agent, JSON.stringify({
+      expectedRevision: 0, environmentIds: [], maxAttempts: 7,
+    }))
+    expect(controller.projects()).toEqual([project])
+    expect(controller.binding(agent.id)?.engagementId).toBe(project.id)
+    const { agent: future } = await ctx.agents.create({
+      sessionId: SessionId('future-task'),
+      meta: { cwd: agent.session.header.cwd! },
+      agentOptions: { provider: 'fixture', model: 'fixture' },
+    })
+    model.scopeCalls = model.requests.length + 1
+    future.followup(webPrompt('Inspect a second application.'))
+    await future.whenIdle()
+    expect(controller.binding(future.id)).toBeUndefined()
+    expect(controller.projects()).toEqual([project])
+  })
+
+  it('does not expose workspace resource configuration as a model tool or command', async () => {
+    const { ctx, agent, controller, model } = await load()
+    const configuration = await ctx.securityWorkbench.configuration(agent)
+    agent.followup(webPrompt('Configure local resources for this task.'))
+    await agent.whenIdle()
+    const names = model.requests[0]!.tools!.map(tool => tool.name)
+    expect(names).not.toContain('configureWorkspace')
+    expect(names).not.toContain('security_configure_workspace')
+    const denied = await execute(ctx, agent, 'security_command', {
+      command: JSON.stringify({ operationId: 'model-configure', expectedRevision: controller.view(agent.id).revision,
+        action: { kind: 'configureWorkspace', environmentIds: ['local'], maxAttempts: 3 } }),
+    })
+    expect(denied.isError).toBe(true)
+    expect(await ctx.securityWorkbench.configuration(agent)).toBe(configuration)
+    expect(controller.projects()).toEqual([])
+  })
+
+  it.each(['origin', 'binding'] as const)('rejects workspace changes from a delegated session identified by %s', async (authority) => {
+    const { ctx, agent, controller } = await load()
+    const send = operator(controller, agent)
+    await send({ kind: 'create', title: 'Delegation', objective: 'Inspect the supplied sample', environmentIds: ['local'], maxAttempts: 2 })
+    const { agent: child } = await ctx.agents.create({
+      sessionId: SessionId('configuration-child'), parentAgent: agent,
+      meta: { cwd: agent.session.header.cwd!, parentSession: agent.id,
+        ...(authority === 'origin' ? { origin: 'subagent', delegationDepth: 1 } : {}) },
+      agentOptions: { provider: 'fixture', model: 'fixture' },
+    })
+    if (authority === 'binding') {
+      const path = join(agent.session.header.cwd!, 'delegated.bin')
+      await writeFile(path, 'owned sample')
+      await send({ kind: 'import', path, label: 'sample' })
+      const asset = controller.view(agent.id).records.find(item => item.kind === 'asset')!
+      if (asset.kind !== 'asset') throw new Error('Missing asset')
+      await controller.bindChild(agent.id, child.id, [asset.value.id], 'researcher')
+    } else {
+      expect(controller.binding(child.id)).toBeUndefined()
+    }
+    const configuration = await ctx.securityWorkbench.configuration(agent)
+    await expect(ctx.securityWorkbench.configureWorkspace(child, JSON.stringify({
+      expectedRevision: 0, environmentIds: ['local'], maxAttempts: 4,
+    }))).rejects.toThrow('Delegated sessions cannot configure workspace resources')
+    expect(await ctx.securityWorkbench.configuration(agent)).toBe(configuration)
+  })
+
+  it('admits a new user task in a fork without inheriting its parent project', async () => {
+    const { ctx, agent, controller, model } = await load(false, 0, { taskIntake: 'current' })
+    agent.followup(webPrompt('Inspect the original Web application.'))
+    await agent.whenIdle()
+    const original = controller.binding(agent.id)!.engagementId
+    const { agent: fork } = await ctx.agents.create({
+      sessionId: SessionId('user-fork'),
+      seed: agent.session.snapshotEvents(),
+      meta: { cwd: agent.session.header.cwd!, parentSession: agent.id },
+      agentOptions: { provider: 'fixture', model: 'fixture' },
+    })
+    expect(fork.session.header.parentSession).toBe(agent.id)
+    expect(fork.session.header.origin).toBeUndefined()
+    expect(controller.binding(fork.id)).toBeUndefined()
+    model.requests.splice(0)
+    const objective = 'Inspect the supplied firmware in this task.'
+    fork.followup(webPrompt(objective))
+    await fork.whenIdle()
+    expect(controller.projects()).toHaveLength(2)
+    expect(controller.binding(agent.id)?.engagementId).toBe(original)
+    expect(controller.binding(fork.id)?.engagementId).not.toBe(original)
+    expect(controller.projects().find(project => project.id === controller.binding(fork.id)?.engagementId))
+      .toMatchObject({ objective, environmentIds: ['local'], maxAttempts: 3 })
+  })
+
+  it.each([
+    'disabled', 'unmapped', 'internal', 'child', 'rejected', 'removed', 'cancelled', 'injected',
+    'outer-rejected', 'outer-removed',
+  ] as const)(
+    'does not create a workspace task for %s input',
+    async (input) => {
+      const { ctx, agent, controller } = await load(false, 0, input === 'disabled' ? {} : {
+        taskIntake: input === 'unmapped' ? 'other' : 'current',
+      })
+      let target = agent
+      if (input === 'child') {
+        target = (await ctx.agents.create({ sessionId: SessionId('intake-child'), parentAgent: agent,
+          meta: { cwd: agent.session.header.cwd!, parentSession: agent.id, origin: 'subagent', delegationDepth: 1 },
+          agentOptions: { provider: 'fixture', model: 'fixture' } })).agent
+      }
+      if (['rejected', 'removed', 'cancelled', 'injected', 'outer-rejected', 'outer-removed'].includes(input)) {
+        ctx.on('agent/pre-step', async ({ agent: current }, next) => {
+          const decision = await next()
+          if (decision.kind === 'reject') return decision
+          if (input === 'rejected' || input === 'outer-rejected') return { kind: 'reject' }
+          if (input === 'removed' || input === 'outer-removed') return { ...decision, messages: [] }
+          if (input === 'cancelled') current.cancel({ kind: 'user' })
+          if (input === 'injected') return { ...decision, messages: [...decision.messages, webPrompt('Injected task')] }
+          return decision
+        }, { prepend: input.startsWith('outer-') })
+      }
+      target.followup(input === 'internal' || input === 'injected'
+        ? createUserMessage({ content: [{ type: 'text', text: 'Internal analysis request' }], source: { kind: 'user' } })
+        : webPrompt('Inspect the supplied firmware.'))
+      await target.whenIdle()
+      expect(controller.projects()).toEqual([])
+      expect(controller.binding(target.id)).toBeUndefined()
+    },
+  )
+
+  it.each(['whitespace', 'uncommitted'] as const)(
+    'admits same-turn user steering after a %s initial message',
+    async (initial) => {
+      const { ctx, agent, controller, model } = await load(false, 0, { taskIntake: 'current' })
+      model.scopeCalls = 2
+      const first = webPrompt(initial === 'whitespace' ? ' \n\t ' : 'Original request removed before admission.')
+      const objective = 'Inspect the administrator authorization checks.'
+      if (initial === 'uncommitted') {
+        ctx.on('agent/pre-step', async ({ step }, next) => {
+          const decision = await next()
+          if (decision.kind === 'reject' || step !== 1) return decision
+          return { ...decision, messages: [
+            ...decision.messages.filter(message => message.id !== first.id),
+            createUserMessage({ content: [{ type: 'text', text: 'Internal context' }], source: { kind: 'user' } }),
+          ] }
+        }, { prepend: true })
+      }
+      let projectsBeforeSteering: number | undefined
+      ctx.on('agent/request', async (_request, next) => {
+        const request = await next()
+        if (projectsBeforeSteering === undefined) {
+          projectsBeforeSteering = controller.projects().length
+          agent.steer(webPrompt(objective))
+        }
+        return request
+      })
+      agent.followup(first)
+      await agent.whenIdle()
+      expect(model.requests).toHaveLength(3)
+      expect(projectsBeforeSteering).toBe(0)
+      expect(controller.projects()).toHaveLength(1)
+      expect(controller.projects()[0]).toMatchObject({ objective, environmentIds: ['local'], maxAttempts: 3 })
+      const events = agent.session.snapshotEvents()
+      expect(events.filter(event => event.type === 'turn/start')).toHaveLength(1)
+      expect(events.some(event => event.type === 'user/message' && event.data.id === first.id))
+        .toBe(initial === 'whitespace')
+    },
+  )
+
+  it('logs the security method catalog and loaded instructions and removes methods on unload', async () => {
+    const { ctx, agent, model, shell } = await load(false, 0, { skills: true })
+    model.firstSkill = 'security-web'
+    agent.followup(createUserMessage({
+      content: [{ type: 'text', text: 'Load the method for checking Web authorization.' }], source: { kind: 'user' },
+    }))
+    await agent.whenIdle()
+    expect(model.requests).toHaveLength(2)
+    expect(model.requests[0]?.tools?.map(tool => tool.name)).toContain('skill')
+    const events = agent.session.snapshotEvents()
+    const catalog = events.find(event => event.type === 'user/message' && event.data.source.kind === 'skill-catalog')
+    if (catalog?.type !== 'user/message' || catalog.data.source.kind !== 'skill-catalog') throw new Error('Missing skill catalog')
+    expect(catalog.data.source.entries.map(entry => entry.name).sort()).toEqual([
+      'security-firmware', 'security-investigation', 'security-iot-offline', 'security-web',
+    ])
+    const loaded = events.find(event => event.type === 'tool/result')
+    if (loaded?.type !== 'tool/result') throw new Error('Missing loaded skill result')
+    expect(loaded.data.message.content[0].isError).not.toBe(true)
+    const text = loaded.data.message.content[0].content.filter(block => block.type === 'text').map(block => block.text).join('')
+    expect(text).toContain('<skill_content name="security-web">')
+    expect(text).toContain('expected authorization rule')
+    expect(model.requests[1]?.messages).toContainEqual(loaded.data.message)
+    expect((await execute(ctx, agent, 'shell')).isError).toBe(true)
+    expect(shell).not.toHaveBeenCalled()
+    await [...ctx.loader.entries()].find(entry => entry.options.id === 'security')!.fiber!.dispose()
+    expect(await ctx.skills.list({ scope: agent })).toEqual([])
   })
   it('rejects raw, scoped and forced-allow tools and refuses model-authored approval', async () => {
     const { ctx, agent, shell } = await load()
@@ -318,7 +657,7 @@ describe('security workbench Loader composition', () => {
     expect(JSON.stringify(denied)).toContain('operator')
   })
   it('enforces durable child roles even when a caller bypasses schema filtering', async () => {
-    const { ctx, agent, controller } = await load()
+    const { ctx, agent, controller } = await load(false, 0, { skills: true })
     const root = roots[roots.length - 1]!
     await writeFile(join(root, 'sample.bin'), 'sample strings')
     const send = operator(controller, agent)
@@ -332,6 +671,8 @@ describe('security workbench Loader composition', () => {
       const { agent: child } = await ctx.agents.create({ sessionId: id, parentAgent: agent,
         meta: { parentSession: agent.id, origin: 'subagent', delegationDepth: 1 } })
       const visible = ctx.tools.schemas(child).map(tool => tool.name)
+      expect(visible).toContain('skill')
+      expect((await execute(ctx, child, 'skill', { name: 'security-investigation' })).isError).toBe(false)
       expect(visible).not.toContain('security_execute')
       expect(visible).not.toContain('security_delegate')
       expect(visible.includes('security_static')).toBe(['reconnaissance', 'reverse-analyst'].includes(role))
@@ -424,25 +765,76 @@ it('runs logged tool-free refinement through the Loader and disposes its model S
   expect(model.requests).toHaveLength(1)
 })
 
-it('generates a tool-free brief through the Loader and stores a readable report', async () => {
+it.each(['plain', 'fenced'] as const)('generates a %s JSON brief through the Loader and stores a readable report', async (format) => {
   const { ctx, agent, controller, model } = await load(false, 0, { dedicatedModel: false })
   ctx.systemPrompt.section({ name: 'fixture:requires-model', order: 5, text: 'Model {{model}} in {{cwd}}' })
   const send = operator(controller, agent)
-  await send({ kind: 'create', title: 'Report fixture', objective: 'Assess source and Web exposure', environmentIds: ['local'], maxAttempts: 1 })
+  await send({ kind: 'create', title: 'Report fixture', objective: '仅静态检查此文件。没有独立复核时保持待复核状态。',
+    environmentIds: ['local'], maxAttempts: 1 })
+  const root = roots[roots.length - 1]!
+  const source = join(root, 'report-source.js')
+  await writeFile(source, 'export function invoice(user, row) { if (!user) throw Error(); return row }\n')
+  await send({ kind: 'import-source', path: source, label: 'Report source' })
+  const asset = controller.view(agent.id).records.find(item => item.kind === 'asset')!
+  if (asset.kind !== 'asset') throw new Error('Missing report asset')
+  const observation = await controller.observe(agent.id, { provider: 'source', operation: 'read', assetId: asset.value.id,
+    environmentId: 'local', parameters: { path: 'report-source.js', startLine: 1, limit: 100 }, impact: 'observe' },
+  'report-observation', new AbortController().signal)
+  if (observation.kind !== 'evidence') throw new Error('Missing report evidence')
+  await send({ kind: 'finding', finding: { assetId: asset.value.id, title: 'Owner check absent',
+    explanation: 'The function checks authentication and returns the supplied row without an ownership check.',
+    conditions: 'A caller supplies another owner invoice.', status: 'suspected', evidenceIds: [observation.value.id], review: '' } })
+  const finding = controller.view(agent.id).records.find(item => item.kind === 'finding')!
+  if (finding.kind !== 'finding') throw new Error('Missing report finding')
+  await controller.bindChild(agent.id, 'report-reviewer', [asset.value.id], 'reviewer')
+  const reviewed = await controller.review('report-reviewer', { findingId: finding.value.id, findingHash: findingHash(finding.value),
+    basis: 'static', verdict: 'confirmed', supportingEvidenceIds: [observation.value.id], opposingEvidenceIds: [],
+    explanation: 'The complete function implements authentication without object ownership checks.',
+    uncertainty: 'Callers and runtime behavior remain unverified.' })
+  const review = reviewed.records.find(item => item.kind === 'review')!
+  if (review.kind !== 'review') throw new Error('Missing accepted review')
+  await send({ kind: 'conclude', reviewId: review.value.id })
+  const loggedInputs: string[] = []
+  ctx.on('session/event', (session, event) => {
+    if (session.id !== agent.id && event.type === 'user/message' && event.data.source.kind === 'user')
+      loggedInputs.push(event.data.content.filter(block => block.type === 'text').map(block => block.text).join(''))
+  })
+  let submittedPrompt = ''
   model.reportOutput = (prompt) => {
-    expect(prompt).toContain('Report fixture')
-    return JSON.stringify({ assessment: '尚未检查目标实现，尚不能判断安全性。', findings: [], excludedIndices: [],
-      lessons: [], uncovered: ['源码、二进制及 Web 行为未检查。'] })
+    submittedPrompt = prompt
+    const material = JSON.parse(prompt.split('\nData: ')[1]!) as { project: unknown; findings: unknown[] }
+    expect(material.project).toMatchObject({ requestedObjective: '仅静态检查此文件。没有独立复核时保持待复核状态。' })
+    expect(material.findings).toMatchObject([{ status: 'confirmed', review: {
+      accepted: true, verdict: 'confirmed', basis: 'static', uncertainty: 'Callers and runtime behavior remain unverified.',
+    } }])
+    const output = JSON.stringify({ assessment: '目标已完成独立静态复核，运行行为仍未验证。', findings: [{ index: 0,
+      mechanism: '认证后直接返回记录', conditions: '调用方可提供其他用户的记录', impact: '对象级权限检查缺失',
+      location: 'report-source.js:1', fix: '读取前校验记录所有权' }], excludedIndices: [],
+    lessons: [], uncovered: ['调用方与运行行为未验证。'] })
+    return format === 'fenced' ? '```json\n' + output + '\n```' : output
   }
   const result = await send({ kind: 'report' })
   const report = result.records.find(item => item.kind === 'report')
   expect(report?.kind).toBe('report')
   if (report?.kind !== 'report') throw new Error('Report missing')
-  expect((await controller.artifacts.read(report.value.markdown)).toString()).toContain('尚不能判断')
+  const markdown = (await controller.artifacts.read(report.value.markdown)).toString()
+  expect(markdown).toContain('已确认，静态分析')
+  expect(markdown).toContain('调用方与运行行为未验证。')
+  expect(loggedInputs).toEqual([submittedPrompt])
+  if (format === 'plain') expect(loggedInputs[0]!.replaceAll(asset.value.id, '<asset-id>'))
+    .toMatchSnapshot('logged report Session input with an accepted static review')
   expect(model.requests).toHaveLength(1)
   expect(model.requests[0]?.tools ?? []).toHaveLength(0)
 })
 
+it('rejects a fenced report with missing required fields without publishing an artifact', async () => {
+  const { agent, controller, model } = await load(false, 0, { dedicatedModel: false })
+  const send = operator(controller, agent)
+  await send({ kind: 'create', title: 'Invalid report', objective: 'Assess source', environmentIds: ['local'], maxAttempts: 1 })
+  model.reportOutput = () => '```json\n{"assessment":"Incomplete response"}\n```'
+  await expect(send({ kind: 'report' })).rejects.toThrow(/findings/u)
+  expect(controller.view(agent.id).records.some(item => item.kind === 'report')).toBe(false)
+})
 it('reports the model failure and does not publish a partial report', async () => {
   const { agent, controller, model } = await load(false, 0, { dedicatedModel: false })
   const send = operator(controller, agent)
@@ -508,7 +900,7 @@ it('cancels an active refinement and drains the worker before project stop retur
   expect(ctx.agents.get(worker!.id)).toBeUndefined()
 })
 
-it('imports and reads source through the real Loader tool composition', async () => {
+it.each(['directory', 'file'] as const)('imports and reads a source %s through the real Loader tool composition', async (selection) => {
   const { ctx, agent, controller } = await load()
   const root = roots[roots.length - 1]!
   const source = join(root, 'source')
@@ -516,15 +908,35 @@ it('imports and reads source through the real Loader tool composition', async ()
   await writeFile(join(source, 'app.py'), 'VALUE = "中文\\n"\nprint(VALUE)\n')
   const send = operator(controller, agent)
   await send({ kind: 'create', title: 'Source', objective: 'Read immutable lines', environmentIds: ['local'], maxAttempts: 2 })
-  await send({ kind: 'import-source', path: source, label: 'Sources' })
+  await writeFile(join(source, 'unselected.py'), 'PRIVATE = true')
+  await send({ kind: 'import-source', path: selection === 'file' ? join(source, 'app.py') : source, label: 'Sources' })
   const asset = controller.view(agent.id).records.find(item => item.kind === 'asset')!
-  if (asset.kind !== 'asset') throw new Error('Missing source')
+  if (asset.kind !== 'asset' || !('kind' in asset.value) || asset.value.kind !== 'source') throw new Error('Missing source')
+  if (selection === 'file') {
+    const manifest = JSON.parse((await controller.artifacts.read(asset.value.artifact)).toString()) as { files: { path: string }[] }
+    expect(manifest.files.map(file => file.path)).toEqual(['app.py'])
+  }
+  await writeFile(join(source, 'app.py'), 'changed')
+  const beforeObservation = controller.view(agent.id).revision
   const result = await execute(ctx, agent, 'security_static', {
     provider: 'source', operation: 'read', assetId: asset.value.id, environmentId: 'local', parameters: JSON.stringify({ path: 'app.py', startLine: 2, limit: 1 }),
   })
   expect(result.isError, JSON.stringify(result)).toBe(false)
-  const receipt = JSON.parse(result.content.filter(block => block.type === 'text').map(block => block.text).join('')) as { evidenceId: string; detail: string }
+  const receipt = JSON.parse(result.content.filter(block => block.type === 'text').map(block => block.text).join('')) as { evidenceId: string; detail: string; revision: number }
   expect(receipt.detail).toContain('security_evidence')
+  expect(receipt.revision).toBeGreaterThan(beforeObservation)
+  const next = await execute(ctx, agent, 'security_command', { command: JSON.stringify({
+    operationId: 'check-from-observation', expectedRevision: receipt.revision,
+    action: { kind: 'check', check: { assetId: asset.value.id, title: 'Inspect source observation', phase: 'assessment',
+      criterion: 'Explain the observed source line', dependencies: [], evidenceIds: [receipt.evidenceId] } },
+  }) })
+  expect(next.isError, JSON.stringify(next)).toBe(false)
+  expect(controller.view(agent.id).records.filter(item => item.kind === 'check')).toHaveLength(1)
+  const stale = await execute(ctx, agent, 'security_command', { command: JSON.stringify({
+    operationId: 'stale-observation-revision', expectedRevision: receipt.revision, action: { kind: 'template', assetId: asset.value.id },
+  }) })
+  expect(stale.isError).toBe(true)
+  expect(JSON.stringify(stale)).toContain('Security state changed; reload before retrying')
   const evidence = controller.view(agent.id).records.find(item => item.kind === 'evidence')
   expect(evidence).toMatchObject({ kind: 'evidence', value: { provider: 'source', method: 'static', source: { sessionId: agent.id } } })
   if (evidence?.kind !== 'evidence') throw new Error('Missing observation')
@@ -589,3 +1001,36 @@ it('acknowledges reviews in a large project without turning a committed review i
   expect(result.content.filter(block => block.type === 'text').map(block => block.text).join('')).toContain('"committed":true')
   expect(controller.view(agent.id).records.filter(item => item.kind === 'review')).toHaveLength(1)
 })
+
+it.each(['guard', 'outer-pre-execute'] as const)(
+  'does not admit a workspace task after a final %s tool denial',
+  async (denial) => {
+    const { ctx, agent, controller } = await load(false, 0, { taskIntake: 'current' })
+    const reason = 'Fixture final tool denial'
+    if (denial === 'guard') {
+      ctx.tools.guard(exec => exec.name === 'security_scope' ? reason : undefined)
+    } else {
+      ctx.on('tools/pre-execute', async (exec, next) => {
+        const decision = await next()
+        return exec.name === 'security_scope' ? { kind: 'deny', reason } : decision
+      }, { prepend: true })
+    }
+    const dispatch = vi.fn()
+    ctx.on('tools/execute', async (exec, next) => {
+      dispatch(exec.name)
+      return next()
+    })
+    const message = webPrompt('Inspect the supplied source file.')
+    agent.followup(message)
+    await agent.whenIdle()
+    const events = agent.session.snapshotEvents()
+    expect(events.some(event => event.type === 'user/message' && event.data.id === message.id)).toBe(true)
+    const result = events.find(event => event.type === 'tool/result')
+    if (result?.type !== 'tool/result') throw new Error('Missing denied tool result')
+    expect(result.data.message.content[0].isError).toBe(true)
+    expect(JSON.stringify(result.data.message)).toContain(reason)
+    expect(dispatch).not.toHaveBeenCalled()
+    expect(controller.projects()).toEqual([])
+    expect(controller.binding(agent.id)).toBeUndefined()
+  },
+)

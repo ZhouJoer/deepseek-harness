@@ -26,13 +26,17 @@ kind: "package-reference"
 
 在专用 `dsh` profile 中使用 [security-profile](../security-profile/README.zh.md)，添加 [security-web-profile](../security-web-profile/README.zh.md) 即可打开会话内工作台。默认通用 profile 不加载这些组合。
 
-1. 创建项目并指定目标和已配置环境。从部署的 `importRoots` 导入 PE、ELF、APK、DEX 文件，或不可变源码目录。
+通过常规 `skill` 工具加载 `security-investigation`，再按材料与问题组合 `security-web`、`security-firmware` 和 `security-iot-offline`。这些 [skill（技能）方法](src/methods.ts) 指导根据证据提出假设、设计可区分假设的检查、选择工具和限定委派范围。它们不安装工具，也不授予权限：现有角色检查、项目范围和执行审批仍决定执行权限。skill 指令提供方法指引，不承担安全隔离。
+
+1. 在已配置工作区的 Web 对话中描述任务，或创建项目并指定目标和已配置环境。从部署的 `importRoots` 导入 PE、ELF、APK、DEX 文件，或不可变源码文件或目录。
 2. 根据每项资产的研究问题选择下一步分析和 provider。APK 导入会分别测量 DEX 和 native 库，并保存父子关系。
 3. 检查环境健康状态。在 `environments[].tools` 配置可执行文件；工具已安装不代表目标当前可访问。
 4. 使用实现材料评估假设。需要运行验证时，准备包含目标、脚本、预期观察、影响、时限及清理方式的计划。
 5. 在工作台检查并批准不可变计划。停止或撤销会阻止新执行，并等待活动 provider 清理。中断的检查必须先核对再重试。
 
-用户也可通过 `/security` 查看状态，或通过 `/security <JSON command>` 提交相同的修订检查命令。`security_help` 提供命令 schema。模型不能批准计划或共享经验。普通命令必须携带稳定的操作 ID 和已观察修订号；停止与撤销只减少执行权限，因此接受较旧修订号。
+自动 Web 任务入口使用操作者保存的工作区资源选择，或显式的 `taskIntake.workspaces` 条目（`cwd`、`environmentIds`）和 `taskIntake.maxAttempts`。保存的选择在重启后保留，优先于部署默认值；保存空环境列表会禁用该工作区的自动入口。修改只影响新任务，不改变已有项目权限。首个获准执行的安全工具将已记录的用户请求绑定到该精确工作目录选定的资源。内部消息和委派 Session 不能初始化任务；已有绑定和用户主动退出的状态都会保留。安全 profile 将启动目录映射到 `local`。CLI 入口仍需显式创建项目。初始化不会导入工作区、注册网络目标或批准执行。
+
+用户也可通过 `/security` 查看状态，或通过 `/security <JSON command>` 提交相同的修订检查命令。`security_help` 可通过可选 `action` 仅返回该动作的命令 schema；省略时返回完整 schema。静态采集回执包含可用于后续命令的当前修订号；发生并发修改时仍需刷新。模型不能批准计划或共享经验。普通命令必须携带稳定的操作 ID 和已观察修订号；停止与撤销只减少执行权限，因此接受较旧修订号。
 
 <a id="configure-analysis-providers"></a>
 ### 配置分析 provider
@@ -75,6 +79,8 @@ Host 操作者在[示例 overlay](../../../apps/cli/config/examples/security-ana
 
 每个子 agent 使用 fresh Session，接收角色提示词及兼容任务。[提示词与权限定义](src/workbench/roles.ts) 要求明确单一资产、问题、完成条件、时间/输出限额、证据引用、不确定性及下一步。每次工具执行都会检查角色，领域静态采集入口再次检查；仅隐藏 schema 不构成授权。子 agent 不能继续委派、执行计划、批准或共享。协调者依据报告提交候选记录。研究提示词禁止将私有样本内容发送到公共查询；尚未实现网络数据防泄漏机制。
 
+尚无发现记录时，reviewer 可以检查已有证据，并返回包含证据引用和不确定性的结构化报告。该报告既不创建发现，也不记录对发现的正式裁决。需要正式裁决时，协调者先保存带证据的疑似发现，再由 reviewer 使用真实发现 ID 和当前哈希调用 `security_review`。
+
 内置 `binary` provider 不需要外部安装。调用 `security_static`，设置 `provider: "binary"`、指定资产/环境及 `operation: "identity"`、`"hex"` 或 `"strings"`。身份查询返回实测 SHA-256 和部分 PE/ELF 头字段。十六进制与字符串参数接受字节 `offset` 和 `length`；字符串还接受 `minLength` 与 `encoding`（`ascii` 或 `utf16le`，仅提取可打印 ASCII 字符）。省略长度时取输出预算的八分之一。分页结果保留偏移和不完整标记；跨页字符串需重叠查询。这些观察不能证明文件完全有效、入口可达或存在漏洞。
 
 ### 证据与恢复
@@ -93,7 +99,7 @@ Host 运行期间，配置成对的 `knowledgeProvider` 和 `knowledgeModel` 后
 
 ### 源码快照与离线检查
 
-`import-source` 将目录保存为一个资产，包含相对路径、SHA-256 哈希、不可变内容制品和明确的链接排除记录。`maxDerivedAssets` 限制遍历条目，`maxArtifactBytes` 限制源码总字节数。`source` provider 提供有界的 `list`、`read` 和字面文本 `search` 操作；结果保留文件哈希、行号和续读位置。旧文件资产仍可读取。
+`import-source` 将选定的源码文件或目录保存为一个资产，包含相对路径、SHA-256 哈希和不可变内容制品。选择单个文件时，清单仅包含以该文件名命名的一项，不会导入相邻文件。目录遍历会记录排除的链接而不跟随它们。`maxDerivedAssets` 限制遍历条目，`maxArtifactBytes` 限制源码总字节数。`source` provider 提供有界的 `list`、`read` 和字面文本 `search` 操作；结果保留文件哈希、行号和续读位置。旧文件资产仍可读取。
 
 `./offline` 插件仅通过已审批的不可变计划接收 Python 或浏览器脚本。配置本地 `docker` 和包含 Python、Node、Playwright、Chromium 的现有镜像；[镜像配方](resources/offline/Dockerfile) 与[浏览器运行器](resources/offline/browser.mjs) 定义运行时布局。准备阶段固定已安装镜像 ID，provider 不拉取镜像。可配置限制为 `image`、`memoryMb`、`cpus`、`pids`、`temporaryMb` 和 `graceMs`。
 
@@ -128,7 +134,7 @@ Host 运行期间，配置成对的 `knowledgeProvider` 和 `knowledgeModel` 后
 
 ./web 和 ./laboratory 插件提供批准后的 HTTP 证据采集与操作者显式管理的靶场生命周期。配置见 [Web 靶场指南](../../../docs/user/guide/security-analysis.zh.md#local-web-laboratory)，未验收或延后项见 [交付范围](../../../docs/roadmaps/security-analysis.zh.md#web-delivery-scope-2026-09-22)。版本化配方使用官方 Kali，记录已安装软件包，并以已知 yescrypt 向量检测作为构建条件。操作者可从本地 Docker 镜像库复用 `existingImage`（默认 `vxcontrol/kali-linux:latest`），不拉取或构建工具箱。复用会固定镜像 ID，在自有断网容器内检测工具，记录 yescrypt 失败而不阻塞 HTTP；缺少 Python 运行时则拒绝登记。每次复用或构建产生独立版本，升级时保留已有靶场。Nuclei 和 Metasploit 安装不会开放执行能力。
 
-独立复核绑定发现内容、同目标证据和复核子 Session。完整的静态实现材料可支持独立复核后的确认或反驳；身份、版本及字符串线索不能单独确认。运行验证结论仍须具备已完成的批准计划。报告生成通过一次禁用工具的模型调用整理安全判断与覆盖，并核对每条发现的去向。Markdown 正文是简短安全报告，多余的目标发现进入可选附表；JSON 保留项目记录。`reportMaxChars` 默认以 1,200 字为写作目标，不作为硬性截断上限，`reportInputBytes` 默认 131,072，`reportOutputTokens` 默认 4,096，`reportMaxFindings` 默认五条，`reportMaxLessons` 默认三条。未配置专用模型时，报告沿用发起会话的模型。生成失败或超限时不发布报告。
+独立复核绑定发现内容、同目标证据和复核子 Session。完整的静态实现材料可支持独立复核后的确认或反驳；身份、版本及字符串线索不能单独确认。运行验证结论仍须具备已完成的批准计划。报告生成通过一次禁用工具的模型调用整理安全判断与覆盖，并核对每条发现的去向。报告输入区分用户请求与已保存的发现状态、已接受的复核裁决；完成静态复核不代表完成运行验证。输出可以是独立 JSON 对象，或包在单个 JSON 或未标注语言的 Markdown 代码围栏中；夹杂说明文字、多个代码块及无效报告字段均会被拒绝。Markdown 正文是简短安全报告，多余的目标发现进入可选附表；JSON 保留项目记录。`reportMaxChars` 默认以 1,200 字为写作目标，不作为硬性截断上限，`reportInputBytes` 默认 131,072，`reportOutputTokens` 默认 4,096，`reportMaxFindings` 默认五条，`reportMaxLessons` 默认三条。未配置专用模型时，报告沿用发起会话的模型。生成失败或超限时不发布报告。
 
 <a id="model-experience"></a>
 
@@ -138,15 +144,15 @@ Host 运行期间，配置成对的 `knowledgeProvider` 和 `knowledgeModel` 后
 
 #### 模型看到的内容
 
-协调者使用领域工具分解检查、检索证据、准备计划并汇总结论。子 agent 只看到分配的资产，返回摘要、证据引用、不确定性和建议。外部输出、共享经验与子报告是待核对数据，不能扩大权限。
+协调者使用 `security_scope` 等领域工具分解检查、检索证据、准备计划并汇总结论。skill 目录提供方法摘要；`skill` 工具加载所选方法的完整指令。子 agent 只看到分配的资产，返回摘要、证据引用、不确定性和建议。外部输出、共享经验与子报告是待核对数据，不能扩大权限。
 
 #### Token 影响
 
-领域工具定义和检索证据按 `modelResultBytes` 占用上下文；原始采集使用 `maxOutputBytes`。`analysisTurnTokens` 默认将每个项目分析轮次限制为模型回报的 120,000 token，包含缓存读取。达到限额后拒绝下一次模型请求，已保存证据仍可用于更聚焦的后续提问；此包不改变 token 统计。
+skill 摘要占用目录上下文，方法正文在加载时增加上下文。领域工具响应使用 `modelResultBytes`，原始采集使用 `maxOutputBytes`。`analysisTurnTokens` 默认将每个项目分析轮次限制为模型回报的 120,000 token，包含缓存读取。达到限额后拒绝下一次模型请求，已保存证据仍可用于更聚焦的后续提问；此包不改变 token 统计。
 
 #### KV Cache effect
 
-固定工具定义和工作流指引保持稳定；项目状态通过已记录的工具结果进入上下文。
+固定工具定义和工作流指引保持稳定。skill 目录作为上下文记录；已加载的方法和项目状态通过已记录的工具结果进入上下文。
 
 ## 已知限制与后续工作
 

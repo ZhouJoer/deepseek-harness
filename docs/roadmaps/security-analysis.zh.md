@@ -8,7 +8,7 @@ description: "安全 Harness 的交付优先级、依赖和验收条件。"
 
 ## 摘要
 
-本路线图记录截至 2026-09-21 的可选 DeepSeek Harness 安全扩展，是交付计划，不是支持声明。目标是可恢复的长链路安全检查：侦察 → 攻击面分析 → 漏洞评估与检索 → 受控安全验证。[包参考](../../packages/experimental/security-analysis/README.zh.md) 维护当前运行行为和工具兼容矩阵，[用户指南](../user/guide/security-analysis.zh.md) 维护启动方式。
+[安全增强与交互精简计划](security-harness-simplification.zh.md) 维护当前重构顺序和实施清单。本路线图保留专项能力待办和已记录的交付范围；其中的优先级标签不覆盖该计划。[包参考](../../packages/experimental/security-analysis/README.zh.md) 维护当前运行行为和工具兼容矩阵，[用户指南](../user/guide/security-analysis.zh.md) 维护启动方式。
 
 ## 目录
 

@@ -44,6 +44,7 @@
     "@deepseek-ai/dsh-tool-goal": "workspace:^",
     "@deepseek-ai/dsh-tool-todo": "workspace:^",
     "@deepseek-ai/dsh-tool-web": "workspace:^",
+    "@deepseek-ai/dsh-tool-skill": "workspace:^",
     "@deepseek-ai/dsh-compaction-basic": "workspace:^",
     "@deepseek-ai/dsh-command-compact": "workspace:^",
     "@deepseek-ai/dsh-compaction-tool-result-pruner": "workspace:^"

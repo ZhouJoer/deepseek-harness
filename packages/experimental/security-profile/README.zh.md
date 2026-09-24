@@ -24,7 +24,7 @@ kind: "package-bundle"
 <a id="use-this-package"></a>
 ## 使用
 
-此 bundle 随安装提供，默认关闭，需要显式选择。在专用 profile 中按顺序组合 `@deepseek-ai/dsh-base`、应用 bundle、`@deepseek-ai/dsh-experimental-security-profile`。Web 还需在最后加入 `@deepseek-ai/dsh-experimental-security-web-profile`。使用 `dsh --profile <name>` 启动。详见[安全分析](../security-analysis/README.zh.md)。
+此 bundle 随安装提供，默认关闭，需要显式选择。在专用 profile 中按顺序组合 `@deepseek-ai/dsh-base`、应用 bundle、`@deepseek-ai/dsh-experimental-security-profile`。Web 还需在最后加入 `@deepseek-ai/dsh-experimental-security-web-profile`。使用 `dsh --profile <name>` 启动。Web 对话会为启动目录自动初始化任务，并使用已配置的 `local` 环境；其他工作区映射通过 `taskIntake` 配置。详见[安全分析](../security-analysis/README.zh.md)。
 
 -----
 
@@ -34,7 +34,7 @@ kind: "package-bundle"
 <details>
 <summary>实现细节</summary>
 
-Host patch 挂载领域服务和专用 provider。导出的插件为 Web profile 提供仅含安全分析的 preset：领域工具配合 jobs、goal、todo、网页检索和 compaction，不装配 shell、文件修改、PTC 或任意 MCP 工具。角色权限仍由领域服务检查。默认 profile 和 agent-loop 保持不变。不发布 invariant companion，因为此包拥有可撤销的组合注册，业务状态由领域服务持有。
+Host patch 挂载领域服务和专用 provider。导出的插件为 Web profile 提供仅含安全分析的 preset：领域工具配合 jobs、goal、todo、按需加载的安全方法、网页检索和 compaction，不装配 shell、文件修改、PTC 或任意 MCP 工具。角色权限仍由领域服务检查。默认 profile 和 agent-loop 保持不变。不发布 invariant companion，因为此包拥有可撤销的组合注册，业务状态由领域服务持有。
 
 </details>
 
@@ -55,11 +55,11 @@ Host patch 挂载领域服务和专用 provider。导出的插件为 Web profile
 
 #### 模型看到的内容
 
-此包不直接提供模型输入；`security_scope` 由领域服务提供。领域工具把模型可见结果记录在 Session 中。
+preset 提供通用 `skill` 加载工具。安全方法摘要进入已记录的技能目录，选中的方法正文通过工具结果加载。`security_scope` 由领域服务提供，将项目状态记录在 Session 中。
 
 #### Token 影响
 
-领域工具定义和检索到的证据按配置的输出限额占用上下文。此包不改变 token 统计。
+方法摘要、加载的正文、领域工具定义和检索到的证据按各自配置的限额占用上下文。此 profile 将 `analysisTurnTokens` 设置为每个分析轮次累计 360,000 个模型回报 token，包含重复的缓存读取；它不是输出 token 或上下文窗口上限。服务默认值仍为 120,000。应按模型与任务调整 profile 限额；此包不改变 token 统计。
 
 #### KV Cache effect
 

@@ -41,8 +41,14 @@
     - id: security-workbench
       name: '@deepseek-ai/dsh-experimental-security-analysis'
       config:
+        analysisTurnTokens: 360000
         root: !!js dshHomePath('security')
         importRoots: !!js '[process.cwd()]'
+        taskIntake:
+          workspaces:
+            - cwd: !!js process.cwd()
+              environmentIds: [local]
+          maxAttempts: 3
         environments:
           - id: local
             kind: local

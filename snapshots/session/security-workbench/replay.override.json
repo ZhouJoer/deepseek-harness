@@ -12,6 +12,72 @@
         "index": 0,
         "block": {
           "type": "tool-call",
+          "id": "inspect-check-command",
+          "arguments": "{\"action\":\"check\"}",
+          "name": "security_help"
+        }
+      },
+      {
+        "type": "usage",
+        "usage": {
+          "inputTokens": 3,
+          "outputTokens": 3
+        }
+      },
+      {
+        "type": "finish",
+        "reason": {
+          "kind": "tool-calls"
+        }
+      }
+    ]
+  },
+  {
+    "kind": "chunks",
+    "chunks": [
+      {
+        "type": "block-start",
+        "index": 0,
+        "blockType": "tool-call"
+      },
+      {
+        "type": "block-end",
+        "index": 0,
+        "block": {
+          "type": "tool-call",
+          "id": "load-investigation-method",
+          "arguments": "{\"name\":\"security-investigation\"}",
+          "name": "skill"
+        }
+      },
+      {
+        "type": "usage",
+        "usage": {
+          "inputTokens": 3,
+          "outputTokens": 3
+        }
+      },
+      {
+        "type": "finish",
+        "reason": {
+          "kind": "tool-calls"
+        }
+      }
+    ]
+  },
+  {
+    "kind": "chunks",
+    "chunks": [
+      {
+        "type": "block-start",
+        "index": 0,
+        "blockType": "tool-call"
+      },
+      {
+        "type": "block-end",
+        "index": 0,
+        "block": {
+          "type": "tool-call",
           "id": "scope",
           "arguments": "{}",
           "name": "security_scope"
@@ -48,6 +114,39 @@
           "id": "reject-model-approval",
           "arguments": "{\"command\": \"{\\\"operationId\\\": \\\"attempt-approval\\\", \\\"expectedRevision\\\": 0, \\\"action\\\": {\\\"kind\\\": \\\"approve\\\", \\\"planId\\\": \\\"unapproved\\\"}}\"}",
           "name": "security_command"
+        }
+      },
+      {
+        "type": "usage",
+        "usage": {
+          "inputTokens": 3,
+          "outputTokens": 3
+        }
+      },
+      {
+        "type": "finish",
+        "reason": {
+          "kind": "tool-calls"
+        }
+      }
+    ]
+  },
+  {
+    "kind": "chunks",
+    "chunks": [
+      {
+        "type": "block-start",
+        "index": 0,
+        "blockType": "tool-call"
+      },
+      {
+        "type": "block-end",
+        "index": 0,
+        "block": {
+          "type": "tool-call",
+          "id": "generate-security-report",
+          "name": "security_command",
+          "arguments": "{\"command\":\"{\\\"operationId\\\":\\\"fixture-report\\\",\\\"expectedRevision\\\":1,\\\"action\\\":{\\\"kind\\\":\\\"report\\\"}}\"}"
         }
       },
       {

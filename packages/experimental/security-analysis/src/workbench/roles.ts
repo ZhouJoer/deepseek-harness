@@ -6,7 +6,7 @@ export type SecurityRole = SessionBinding['role']
 /** Delegated Sessions cannot coordinate or approve execution. */
 export type DelegatedRole = Exclude<SecurityRole, 'coordinator'>
 
-const evidenceTools = ['security_scope', 'security_capabilities', 'security_search', 'security_evidence', 'security_help', 'structured_output']
+const evidenceTools = ['skill', 'security_scope', 'security_capabilities', 'security_search', 'security_evidence', 'security_help', 'structured_output']
 const researchTools = [...evidenceTools, 'web_search', 'web_fetch']
 const roleTools: Record<SecurityRole, readonly string[]> = {
   coordinator: [...researchTools, 'security_environment', 'security_static', 'security_command', 'security_execute', 'security_delegate',
@@ -63,13 +63,13 @@ const rolePrompts: Record<DelegatedRole, string> = {
   'reverse-analyst': 'Investigate the assigned implementation using the questions and tools that can resolve a plausible weakness. Name the relevant file and line or binary function when available. Distinguish decompiler guesses from observed instructions and keep uncertain links tentative.',
   'web-analyst': 'Analyze the assigned frontend source snapshot or laboratory endpoint. Inspect actual browser APIs, protocol messages, rendering, asynchronous state and inputs; distinguish BLE and other device protocols from HTTP. Cite source hashes and lines or request and response evidence. Propose bounded HTTP or approved-template checks through the coordinator. Do not infer a confirmed vulnerability from a product version or scanner match.',
   researcher: 'Search existing project evidence and reviewed experience first, then public primary sources. Report affected versions, prerequisites, publication dates and source URLs. A CVE match or shared method is reference material, not a finding in this sample. Never send sample contents, hashes or private identifiers to public search.',
-  reviewer: 'Independently assess supporting and contrary observations, target identity, completeness, applicability and uncertainty. For a static conclusion, explain the implementation mechanism, attacker-controlled conditions and impact or contradiction; inventory clues alone are insufficient. For a runtime conclusion, require completed approved validation. Use security_scope for the finding hash and persist the review with basis, verdict and evidence through security_review. Request more collection when proof is absent. Do not grant approval.',
+  reviewer: 'Independently assess supporting and contrary observations, target identity, completeness, applicability and uncertainty. For a static conclusion, explain the implementation mechanism, attacker-controlled conditions and impact or contradiction; inventory clues alone are insufficient. For a runtime conclusion, require completed approved validation. A question about existing evidence may be answered without a recorded finding. Request more collection when proof is absent. Do not grant approval.',
 }
 const taskPrompts: Record<SecurityTask, string> = {
   inventory: 'Deliver an asset inventory and candidate entry points, each linked to observations; list inaccessible environments separately.',
   surface: 'Deliver an entry-point map with inputs, trust boundaries, callers and reachable operations. State what has not been examined.',
   assessment: 'For each plausible weakness, assess applicability, supporting and contrary evidence, impact and uncertainty. Propose a controlled runtime check only when static material does not resolve it; do not execute the proposal.',
-  review: 'For each candidate conclusion decide the exact security_review verdict: confirmed, refuted or inconclusive. These are the only accepted verdict values. Persist the review once the relevant implementation and contrary evidence are sufficient; explain missing runtime proof without reopening unrelated questions.',
+  review: 'For a recorded finding of the assigned asset, read its actual ID and current finding hash with security_scope. Persist security_review with basis, supporting and opposing evidence, explanation and uncertainty; the verdict must be confirmed, refuted or inconclusive. Explain missing runtime proof without reopening unrelated questions. Without a recorded finding, return the evidence assessment through structured_output with summary, evidenceIds, uncertainty and nextSteps; state that no finding review was persisted. Do not call security_review or claim a confirmed finding in that case. If the evidence supports a candidate, recommend that the coordinator save a suspected finding before requesting its formal review. Never invent finding IDs or hashes.',
 }
 
 /** Resolve a task before allocating a child Session.

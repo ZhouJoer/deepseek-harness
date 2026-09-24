@@ -19,6 +19,7 @@ export interface WorkbenchActions {
   refine(sessionId: SessionId): Promise<WorkbenchView>
   command(sessionId: SessionId, command: string): Promise<WorkbenchView>
   configuration(sessionId: SessionId): Promise<string>
+  configureWorkspace(sessionId: SessionId, input: string): Promise<string>
   environment(sessionId: SessionId, id: string, action: 'inspect' | 'start' | 'stop'): Promise<string>
   execute(sessionId: SessionId, planId: string, operationId: string, revision: number): Promise<WorkbenchView>
   search(sessionId: SessionId, query: string, shared: boolean): Promise<WorkbenchView>
@@ -26,17 +27,19 @@ export interface WorkbenchActions {
   report(projectId: string, reportId: string, format: 'markdown' | 'json' | 'findingsMarkdown'): Promise<string>
 }
 /** Framework-derived input dock props. */
-export type WorkbenchProps = Pick<PropsRuntime<'conversation.input.dock'>, 'sessionId'> &
+export type WorkbenchProps = Pick<PropsRuntime<'conversation.input.dock'>, 'sessionId' | 'useSession'> &
   PropsLocale<typeof NS> &
   WorkbenchActions
 type Tab = 'overview' | 'assets' | 'checks' | 'findings' | 'environments' | 'knowledge' | 'evidence' | 'reviews' | 'reports'
 interface Configuration {
+  workspace?: { cwd: string; revision: number; environmentIds: string[]; maxAttempts?: number; configured: boolean } | null
   knowledgeIntervalMs?: number
   projects?: { id: string; title: string }[]
   environments: { id: string; kind: string; label: string; tools: string[] }[]
   providers: { id: string; operations: string[] }[]
 }
-const tabKeys: Tab[] = ['overview', 'assets', 'checks', 'findings', 'knowledge', 'evidence', 'environments', 'reviews', 'reports']
+const tabKeys: Tab[] = ['overview', 'findings', 'evidence', 'reports']
+const advancedTabKeys: Tab[] = ['assets', 'checks', 'environments', 'reviews', 'knowledge']
 const ids = (text: string): string[] =>
   text
     .split(',')
@@ -46,6 +49,7 @@ const ids = (text: string): string[] =>
 /** Render project facts and explicit operator actions; provider output remains escaped text. */
 export function Workbench(props: WorkbenchProps) {
   const { sessionId, t } = props
+  const running = props.useSession(snapshot => snapshot.running)
   const [open, setOpen] = useState(false)
   const [tab, setTab] = useState<Tab>('overview')
   const [view, setView] = useState<WorkbenchView>({ revision: 0, records: [] })
@@ -56,20 +60,25 @@ export function Workbench(props: WorkbenchProps) {
   const [detailFormat, setDetailFormat] = useState<'raw' | 'markdown'>('raw')
   const [busy, setBusy] = useState(0)
   const [shared, setShared] = useState(false)
+  const [workspaceDraft, setWorkspaceDraft] = useState<string[] | undefined>()
   const [searchResults, setSearchResults] = useState<WorkbenchView | undefined>()
   const generation = useRef(0)
   const activeSession = useRef(sessionId)
+  const priorActivity = useRef({ sessionId, running, open })
+  const refreshPending = useRef(false)
   activeSession.current = sessionId
   useEffect(() => {
     generation.current++
     setOpen(false)
     setView({ revision: 0, records: [] })
+    setConfiguration({ environments: [], providers: [] })
     setDraft({})
     setError('')
     setDetail('')
     setSearchResults(undefined)
     setTab('overview')
     setShared(false)
+    setWorkspaceDraft(undefined)
   }, [sessionId])
   const perform = async (action: () => Promise<void>) => {
     setBusy(count => count + 1)
@@ -90,9 +99,21 @@ export function Workbench(props: WorkbenchProps) {
       setConfiguration(JSON.parse(config) as Configuration)
     }
   }
+  useEffect(() => {
+    const previous = priorActivity.current
+    priorActivity.current = { sessionId, running, open }
+    if (previous.sessionId !== sessionId || !open) refreshPending.current = false
+    else if (previous.open && previous.running && !running) refreshPending.current = true
+    if (refreshPending.current && busy === 0) {
+      refreshPending.current = false
+      void perform(load)
+    }
+  }, [sessionId, running, open, busy])
   useEffect(() => props.subscribeReset(() => {
     generation.current++
     setView({ revision: 0, records: [] })
+    setConfiguration({ environments: [], providers: [] })
+    setWorkspaceDraft(undefined)
     setDetail('')
     setSearchResults(undefined)
     if (open) void perform(load)
@@ -156,9 +177,65 @@ export function Workbench(props: WorkbenchProps) {
       </select>
     </label>
   )
+  const workspace = configuration.workspace
+  const selectedEnvironments = workspaceDraft ?? workspace?.environmentIds ?? []
+  const workspaceAttempts = Number(draft.workspaceAttempts ?? workspace?.maxAttempts)
+  const unavailableEnvironments = selectedEnvironments.filter(id =>
+    !configuration.environments.some(environment => environment.id === id))
+  const workspaceControls = workspace && (
+    <div className={css.resourceForm}>
+      <fieldset>
+        <legend>{t('workspaceResources')}</legend>
+        {configuration.environments.map(environment => (
+          <label key={environment.id} className={css.resourceOption}>
+            <input type="checkbox" checked={selectedEnvironments.includes(environment.id)} disabled={busy > 0}
+              onChange={(event) => {
+                setWorkspaceDraft(event.target.checked
+                  ? [...selectedEnvironments, environment.id]
+                  : selectedEnvironments.filter(id => id !== environment.id))
+              }} />
+            <span>{environment.label}</span>
+          </label>
+        ))}
+        {unavailableEnvironments.map(id => (
+          <label key={id} className={css.resourceOption}>
+            <input type="checkbox" checked disabled={busy > 0} onChange={() => {
+              setWorkspaceDraft(selectedEnvironments.filter(selected => selected !== id))
+            }} />
+            <span>{id} · {t('unavailableEnvironment')}</span>
+          </label>
+        ))}
+        {configuration.environments.length === 0 && <p>{t('noWorkspaceResources')}</p>}
+      </fieldset>
+      <details>
+        <summary>{t('executionLimits')}</summary>
+        <label className={css.field}>{t('attemptLimit')}
+          <input type="number" min={1} step={1} disabled={busy > 0}
+            value={draft.workspaceAttempts ?? workspace.maxAttempts ?? ''}
+            onChange={(event) => { setDraft(old => ({ ...old, workspaceAttempts: event.target.value })) }} />
+        </label>
+      </details>
+      <p className={css.summaryHint}>{t('workspaceResourcesHint')}</p>
+      <button disabled={busy > 0 || !Number.isSafeInteger(workspaceAttempts) || workspaceAttempts < 1}
+        onClick={() => void perform(async () => {
+          const current = ++generation.current
+          const configured = await props.configureWorkspace(sessionId, JSON.stringify({
+            expectedRevision: workspace.revision, environmentIds: selectedEnvironments, maxAttempts: workspaceAttempts,
+          }))
+          if (activeSession.current === sessionId && generation.current === current) {
+            setConfiguration(JSON.parse(configured) as Configuration)
+            setWorkspaceDraft(undefined)
+          }
+        })}>{t('saveWorkspaceResources')}</button>
+    </div>
+  )
   const assets = view.records.filter(item => item.kind === 'asset')
   const checks = view.records.filter(item => item.kind === 'check')
   const project = view.records.find(item => item.kind === 'engagement')
+  const findings = view.records.filter(item => item.kind === 'finding')
+  const evidence = view.records.filter(item => item.kind === 'evidence')
+  const blockedChecks = checks.filter(item => item.value.status === 'blocked' || item.value.status === 'interrupted')
+  const childReports = view.records.filter(item => item.kind === 'binding' && item.value.report)
   const statuses = new Set<SecurityKey>([
     'planned',
     'running',
@@ -194,11 +271,11 @@ export function Workbench(props: WorkbenchProps) {
       {open && (
         <section className={css.panel} role="dialog" aria-label={t('title')}>
           <header className={css.header}>
-            <strong>
+            <strong title={project?.kind === 'engagement' ? project.value.title : undefined}>
               {t('title')}
               {project?.kind === 'engagement' ? ' · ' + project.value.title : ''}
             </strong>
-            <button onClick={() => void perform(load)}>{t('refresh')}</button>
+            <button disabled={busy > 0} onClick={() => void perform(load)}>{t('refresh')}</button>
             {project?.kind === 'engagement' && (
               <button disabled={busy > 0} onClick={() => void perform(() => command({ kind: 'leave' }))}>{t('leaveProject')}</button>
             )}
@@ -232,6 +309,15 @@ export function Workbench(props: WorkbenchProps) {
                   {t(item)}
                 </button>
               ))}
+              <details className={css.advancedNavigation}>
+                <summary>{t('advancedDetails')}</summary>
+                {advancedTabKeys.map(item => (
+                  <button key={item} aria-pressed={tab === item} onClick={() => {
+                    setTab(item)
+                    setDetail('')
+                  }}>{t(item)}</button>
+                ))}
+              </details>
             </nav>
             <div className={css.main}>
               {error && (
@@ -243,70 +329,105 @@ export function Workbench(props: WorkbenchProps) {
               <div className={css.body}>
                 {tab === 'overview' && (
                   <>
-                    <div className={css.form}>
-                      {select(
-                        'project',
-                        (configuration.projects ?? []).map(item => ({ id: item.id, label: item.title })),
-                      )}
-                      <button
-                        disabled={busy > 0 || !draft.project}
-                        onClick={() => void perform(() => command({ kind: 'select', engagementId: draft.project ?? '' }))}
-                      >
-                        {t('selectProject')}
-                      </button>
-                    </div>
                     {project?.kind === 'engagement' ? (
                       <>
-                        <p>{project.value.objective}</p>
-                        <button disabled={busy > 0} onClick={() => void perform(() => command({ kind: 'leave' }))}>{t('newProject')}</button>
+                        <section className={css.taskSummary}>
+                          <span className={css.eyebrow}>{t('objective')}</span>
+                          <h2 className={css.objectiveSummary}>{project.value.objective}</h2>
+                          <details className={css.objectiveDetails}>
+                            <summary>{t('fullObjective')}</summary>
+                            <p>{project.value.objective}</p>
+                          </details>
+                          <p>{t('taskSummaryHint')}</p>
+                          <div className={css.taskActions}>
+                            <button className={css.primaryAction} disabled={busy > 0} onClick={() => void perform(async () => {
+                              await command({ kind: 'report' })
+                              if (activeSession.current === sessionId) setTab('reports')
+                            })}>{t('generateReport')}</button>
+                            <button onClick={() => { setOpen(false) }}>{t('backToConversation')}</button>
+                          </div>
+                        </section>
+                        <div className={css.metrics}>
+                          <article><span>{t('confirmedFindings')}</span><strong>{findings.filter(item => item.value.status === 'confirmed').length}</strong></article>
+                          <article><span>{t('pendingFindings')}</span><strong>{findings.filter(item => ['suspected', 'inconclusive'].includes(item.value.status)).length}</strong></article>
+                          <article><span>{t('savedEvidence')}</span><strong>{evidence.length}</strong></article>
+                          <article><span>{t('blockedChecks')}</span><strong>{blockedChecks.length}</strong></article>
+                        </div>
+                        <section className={css.resultSection}>
+                          <div className={css.sectionHeading}><h3>{t('findingSummary')}</h3>
+                            <button onClick={() => { setTab('findings') }}>{t('viewFindings')}</button></div>
+                          {findings.length === 0 ? <p className={css.summaryHint}>{t('noFindingsYet')}</p>
+                            : findings.slice(0, 3).map(item => (
+                              <article className={css.card} key={item.value.id}>
+                                <div className={css.sectionHeading}>
+                                  <strong>{item.value.title}</strong><span>{t(item.value.status)}</span>
+                                </div>
+                                <p className={css.findingSummary}>{item.value.explanation}</p>
+                              </article>
+                            ))}
+                        </section>
+                        {blockedChecks.length > 0 && <section className={css.resultSection}>
+                          <div className={css.sectionHeading}><h3>{t('validationLimits')}</h3></div>
+                          {blockedChecks.map(item => <article className={css.blockedCard} key={item.value.id}>
+                            <strong>{item.value.title}</strong><span>{t(item.value.status)}</span>
+                            <p>{item.value.rationale || item.value.criterion}</p>
+                          </article>)}
+                        </section>}
+                        {childReports.length > 0 && <details className={css.secondaryDetails}>
+                          <summary>{t('analysisDetails')}</summary>
+                          {childReports.map(item => item.kind === 'binding' && item.value.report && (
+                            <article className={css.card} key={item.value.sessionId}>
+                              <strong>{t('childSummary')} · {item.value.role}</strong><small>{item.value.sessionId}</small>
+                              <p>{item.value.report.summary}</p><p>{item.value.report.uncertainty}</p>
+                              <p>{item.value.report.evidenceIds.join(', ')}</p>
+                            </article>
+                          ))}
+                        </details>}
                       </>
                     ) : (
+                      <section className={css.taskSummary}>
+                        <span className={css.eyebrow}>{t('taskStart')}</span>
+                        <h2>{t('startInConversation')}</h2>
+                        <p>{t('conversationTaskHint')}</p>
+                        <p className={css.summaryHint}>{t('workspaceSetupHint')}</p>
+                        <p className={css.summaryHint}>{t('leftProjectHint')}</p>
+                        {workspace && (workspace.configured ? (
+                          <div className={css.resourceSummary}>
+                            <strong>{t('workspaceResources')}</strong>
+                            <p>{workspace.environmentIds.length > 0
+                              ? workspace.environmentIds.map(id => configuration.environments.find(item => item.id === id)?.label ?? id).join(', ')
+                              : t('workspaceIntakeDisabled')}</p>
+                            <details><summary>{t('editWorkspaceResources')}</summary>{workspaceControls}</details>
+                          </div>
+                        ) : workspaceControls)}
+                        <button className={css.primaryAction} onClick={() => { setOpen(false) }}>{t('backToConversation')}</button>
+                      </section>
+                    )}
+                    <details className={css.secondaryDetails}>
+                      <summary>{t('manualSetup')}</summary>
+                      {project && workspaceControls}
                       <div className={css.form}>
-                        {field('name')}
-                        {field('objective', true)}
-                        {select(
-                          'environment',
-                          configuration.environments.map(item => ({ id: item.id, label: item.label })),
-                        )}
-                        <button
-                          disabled={busy > 0}
-                          onClick={() =>
-                            void perform(() =>
-                              command({
-                                kind: 'create',
-                                title: draft.name ?? '',
-                                objective: draft.objective ?? '',
-                                environmentIds: [draft.environment ?? ''],
-                                maxAttempts: 3,
-                              }),
-                            )
-                          }
-                        >
-                          {t('create')}
+                        {select('project', (configuration.projects ?? []).map(item => ({ id: item.id, label: item.title })))}
+                        <button disabled={busy > 0 || !draft.project}
+                          onClick={() => void perform(() => command({ kind: 'select', engagementId: draft.project ?? '' }))}>
+                          {t('selectProject')}
                         </button>
                       </div>
-                    )}
-                    {view.records.filter(item => item.kind === 'binding' && item.value.report).map(item => item.kind === 'binding' && item.value.report && (
-                      <article className={css.card} key={item.value.sessionId}>
-                        <strong>{t('childSummary')} · {item.value.role}</strong><small>{item.value.sessionId}</small>
-                        <p>{item.value.report.summary}</p><p>{item.value.report.uncertainty}</p>
-                        <p>{item.value.report.evidenceIds.join(', ')}</p>
-                      </article>
-                    ))}
-                    <div className={css.metrics}>
-                      {['recon', 'surface', 'assessment', 'validation'].map(phase => (
-                        <article key={phase}>
-                          <strong>{t(phase as SecurityKey)}</strong>
-                          <p>
-                            {
-                              checks.filter(item => item.value.phase === phase && item.value.status === 'completed')
-                                .length
-                            }{' '}
-                            / {checks.filter(item => item.value.phase === phase).length}
-                          </p>
-                        </article>
-                      ))}
-                    </div>
+                      {project?.kind === 'engagement' ? (
+                        <button disabled={busy > 0} onClick={() => void perform(() => command({ kind: 'leave' }))}>{t('newProject')}</button>
+                      ) : (
+                        <div className={css.form}>
+                          {field('name')}
+                          {field('objective', true)}
+                          {select('environment', configuration.environments.map(item => ({ id: item.id, label: item.label })))}
+                          <button disabled={busy > 0 || !draft.name?.trim() || !draft.objective?.trim() || !draft.environment}
+                            onClick={() => void perform(() => command({
+                              kind: 'create', title: draft.name ?? '', objective: draft.objective ?? '',
+                              environmentIds: [draft.environment ?? ''], maxAttempts: 3,
+                            }))}>{t('create')}</button>
+                        </div>
+                      )}
+                    </details>
                   </>
                 )}
                 {tab === 'assets' && (
