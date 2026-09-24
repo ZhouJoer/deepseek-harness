@@ -3128,6 +3128,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
       'client-ui-tool TodoRow key \'todo_write\'',
       'client-ui-tool WebRow key \'web_search\'',
       'client-ui-tool WebRow key \'web_fetch\'',
+      'experimental-client-ui-security-analysis SecurityToolRow',
       'client-ui-cordis CordisDefineRow key \'cordis_define\'',
       'client-ui-cordis CordisRunRow key \'cordis_run\'',
       'client-ui-cordis CordisActionRow key \'cordis_stop\'',

@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Organize reconnaissance, surface analysis, assessment and controlled validation with traceable original evidence. Use dedicated Ghidra, Frida and Android tools through an optional profile and delegate bounded questions. Operators approve validation plans, and tools check authority again at execution. External environments require preparation.
+Investigate owned source, binary and Web targets with independent providers and reviewer-bound conclusions. Select checks and validation depth from the security question rather than a fixed sequence. Operators approve execution plans, and tools check authority again at execution. The human report is a short security brief; original evidence remains available for deeper analysis.
 
 ## Table of Contents
 
@@ -27,9 +27,9 @@ Organize reconnaissance, surface analysis, assessment and controlled validation 
 Use [security-profile](../security-profile/README.md) in a dedicated `dsh` profile. Add [security-web-profile](../security-web-profile/README.md) for the conversation workbench. The default general profiles do not load these bundles.
 
 1. Create a project with its objective and configured environments. Import PE, ELF, APK or DEX files, or an immutable source directory, from the deployment’s `importRoots`.
-2. Create the four-stage template for each asset. APK imports measure DEX and native library members separately and retain their parent relationship.
+2. Choose the next analysis question and provider for each asset. APK imports measure DEX and native library members separately and retain their parent relationship.
 3. Inspect environment health. Configure executable locations under `environments[].tools`; an installed tool is not proof that a target is accessible.
-4. Use static evidence to map entry points and assess hypotheses. Prepare a validation plan with its target, script, observations, impact, duration and cleanup policy.
+4. Use implementation evidence to assess hypotheses. When runtime validation is needed, prepare a plan with its target, script, observations, impact, duration and cleanup policy.
 5. Inspect and approve the immutable plan in the workbench. Stop or revoke blocks new execution and waits for active provider cleanup. Reconcile interrupted checks before retrying.
 
 The operator can also use `/security` to inspect state or `/security <JSON command>` to submit the same revision-checked commands. `security_help` exposes the command schema. Models cannot create operator approval or publish shared knowledge. A normal command must carry a stable operation ID and the observed revision; stop and revoke accept stale revisions because they only reduce execution authority.
@@ -81,11 +81,11 @@ The built-in `binary` provider needs no external installation. Call `security_st
 
 Raw provider output is saved before its evidence reference. Evidence records retain the sample, tool version, parameters, originating Session/call, completeness and approved plan. `security_evidence` reads bounded original-byte slices. Search rebuilds SQLite FTS from project records and original evidence, with Chinese segmentation and identifiers. Shared knowledge requires a user review and remains reference material, never project evidence.
 
-Retrospectives and experience use the `remember` command with `category`, `title`, `summary`, `conditions`, `actions`, `pitfalls` and `tags`. Retrospectives store outcomes, problems and improvements; experience stores reusable practices and cautions. Entries exclude reasoning traces, evidence and execution logs. Legacy free-text notes remain readable by the refinement worker and appear in the UI only after refinement.
+Retrospectives and experience use the `remember` command with `category`, `title`, `summary`, `conditions`, `actions`, `pitfalls` and `tags`. Entries describe target weaknesses, applicable conditions and practices that improve future identification, validation or prevention. Tool errors and formatting repairs are not reusable security lessons. Legacy free-text notes remain readable by the refinement worker and appear in the UI only after refinement.
 
-Knowledge refinement runs every `knowledgeIntervalMs` (default 3,600,000 ms; zero disables automatic runs) while the Host is running. The workbench also offers manual refinement. A fresh tool-free Agent Session logs the complete model request and response. `knowledgeProvider` and `knowledgeModel` optionally select a dedicated route together; omission uses the default Agent model. `knowledgeInputBytes` defaults to 131,072 bytes, `knowledgeOutputTokens` to 8,192 tokens; `maxOutputBytes` bounds the complete response and `delegationTimeoutMs` bounds the run.
+Knowledge refinement runs every `knowledgeIntervalMs` (default 3,600,000 ms; zero disables automatic runs) while the Host is running when `knowledgeProvider` and `knowledgeModel` select a dedicated route. The workbench also offers manual refinement, which can use the initiating Agent model when no dedicated route is configured. A fresh tool-free Agent Session logs the complete model request and response. `knowledgeInputBytes` defaults to 131,072 bytes, `knowledgeOutputTokens` to 8,192 tokens; `maxOutputBytes` bounds the complete response and `delegationTimeoutMs` bounds the run.
 
-Refinement skips unchanged inputs and merges only within one project. Structured categories cannot change, and every source entry must appear exactly once in the response. Invalid, oversized, cancelled or concurrently edited results cannot replace the notes. Successful consolidation commits entries and duplicate replacements atomically; changed shared entries require another operator review. The journal retains prior revisions. A failed attempt can be retried manually or at the next interval. Projects stopped by the operator cancel and drain active refinement.
+Refinement skips unchanged inputs and works within one project. Every source entry must be retained, merged or excluded exactly once; a project may have no useful entries. Excluded operational notes leave reports, search, sharing and normal knowledge views while remaining in the journal. Invalid, oversized, cancelled or concurrently edited results cannot replace notes. Changed shared entries require another operator review. A failed attempt can be retried manually or at the next interval. Stopping a project cancels active refinement.
 
 The journal appends one complete command per storage-domain record. A dedicated SQLite ownership lock permits one Host per security root. Restart revokes approvals and marks unfinished executions for reconciliation; it never replays injection or process creation. Exact operation retries do not execute a second time. Use `import-legacy` to preserve a prototype JSON archive as an immutable, operator-declared record. Import the actual sample separately to obtain a measured identity; the archive is not promoted into verified evidence.
 
@@ -99,7 +99,7 @@ The `./offline` plugin accepts Python or browser scripts only through immutable 
 
 Each execution uses a fresh unprivileged container with no network, no devices, a read-only root and source mount, and bounded temporary storage. Browser requests are intercepted from the snapshot at `http://localhost`. Scripts inject simulated hardware, print runtime versions, events and assertions, and fail on rejected assertions. Evidence records distinguish simulation from static and device observations and retain failure and cleanup details. Container tests exercise Python and Chromium; they do not establish firmware or radio behavior. Host crashes still require operator reconciliation of remaining offline containers.
 
-Model scope and search results are paginated. Commands return bounded committed receipts rather than copying the project; callers fetch changed records afterward. Exact observation retries return the stored evidence ID. Completed child summaries remain on their Session bindings and appear in project reports; they do not become original evidence.
+Model scope and search results show short record summaries, including source evidence paths and read ranges; `security_scope` reads revision-bound record details by byte offset, and `security_evidence` pages original observations by byte offset or selects saved source read lines by line number. `modelResultBytes` defaults to 16,384 bytes for complete model tool responses, while `maxOutputBytes` remains the analysis collection limit. Commands return bounded receipts. Exact observation retries return the stored evidence ID. Child summaries remain on their Session bindings and do not become original evidence or report prose.
 
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
@@ -128,7 +128,7 @@ The [journal](src/workbench/journal.ts) owns durable checks and attempts. Jobs, 
 
 The ./web and ./laboratory plugins provide approved HTTP evidence collection and explicit operator-owned lab lifecycle. Use the [Web lab guide](../../../docs/user/guide/security-analysis.md#local-web-laboratory) for setup and the [delivery scope](../../../docs/roadmaps/security-analysis.md#web-delivery-scope-2026-09-22) for unverified or deferred work. The versioned recipe uses official Kali, records installed packages and gates the build on a known yescrypt test vector. The operator can reuse `existingImage` (default `vxcontrol/kali-linux:latest`) from the local Docker image store without a toolbox pull or build. Reuse pins its image ID, measures tools in an owned network-disabled container and records yescrypt failure without blocking HTTP; a missing Python runtime rejects registration. Every reuse or build creates a separate generation, preserving existing labs during upgrades. Nuclei and Metasploit installation does not expose their execution.
 
-Independent review records bind finding content, same-target evidence and a reviewer Session. Reports preserve a project revision as Markdown and JSON with evidence references. Confirmed/refuted outcomes require complete validation-plan evidence and an independent review; callers cannot set them directly in a new finding. Report generation records current conclusions without asserting that coverage is complete.
+Independent reviews bind finding content, same-target evidence and a reviewer Session. A complete static implementation observation can support a reviewed confirmed or refuted result; identity, version and string inventory alone cannot. Runtime conclusions require a completed approved validation plan. Report generation uses one isolated, tool-free model pass over judgments and coverage, then validates every finding's disposition. Markdown contains a short security brief, with excess target findings in an optional appendix; JSON retains the project records. `reportMaxChars` is a soft writing target of 1,200 characters, `reportInputBytes` to 131,072, `reportOutputTokens` to 4,096, `reportMaxFindings` to five and `reportMaxLessons` to three. Without a dedicated route, the report uses the initiating Agent model. Failed or over-budget generation publishes no report.
 
 <a id="model-experience"></a>
 
@@ -142,7 +142,7 @@ The coordinator uses `security_scope` and other domain tools to plan checks, sea
 
 #### Token effect
 
-Domain tool schemas and retrieved evidence consume context according to the configured output limit. This package does not change token accounting.
+Domain tool schemas and retrieved evidence consume context according to `modelResultBytes`; original collection uses `maxOutputBytes`. `analysisTurnTokens` defaults to 120,000 provider-reported tokens, including cache reads, per project analysis turn. After the limit, the next model step is rejected; saved evidence remains available for a narrower follow-up. The package does not change token accounting.
 
 #### KV Cache effect
 
@@ -154,7 +154,7 @@ Tool definitions and workflow guidance remain stable. Project state enters conte
 
 - Ghidra installation, extension compilation, GUI launch and sample import require operator preparation. DSH function/decompilation/cross-reference acceptance remains pending; a successful import or operator probe does not establish DSH query capability.
 - Real Frida 17.18.0 observations and cleanup have been exercised on an owned Windows process. No Android device is available. The installed Kali image lacks Frida, JADX and Ghidra; its presence is not a supported analysis combination.
-- Real DeepSeek tutorial analysis exercised static evidence and child report collection, but produced incorrect ELF interpretations. Structured format parsing remains incomplete; a real-model GUI GIF is still outstanding. Keyless tests and simulated external responses are separate evidence.
+- Real DeepSeek tutorial analysis exercised static evidence and child report collection, but produced incorrect ELF interpretations. Structured format parsing remains incomplete; the new brief still needs a real-model run and GUI GIF. Keyless tests and simulated external responses are separate evidence.
 - Immutable source and binary reads run independently. Providers identify shared external instances for exclusive leases; Ghidra leases use the actual loopback origin. Automatic GUI provisioning, rich component/JNI linking, remote labs, semantic search, device-specific IoT validation, fastboot writes and John password auditing remain unavailable.
 - Android split APK validation is refused because one imported base APK cannot establish the complete installed package identity. Local attach refuses platforms that cannot provide a start identity or executable identity.
 - Refinement processes a complete project knowledge set; exceeding `knowledgeInputBytes` fails without truncation. Automatic runs require a running Host and a configured model. Semantic equivalence is model-assessed; shared results still require operator review.

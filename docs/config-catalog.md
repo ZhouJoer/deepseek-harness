@@ -844,8 +844,22 @@ export interface WorkbenchConfig {
   maxDerivedAssets: number
   /** Maximum bytes in one imported sample or immutable artifact. */
   maxArtifactBytes: number
-  /** Maximum bytes returned by an analysis operation or model-facing result. */
+  /** Maximum raw collection or knowledge-refinement output bytes. */
   maxOutputBytes: number
+  /** Maximum complete JSON bytes in one model-facing tool response. */
+  modelResultBytes: number
+  /** Maximum Unicode characters in the reader-facing report body. */
+  reportMaxChars: number
+  /** Maximum bytes supplied to the report model. */
+  reportInputBytes: number
+  /** Maximum model tokens allowed for one report response. */
+  reportOutputTokens: number
+  /** Maximum provider-reported tokens in one project analysis turn. */
+  analysisTurnTokens: number
+  /** Maximum target findings in the main report body. */
+  reportMaxFindings: number
+  /** Maximum reusable lessons in the main report body. */
+  reportMaxLessons: number
   /** Maximum approved operation duration in milliseconds. */
   maxDurationMs: number
   /** Maximum lifetime of a delegated analysis job in milliseconds. */
@@ -862,7 +876,7 @@ export interface WorkbenchConfig {
   knowledgeOutputTokens: number
   /** Optional dedicated refinement provider, paired with knowledgeModel. */
   knowledgeProvider?: string
-  /** Optional dedicated refinement model; omission uses the default Agent model. */
+  /** Optional dedicated refinement model; on-demand calls inherit the initiating Agent model when omitted. */
   knowledgeModel?: string
 }
 
@@ -931,7 +945,7 @@ export interface ToolInstallation {
 }
 ```
 
-Source: [`packages/experimental/security-analysis/src/index.ts:35`](../packages/experimental/security-analysis/src/index.ts)
+Source: [`packages/experimental/security-analysis/src/index.ts:34`](../packages/experimental/security-analysis/src/index.ts)
 
 <a id="deepseek-aidsh-experimental-tool-agent-team"></a>
 

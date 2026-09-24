@@ -10,6 +10,7 @@ import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import type { MainPanelId } from '@deepseek-ai/dsh-client-ui-layout/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
 import { Projects, ProjectIcon, type ProjectActions } from './Projects.tsx'
+import { SecurityToolRow, securityToolNames } from './SecurityToolRow.tsx'
 import { Workbench, type WorkbenchActions } from './Workbench.tsx'
 import { NS, zh, en, type SecurityKey } from './locales.ts'
 
@@ -36,6 +37,8 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   const disposeRemote = await ctx.remote.$mount(securityRemote)
   const ui = ctx.inject(['remote.securityWorkbench', 'slots', 'locale'], (scoped) => {
     scoped.effect(() => scoped.locale.register(NS, { zh, en }))
+    for (const key of securityToolNames) scoped.slots.inject('tool.call.toolview', () =>
+      scoped.slots.register({ name: 'tool.call.toolview', key, locale: NS }, SecurityToolRow))
     const remote = scoped.remote.securityWorkbench
     const projectActions: ProjectActions = {
       projects: () => unwrap(remote.projects()), project: id => unwrap(remote.project(id)),
@@ -57,6 +60,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       execute: (id, plan, operation, revision) => unwrap(remote.execute(id, plan, operation, revision)),
       search: (id, query, shared) => unwrap(remote.search(id, query, shared)),
       artifact: (id, hash) => unwrap(remote.artifact(id, hash)),
+      report: (project, id, format) => unwrap(remote.report(project, id, format)),
     }
     scoped.slots.inject('conversation.input.dock', () =>
       scoped.slots.register(

@@ -33,6 +33,9 @@
       "path": "../../client/ui-slots"
     },
     {
+      "path": "../../client/ui-tool"
+    },
+    {
       "path": "../../core/session"
     },
     {

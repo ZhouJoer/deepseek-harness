@@ -11,12 +11,13 @@ import { describe, it, expect, onTestFinished, vi } from 'vitest'
 import { openSecurityJournal } from '../src/workbench/journal.ts'
 import { ArtifactStore } from '../src/workbench/artifacts.ts'
 import { SecurityController } from '../src/workbench/controller.ts'
+import { BinaryProvider } from '../src/workbench/binary.ts'
 import type { SecurityCommand } from '../src/workbench/controller.ts'
 import { findingHash } from '../src/workbench/assessment.ts'
 import { refineKnowledge, refinementSchema } from '../src/workbench/knowledge.ts'
 import { SecuritySearchIndex } from '../src/workbench/search.ts'
 
-async function harness() {
+async function harness(generateReport?: (prompt: string, signal: AbortSignal) => Promise<string>) {
   const root = await mkdtemp(join(tmpdir(), 'dsh-security-workbench-'))
   const ctx = new Context()
   const backend = new JsonStorageBackend(root)
@@ -35,7 +36,15 @@ async function harness() {
     approvalTtlMs: 60000,
     maxArtifactBytes: 65536,
     maxDerivedAssets: 10,
-  })
+    reportLimits: { inputBytes: 32768, maxChars: 1200, maxFindings: 5, maxLessons: 3, outputBytes: 16384 },
+  }, generateReport ?? (async (prompt) => {
+    const data = JSON.parse(prompt.split('\nData: ')[1]!) as { findings: { index: number; status: string }[] }
+    return JSON.stringify({ assessment: 'Only recorded implementation paths were assessed.',
+      findings: data.findings.filter(item => item.status !== 'refuted').map(item => ({ index: item.index, mechanism: 'Target behavior requires review',
+        conditions: 'Owned sample', impact: 'Potential security impact', location: 'sample', fix: 'Check the implementation' })),
+      excludedIndices: data.findings.filter(item => item.status === 'refuted').map(item => item.index),
+      lessons: [], uncovered: ['Other paths remain unexamined.'] })
+  }))
   onTestFinished(async () => {
     await controller.dispose()
     await facility.closeAll()
@@ -62,6 +71,20 @@ async function harness() {
 }
 
 describe('security workbench', () => {
+
+  it('leaves a project without deleting its records and can select it again', async () => {
+    const { controller, send, journal } = await harness()
+    const original = controller.binding('parent')?.engagementId
+    expect(original).toBeDefined()
+    await expect(send({ kind: 'leave' })).rejects.toThrow(/operator/)
+    await send({ kind: 'leave' }, true)
+    expect(controller.binding('parent')).toBeUndefined()
+    expect(controller.view('parent').records).toEqual([])
+    expect(journal.view().records.some(item => item.kind === 'engagement' && item.value.id === original)).toBe(true)
+    await expect(send({ kind: 'stop' })).rejects.toThrow(/Select a security project/)
+    await send({ kind: 'select', engagementId: original! }, true)
+    expect(controller.view('parent').records.some(item => item.kind === 'asset')).toBe(true)
+  })
 
   it('returns the committed evidence for exact static retries and rejects changed retries', async () => {
     const { controller, assetId } = await harness()
@@ -412,7 +435,7 @@ async function reviewedFixture(incomplete = false, phase: 'validation' | 'recon'
   if (finding.kind !== 'finding') throw new Error('Missing finding')
   await controller.bindChild('parent', 'reviewer', [assetId], 'reviewer')
   const review = async (verdict: 'confirmed' | 'refuted' | 'inconclusive') => {
-    const view = await controller.review('reviewer', { findingId: finding.value.id, findingHash: findingHash(finding.value), verdict,
+    const view = await controller.review('reviewer', { findingId: finding.value.id, findingHash: findingHash(finding.value), basis: 'runtime', verdict,
       supportingEvidenceIds: verdict === 'confirmed' ? [evidence.value.id] : [], opposingEvidenceIds: verdict === 'refuted' ? [evidence.value.id] : [],
       explanation: 'Independent assessment of stored response', uncertainty: verdict === 'inconclusive' ? 'Insufficient coverage' : '' })
     const record = view.records.findLast(item => item.kind === 'review')!
@@ -432,13 +455,95 @@ it.each(['confirmed', 'refuted', 'inconclusive'] as const)('derives %s from an i
   expect(view.records.find(item => item.kind === 'finding')?.value).toMatchObject({ status: verdict })
   const report = view.records.find(item => item.kind === 'report')!
   if (report.kind !== 'report') throw new Error('Missing report')
-  expect((await artifacts.read(report.value.markdown)).toString()).toContain(verdict)
+  expect((await artifacts.read(report.value.markdown)).toString()).toContain(
+    verdict === 'confirmed' ? '已确认' : verdict === 'inconclusive' ? '未定' : '当前没有可确认的目标风险',
+  )
   expect(JSON.parse((await artifacts.read(report.value.json)).toString())).toMatchObject({ revision: report.value.revision })
+})
+it('generates a report outside the journal queue and rejects stale analysis', async () => {
+  const entered = Promise.withResolvers<undefined>()
+  const output = Promise.withResolvers<string>()
+  const generate = vi.fn(async () => { entered.resolve(undefined); return output.promise })
+  const { controller, journal, send } = await harness(generate)
+  const command = { operationId: 'report-pending', expectedRevision: journal.view().revision, action: { kind: 'report' } }
+  const first = controller.command('parent', command)
+  const second = controller.command('parent', command)
+  await entered.promise
+  await send({ kind: 'remember', entry })
+  output.resolve(JSON.stringify({ assessment: 'Binary safety has not been assessed.', findings: [], excludedIndices: [],
+    lessons: [], uncovered: ['No implementation paths were examined.'] }))
+  await expect(first).rejects.toThrow(/changed/)
+  await expect(second).rejects.toThrow(/changed/)
+  expect(generate).toHaveBeenCalledTimes(1)
+  expect(controller.view('parent').records.some(item => item.kind === 'report')).toBe(false)
+})
+
+it('replays a completed report without another model request', async () => {
+  const generate = vi.fn(async () => JSON.stringify({ assessment: 'Binary safety has not been assessed.', findings: [],
+    excludedIndices: [], lessons: [], uncovered: ['Only file identity is known.'] }))
+  const { controller, journal } = await harness(generate)
+  const command = { operationId: 'report-once', expectedRevision: journal.view().revision, action: { kind: 'report' } }
+  await controller.command('parent', command)
+  await controller.command('parent', command)
+  expect(generate).toHaveBeenCalledTimes(1)
+  expect(controller.view('parent').records.filter(item => item.kind === 'report')).toHaveLength(1)
+})
+it('does not publish a report after its request is cancelled', async () => {
+  const entered = Promise.withResolvers<undefined>()
+  const output = Promise.withResolvers<string>()
+  const generate = vi.fn(async () => { entered.resolve(undefined); return output.promise })
+  const { controller, journal } = await harness(generate)
+  const abort = new AbortController()
+  const pending = controller.command('parent', { operationId: 'report-cancelled',
+    expectedRevision: journal.view().revision, action: { kind: 'report' } }, false, abort.signal)
+  await entered.promise
+  abort.abort(new Error('Cancelled'))
+  output.resolve(JSON.stringify({ assessment: 'Unknown safety.', findings: [], excludedIndices: [],
+    lessons: [], uncovered: ['No implementation was inspected.'] }))
+  await expect(pending).rejects.toThrow('Cancelled')
+  expect(controller.view('parent').records.some(item => item.kind === 'report')).toBe(false)
+})
+it.each([{ operation: 'hex', accepted: true }, { operation: 'strings', accepted: false }] as const)(
+  'requires implementation evidence for a static conclusion from $operation', async ({ operation, accepted }) => {
+    const { controller, send, assetId } = await harness()
+    controller.providers.register(new BinaryProvider())
+    const observed = await controller.observe('parent', { provider: 'binary', operation, assetId,
+      environmentId: 'local', parameters: {}, impact: 'observe' }, 'static-' + operation, new AbortController().signal)
+    if (observed.kind !== 'evidence') throw new Error('Missing observation')
+    await send({ kind: 'finding', finding: { assetId, title: 'Unchecked parser length',
+      explanation: 'A controlled length may reach a copy.', conditions: 'Attacker supplies length',
+      evidenceIds: [observed.value.id], status: 'suspected', review: '' } })
+    const finding = controller.view('parent').records.find(item => item.kind === 'finding')
+    if (finding?.kind !== 'finding') throw new Error('Missing finding')
+    await controller.bindChild('parent', 'static-reviewer', [assetId], 'reviewer')
+    const reviewed = await controller.review('static-reviewer', { findingId: finding.value.id,
+      findingHash: findingHash(finding.value), basis: 'static', verdict: 'confirmed',
+      supportingEvidenceIds: [observed.value.id], opposingEvidenceIds: [],
+      explanation: 'The input length controls the copy without a remaining-size check.', uncertainty: '' })
+    const review = reviewed.records.find(item => item.kind === 'review')
+    if (review?.kind !== 'review') throw new Error('Missing review')
+    const conclusion = send({ kind: 'conclude', reviewId: review.value.id })
+    if (accepted) {
+      await conclusion
+      expect(controller.view('parent').records.find(item => item.kind === 'finding')?.value.status).toBe('confirmed')
+    } else await expect(conclusion).rejects.toThrow(/implementation evidence/)
+  })
+
+it('excludes pure workbench notes without hiding them from durable history', async () => {
+  const { send, journal, controller } = await harness()
+  await send({ kind: 'remember', entry: { ...entry, title: 'Tool JSON issue', summary: 'Fix JSON braces in tool calls.' } })
+  const source = journal.view().records.find(item => item.kind === 'knowledge')
+  if (source?.kind !== 'knowledge') throw new Error('Missing knowledge')
+  await refineKnowledge(journal, controller.binding('parent')!.engagementId,
+    async () => JSON.stringify({ entries: [], excludedSourceIds: [source.value.id] }), limits, new AbortController().signal)
+  expect(controller.view('parent').records.some(item => item.kind === 'knowledge')).toBe(false)
+  expect(controller.sharedKnowledge()).toHaveLength(0)
+  expect(journal.view().records.find(item => item.kind === 'knowledge')?.value).toMatchObject({ excluded: true })
 })
 it('invalidates reviews when claim content changes and rejects forged review authors', async () => {
   const { controller, send, review, finding } = await reviewedFixture()
   const reviewId = await review('confirmed')
-  await expect(controller.review('parent', { findingId: finding.id, findingHash: findingHash(finding), verdict: 'confirmed', supportingEvidenceIds: finding.evidenceIds, opposingEvidenceIds: [], explanation: 'self review', uncertainty: '' })).rejects.toThrow(/reviewer/)
+  await expect(controller.review('parent', { findingId: finding.id, findingHash: findingHash(finding), basis: 'runtime', verdict: 'confirmed', supportingEvidenceIds: finding.evidenceIds, opposingEvidenceIds: [], explanation: 'self review', uncertainty: '' })).rejects.toThrow(/reviewer/)
   await send({ kind: 'revise-finding', findingId: finding.id, title: 'Changed claim', explanation: finding.explanation, conditions: finding.conditions, evidenceIds: finding.evidenceIds })
   await expect(send({ kind: 'conclude', reviewId })).rejects.toThrow(/changed/)
 })
@@ -448,7 +553,7 @@ it.each([{ incomplete: true, phase: 'validation' as const }, { incomplete: false
 })
 it('rejects foreign evidence and requires operator ownership to register a Web target', async () => {
   const { controller, send, finding } = await reviewedFixture()
-  await expect(controller.review('reviewer', { findingId: finding.id, findingHash: findingHash(finding), verdict: 'confirmed', supportingEvidenceIds: ['foreign'], opposingEvidenceIds: [], explanation: 'Foreign reference', uncertainty: '' })).rejects.toThrow(/another asset/)
+  await expect(controller.review('reviewer', { findingId: finding.id, findingHash: findingHash(finding), basis: 'runtime', verdict: 'confirmed', supportingEvidenceIds: ['foreign'], opposingEvidenceIds: [], explanation: 'Foreign reference', uncertainty: '' })).rejects.toThrow(/another asset/)
   await expect(send({ kind: 'web-target', environmentId: 'local', label: 'Web', pathPrefix: '/' })).rejects.toThrow(/operator/)
   await expect(send({ kind: 'web-target', environmentId: 'local', label: 'Web', pathPrefix: '/' }, true)).rejects.toThrow(/laboratory/)
 })
@@ -464,7 +569,9 @@ it('consolidates duplicate legacy notes atomically and reconstructs structured r
   ])
   const source = journal.view().records.filter(item => item.kind === 'knowledge')
   const project = controller.binding('parent')!.engagementId
-  const generate = vi.fn(async (_prompt: string) => JSON.stringify({ entries: [{ sourceIds: source.map(item => item.value.id), entry }] }))
+  const generate = vi.fn(async (_prompt: string) => JSON.stringify({
+    entries: [{ sourceIds: source.map(item => item.value.id), entry }], excludedSourceIds: [],
+  }))
   await refineKnowledge(journal, project, generate, limits, new AbortController().signal)
   expect(generate.mock.calls[0]?.[0]).not.toContain('evidenceIds')
   const visible = controller.view('parent').records.filter(item => item.kind === 'knowledge')
@@ -484,7 +591,7 @@ it.each(['foreign', 'missing', 'repeated', 'category', 'extra-field', 'oversized
   const source = journal.view().records.filter(item => item.kind === 'knowledge')
   const id = source[0]!.value.id
   const result = { entries: [{ sourceIds: kind === 'foreign' ? ['foreign'] : kind === 'missing' ? [] : kind === 'repeated' ? [id, id] : [id],
-    entry: { ...entry, ...(kind === 'category' ? { category: 'retrospective' } : {}), ...(kind === 'extra-field' ? { reasoning: 'private trace' } : {}), ...(kind === 'oversized' ? { summary: 'x'.repeat(401) } : {}) } }] }
+    entry: { ...entry, ...(kind === 'category' ? { category: 'retrospective' } : {}), ...(kind === 'extra-field' ? { reasoning: 'private trace' } : {}), ...(kind === 'oversized' ? { summary: 'x'.repeat(401) } : {}) } }], excludedSourceIds: [] }
   await expect(refineKnowledge(journal, controller.binding('parent')!.engagementId, async () => JSON.stringify(result), limits, new AbortController().signal)).rejects.toThrow()
   expect(journal.view().records.filter(item => item.kind === 'knowledge')).toEqual(source)
   expect(journal.view().records.find(item => item.kind === 'knowledge-maintenance')?.value).toMatchObject({ status: 'failed' })
@@ -500,7 +607,7 @@ it('rejects concurrent edits and retains the newly saved note', async () => {
   const rejected = expect(pending).rejects.toThrow(/changed/)
   await entered.promise
   await send({ kind: 'remember', entry: { ...entry, title: 'New note' } })
-  response.resolve(JSON.stringify({ entries: [{ sourceIds: [source[0]!.value.id], entry }] }))
+  response.resolve(JSON.stringify({ entries: [{ sourceIds: [source[0]!.value.id], entry }], excludedSourceIds: [] }))
   await rejected
   expect(controller.view('parent').records.filter(item => item.kind === 'knowledge')).toHaveLength(2)
 })
@@ -511,7 +618,7 @@ it('requires a new review after a shared lesson changes', async () => {
   const source = journal.view().records.filter(item => item.kind === 'knowledge')
   await send({ kind: 'publish', knowledgeId: source[0]!.value.id }, true)
   expect(controller.sharedKnowledge()).toHaveLength(1)
-  await refineKnowledge(journal, controller.binding('parent')!.engagementId, async () => JSON.stringify({ entries: [{ sourceIds: [source[0]!.value.id], entry: { ...entry, summary: 'Check length before each read.' } }] }), limits, new AbortController().signal)
+  await refineKnowledge(journal, controller.binding('parent')!.engagementId, async () => JSON.stringify({ entries: [{ sourceIds: [source[0]!.value.id], entry: { ...entry, summary: 'Check length before each read.' } }], excludedSourceIds: [] }), limits, new AbortController().signal)
   expect(controller.sharedKnowledge()).toHaveLength(0)
 })
 
@@ -527,7 +634,7 @@ it('bounds framed input before dispatch and does not commit an aborted result', 
   const abort = new AbortController()
   await expect(refineKnowledge(journal, project, async () => {
     abort.abort(new Error('cancelled'))
-    return JSON.stringify({ entries: [{ sourceIds: [source[0]!.value.id], entry }] })
+    return JSON.stringify({ entries: [{ sourceIds: [source[0]!.value.id], entry }], excludedSourceIds: [] })
   }, limits, abort.signal)).rejects.toThrow('cancelled')
   expect(journal.view().records.filter(item => item.kind === 'knowledge')).toEqual(source)
   expect(() => refinementSchema.parse({ entries: [], evidence: [] })).toThrow()

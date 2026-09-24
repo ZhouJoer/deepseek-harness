@@ -84,6 +84,8 @@ export interface AnalysisResult {
   cleanup?: string
   /** Distinguishes static observations, offline simulations and physical devices. */
   method?: 'static' | 'simulation' | 'device'
+  /** Whether this observation contains implementation material or only discovery clues. */
+  observationKind?: 'inventory' | 'implementation'
 }
 /** One admitted operation's resources and cancellation lifetime. */
 export interface AnalysisContext {

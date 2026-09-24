@@ -80,6 +80,6 @@ export class BinaryProvider implements AnalysisProvider {
     const output = Buffer.from(JSON.stringify(value))
     if (output.length > context.maxOutputBytes) throw new Error('Binary result exceeds output budget; reduce length')
     return { bytes: output, mediaType: 'application/json', summary: `${request.operation}: ${output.length} bytes of observations`,
-      incomplete, toolVersion: 'dsh-binary/1' }
+      incomplete, toolVersion: 'dsh-binary/1', observationKind: request.operation === 'hex' ? 'implementation' : 'inventory' }
   }
 }

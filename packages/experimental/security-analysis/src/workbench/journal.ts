@@ -17,6 +17,8 @@ const commitSchema = z
 export interface SecurityJournal {
   /** @returns the current committed snapshot. */
   view(): WorkbenchView
+  /** Return a completed identical command without invoking its producer. */
+  replay(operationId: string, input: unknown): WorkbenchView | undefined
   /**
    * Commit one command atomically as one domain record.
    * @param operationId - caller's stable retry identity.
@@ -74,11 +76,18 @@ export async function openSecurityJournal(ctx: Context): Promise<SecurityJournal
     throw error
   }
   const view = (): WorkbenchView => ({ revision, records: structuredClone([...records.values()]) })
+  const fingerprintOf = (input: unknown) => createHash('sha256').update(JSON.stringify(input)).digest('hex')
   return {
     view,
+    replay(operationId, input) {
+      const previous = operations.get(operationId)
+      if (previous === undefined) return undefined
+      if (previous !== fingerprintOf(input)) throw new Error('operationId was already used for different input')
+      return view()
+    },
     commit(operationId, expectedRevision, input, produce) {
       if (closing !== undefined) return Promise.reject(new Error('Security journal is closing'))
-      const fingerprint = createHash('sha256').update(JSON.stringify(input)).digest('hex')
+      const fingerprint = fingerprintOf(input)
       const pending = chain.then(async () => {
         if (!operationId.trim()) throw new Error('operationId is required')
         const previous = operations.get(operationId)

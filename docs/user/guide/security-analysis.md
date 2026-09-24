@@ -24,7 +24,7 @@ Open `http://127.0.0.1:3081` using the authenticated link printed by DSH. The [s
 
 ## 2. Set the scope
 
-Choose a workspace and open a Session, then open **Security analysis** above the message composer. Create a project with its objective and allowed configured environments. Import an absolute sample path inside `importRoots`, and create the four-stage check template for that asset. APK members receive their own measured identities and parent links.
+Choose a workspace and open a Session, then open **Security analysis** above the message composer. Create a project with its objective and allowed configured environments. Use **New project** or **Leave current project** to clear this Session's selection; saved checks and findings remain in the old project. The sidebar browses saved projects independently and does not change the Session selection. Import an absolute sample path inside `importRoots`. Add checks according to the research question; the four-stage template is an optional starting point. APK members receive their own measured identities and parent links.
 
 Open **Environments and tools** and inspect the selected environment. Missing installations and disconnected devices are shown as diagnostics. Configure Android device IDs and Docker images explicitly in the Host overlay; the default example creates only a local environment. Read the [provider setup](../../../packages/experimental/security-analysis/README.md#configure-analysis-providers) before using Ghidra or a device.
 
@@ -46,7 +46,7 @@ The security profile keeps DSH chat and adds a **Security analysis** entry above
 
 1. Open the workbench and create a project named `Demo`, with objective `Inspect the owned static fixture` and environment `local`. Project creation does not require a model key.
 2. In **Assets**, import the absolute path of [static-demo.txt](../../../packages/experimental/security-analysis/tests/fixtures/static-demo.txt). Use `Resolve-Path packages/experimental/security-analysis/tests/fixtures/static-demo.txt` in PowerShell to obtain it. The asset should show a measured SHA-256; this inert text fixture contains no executable code or demonstrated vulnerability.
-3. Click **Create four-stage check plan**, then open **Checks**. Expect four planned checks with dependencies. Creating a plan does not complete analysis. Try **Stop project** and **Resume project**; the state should survive refresh.
+3. Optionally click **Create four-stage check plan**, then open **Checks**. The template creates four planned checks with dependencies; choose or revise checks as the investigation develops. Try **Stop project** and **Resume project**; the state should survive refresh.
 4. Open **Environments and tools** and inspect `local`. Missing external installations should produce explicit diagnostics. This does not prevent the built-in binary provider from reading the imported fixture.
 5. After configuring the model, send the following request in chat. Inspect actual tool cards and evidence IDs rather than accepting a prose claim that a tool ran.
 
@@ -60,7 +60,7 @@ Ghidra GUI analysis, JADX and Frida require their configured external tools. A c
 
 ## Current acceptance limits
 
-Windows Frida success/cancellation and Docker lifecycle have real local integration tests. No Android device is available for acceptance. Ghidra GUI integration, three-target four-stage analysis and a real-model Web recording still require their external environments. The package README records remaining implementation limits; this experimental version is not a claim that the full planned release has passed acceptance.
+Windows Frida success/cancellation and Docker lifecycle have real local integration tests. No Android device is available for acceptance. Ghidra GUI integration, comprehensive source/binary/Web analysis and a real-model Web recording still require their external environments. The package README records remaining implementation limits; this experimental version is not a claim that the full planned release has passed acceptance.
 
 <a id="local-web-laboratory"></a>
 ## Local Web laboratory
@@ -71,8 +71,8 @@ The sidebar **Security analysis** entry opens persistent projects independently 
 2. Start the prepared lab, then inspect it. Strict isolated networking does not publish browser ports; a controlled loopback proxy is deferred. Tool and target containers use a dedicated internal network. Clearing removes their containers and network; starting again creates a new target identity.
 3. Return to the conversation workbench and refresh it. Under **Assets**, select the lab environment, enter a Web target name and an allowed path prefix (initially /), then register the running target. After a reset, register the new target again.
 4. Add a check and prepare a plan with provider web, operation request, and parameters {"path":"/","method":"GET"}. Set the hypothesis, expected response, duration, impact and cleanup. Inspect and approve the exact plan before executing it. HTTP collection supports GET and HEAD; redirects are recorded without following them.
-5. Record a suspected finding from saved evidence. Ask the coordinator to delegate review to a fresh reviewer Session. The reviewer uses security_review with the finding hash, supporting/opposing evidence and uncertainty. Apply the review under **Independent reviews**. Confirmed or refuted findings require complete evidence from a completed validation-phase plan; editing the finding invalidates the review.
-6. Generate a report under **Reports**. Markdown and JSON remain readable from the project sidebar after refresh; Markdown includes conclusions, coverage, blockers, cleanup details and an evidence index.
+5. Record a suspected finding from saved evidence. Ask the coordinator to delegate review to a fresh reviewer Session. The reviewer uses security_review with the finding hash, `basis` (`static` or `runtime`), supporting/opposing evidence and uncertainty. Apply the review under **Independent reviews**. A static conclusion requires complete implementation material; a runtime conclusion requires complete evidence from a completed approved validation plan. Editing the finding invalidates the review.
+6. Generate a report under **Reports** with the conversation model or a configured dedicated model. The project sidebar keeps the short Markdown brief, full JSON and any additional findings appendix. The brief summarizes security judgments, fixes, reusable lessons and missing coverage. Generation fails without publishing a new report if its input or output exceeds the configured budget. Project analysis stops before another model request after its configured turn token budget is reached; continue with a narrower question using the saved evidence.
 
 Nuclei and Metasploit execution, reviewed module catalogues, Vulhub orchestration and arbitrary external targets are unavailable. The build recipe installs their binaries, which does not establish usable provider support. John accepts only the fixed capability test; offline password auditing is deferred. If a build fails, inspect its recorded error and stop owned resources before retrying. Host restart marks interrupted labs for reconciliation and never replays a check.
 
@@ -82,4 +82,4 @@ Import the authorized directory with **Import source directory** under **Assets*
 
 For device applications, assign frontend and device logic questions separately. Treat Web Bluetooth and GATT as device protocols rather than assuming an HTTP service. Have DSH prepare Python or browser scripts with simulated clocks, storage, WLAN or GATT. Review the exact script and pinned image before approval. Missing images or runtimes are capability blockers.
 
-Keep successful assertions, failures, skipped scenarios and simulation assumptions in the report. An independent reviewer must read original evidence; a child summary alone cannot establish a finding. Hardware-dependent conclusions remain pending until a separate authorized device test. Ghidra capability checks can be deferred independently of source analysis.
+Keep assertions, failures, skipped scenarios and simulation assumptions in the project records. Mention them in the brief only when they change a security judgment or leave a material gap. An independent reviewer must read original evidence; a child summary alone cannot establish a finding. Hardware-dependent conclusions remain pending until a separate authorized device test. Ghidra capability checks can be deferred independently of source analysis.

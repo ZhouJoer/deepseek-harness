@@ -107,6 +107,7 @@ export const evidenceSchema = z
     failure: z.string().optional(),
     cleanup: z.string().optional(),
     method: z.enum(['static', 'simulation', 'device']).optional(),
+    observationKind: z.enum(['inventory', 'implementation']).optional(),
     createdAt: z.number().int().nonnegative(),
   })
   .strict()
@@ -127,6 +128,7 @@ export const findingSchema = z
 /** Independent assessment bound to exact finding content and its observations. */
 export const reviewSchema = z.object({
   id, engagementId: id, assetId: id, findingId: id, findingHash: digest,
+  basis: z.enum(['static', 'runtime']).optional(),
   reviewerSessionId: id,
   verdict: z.enum(['confirmed', 'refuted', 'inconclusive']),
   supportingEvidenceIds: z.array(id), opposingEvidenceIds: z.array(id),
@@ -135,7 +137,7 @@ export const reviewSchema = z.object({
 /** Immutable report exports for one observed project revision. */
 export const reportSchema = z.object({
   id, engagementId: id, revision: z.number().int().nonnegative(),
-  markdown: artifactSchema, json: artifactSchema, createdAt: z.number().int().nonnegative(),
+  markdown: artifactSchema, json: artifactSchema, findingsMarkdown: artifactSchema.optional(), createdAt: z.number().int().nonnegative(),
 }).strict()
 /** A resolved, immutable request submitted to one analysis provider. */
 export const operationSchema = z
@@ -171,13 +173,14 @@ export const validationPlanSchema = z
 export const childReportSchema = z.object({
   summary: z.string(), evidenceIds: z.array(id), uncertainty: z.string(), nextSteps: z.array(z.string()),
 }).strict()
-/** A durable authority binding for one session. */
+/** A durable session selection; inactive bindings retain history without granting authority. */
 export const bindingSchema = z
   .object({
     sessionId: id,
     engagementId: id,
     role: roleSchema,
     assetIds: z.array(id),
+    active: z.boolean().optional(),
     report: childReportSchema.optional(),
   })
   .strict()
@@ -204,6 +207,7 @@ export const knowledgeSchema = z
     published: z.boolean(),
     entry: knowledgeEntrySchema.optional(),
     supersededBy: id.optional(),
+    excluded: z.boolean().optional(),
   })
   .strict()
 /** Project-owned laboratory resources and pinned build results. */
@@ -289,7 +293,7 @@ export type AnalysisOperation = z.infer<typeof operationSchema>
 export type Artifact = z.infer<typeof artifactSchema>
 /** Version-bound validation plan. */
 export type ValidationPlan = z.infer<typeof validationPlanSchema>
-/** Authority binding, controlled by the host. */
+/** Session selection and authority, controlled by the host. */
 export type SessionBinding = z.infer<typeof bindingSchema>
 /** Snapshot returned after committed mutations. */
 export interface WorkbenchView {

@@ -94,6 +94,7 @@ export class AndroidProvider implements AnalysisProvider {
         summary: result.stdout.slice(0, 4096),
         incomplete: result.truncated,
         toolVersion,
+        observationKind: 'inventory' as const,
       }
     }
     const path = await context.artifacts.materialize(fileAsset(context.asset).artifact)
@@ -143,6 +144,7 @@ export class AndroidProvider implements AnalysisProvider {
         summary: 'JADX produced ' + String(files.length) + ' source/resource files',
         incomplete,
         toolVersion,
+        observationKind: 'implementation' as const,
       }
     } finally {
       await context.artifacts.release(path)

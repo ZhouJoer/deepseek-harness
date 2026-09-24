@@ -21,12 +21,70 @@ function actions(overrides: Partial<WorkbenchActions> = {}) {
     refine: vi.fn(async () => view), load: vi.fn(async () => view), command: vi.fn(async () => view),
     configuration: vi.fn(async () => JSON.stringify({ environments: [{ id: 'local', label: 'Lab', tools: [], kind: 'local' }], providers: [] })),
     environment: vi.fn(async () => '{}'), execute: vi.fn(async () => view), search: vi.fn(async () => ({ revision: 8, records: [] })),
-    artifact: vi.fn(async () => '{}'), ...overrides,
+    artifact: vi.fn(async () => '{}'), report: vi.fn(async () => '# Target security\n\n## Key risk\n- Password exposure'), ...overrides,
   }
 }
 function props(api: WorkbenchActions, sessionId = 'parent'): WorkbenchProps {
   return { ...api, sessionId: sessionId as SessionId, t: makeTranslate(zh, commonZh) } as unknown as WorkbenchProps
 }
+it('clears checks and findings after leaving, then exposes project creation', async () => {
+  const check = recordSchema.parse({ kind: 'check', value: { id: 'check', engagementId: 'project', assetId: 'sample',
+    title: 'Old check', phase: 'recon', criterion: 'Inspect sample', dependencies: [], evidenceIds: [],
+    status: 'planned', attempts: 0, rationale: '' } })
+  const finding = recordSchema.parse({ kind: 'finding', value: { id: 'finding', engagementId: 'project', assetId: 'sample',
+    title: 'Old finding', explanation: 'Prior analysis', status: 'suspected', evidenceIds: ['evidence'],
+    conditions: 'Prior sample', review: '' } })
+  const prior = { revision: 8, records: [project, check, finding] }
+  const empty = { revision: 9, records: [] }
+  const api = actions({
+    load: vi.fn(async () => prior),
+    command: vi.fn(async (_id, input) => JSON.parse(input).action.kind === 'leave' ? empty : prior),
+    configuration: vi.fn(async () => JSON.stringify({ projects: [{ id: 'project', title: 'Owned lab' }],
+      environments: [{ id: 'local', label: 'Lab', kind: 'local', tools: [] }], providers: [] })),
+  })
+  render(<Workbench {...props(api)} />)
+  fireEvent.click(screen.getByRole('button', { name: '安全分析' }))
+  await screen.findByText('Review the sample')
+  expect(screen.getByRole('button', { name: '新建项目' })).toBeDefined()
+  fireEvent.click(screen.getByRole('button', { name: '检查' }))
+  expect(screen.getByText('Old check')).toBeDefined()
+  fireEvent.click(screen.getByRole('button', { name: '退出当前项目' }))
+  await screen.findByRole('button', { name: '创建项目' })
+  fireEvent.click(screen.getByRole('button', { name: '检查' }))
+  expect(screen.queryByText('Old check')).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: '发现与验证' }))
+  expect(screen.queryByText('Old finding')).toBeNull()
+  expect(JSON.parse(vi.mocked(api.command).mock.calls[0]![1]).action).toEqual({ kind: 'leave' })
+})
+
+it('renders saved Markdown reports from the report read API in both project views', async () => {
+  const artifact = { sha256: 'a'.repeat(64), size: 20, mediaType: 'text/markdown' }
+  const saved = recordSchema.parse({ kind: 'report', value: { id: 'brief', engagementId: 'project', revision: 8,
+    markdown: artifact, json: { ...artifact, mediaType: 'application/json' }, createdAt: 1 } })
+  const projectView = { ...view, records: [project, saved] }
+  const report = vi.fn(async () => '# Target security\n\n## Key risk\n- Password exposure')
+  const api = actions({ load: vi.fn(async () => projectView), report })
+  const workbench = render(<Workbench {...props(api)} />)
+  fireEvent.click(screen.getByRole('button', { name: '安全分析' }))
+  await screen.findByText('Review the sample')
+  fireEvent.click(screen.getByRole('button', { name: '报告' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Markdown 报告' }))
+  await screen.findByRole('heading', { name: 'Target security' })
+  expect(report).toHaveBeenCalledWith('project', 'brief', 'markdown')
+  expect(api.artifact).not.toHaveBeenCalled()
+  workbench.unmount()
+
+  const projectProps = { projects: async () => JSON.stringify([{ id: 'project', title: 'Owned lab' }]),
+    project: async () => projectView, laboratory: async () => projectView, report,
+    subscribeReset: () => () => {}, t: makeTranslate(zh, commonZh) } as unknown as Parameters<typeof Projects>[0]
+  render(<Projects {...projectProps} />)
+  await screen.findByRole('option', { name: 'Owned lab' })
+  fireEvent.change(screen.getByRole('combobox'), { target: { value: 'project' } })
+  fireEvent.click(screen.getByRole('button', { name: '报告' }))
+  fireEvent.click(await screen.findByRole('button', { name: 'Markdown 报告' }))
+  await screen.findByRole('heading', { name: 'Target security' })
+})
+
 it('keeps authoritative project state when an evidence search returns no matches', async () => {
   const api = actions()
   render(<Workbench {...props(api)} />)

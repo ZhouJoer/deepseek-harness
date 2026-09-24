@@ -1,6 +1,7 @@
 /** Persistent operator project browser, independent of conversation selection. @module */
 import { useEffect, useRef, useState } from 'react'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import { MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
 import type { WorkbenchView } from '@deepseek-ai/dsh-experimental-security-analysis/client'
 import type { NS, SecurityKey } from './locales.ts'
@@ -11,7 +12,7 @@ export interface ProjectActions {
   projects(): Promise<string>
   project(id: string): Promise<WorkbenchView>
   laboratory(projectId: string, action: string, id: string): Promise<WorkbenchView>
-  report(projectId: string, reportId: string, format: 'markdown' | 'json'): Promise<string>
+  report(projectId: string, reportId: string, format: 'markdown' | 'json' | 'findingsMarkdown'): Promise<string>
   subscribeReset(this: void, listener: () => void): () => void
 }
 /** Sidebar glyph; the shell owns its accessible label.
@@ -32,6 +33,7 @@ export function Projects(props: ProjectActions & PropsLocale<typeof NS>) {
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [report, setReport] = useState('')
+  const [reportFormat, setReportFormat] = useState<'markdown' | 'json'>('markdown')
   const generation = useRef(0)
   const perform = async (action: () => Promise<void>) => {
     setBusy(true); setError('')
@@ -75,8 +77,8 @@ export function Projects(props: ProjectActions & PropsLocale<typeof NS>) {
       </article>)}
       {tab === 'reports' && <>{view.records.filter(item => item.kind === 'report').map(item => <article key={item.value.id} className={css.card}>
         <strong>{t('revision')} {item.value.revision}</strong>
-        {(['markdown', 'json'] as const).map(format => <button disabled={busy} key={format} onClick={() => void perform(async () => { const current = generation.current; const text = await props.report(selected, item.value.id, format); if (current === generation.current) setReport(text) })}>{t(format === 'markdown' ? 'markdownReport' : 'jsonReport')}</button>)}
-      </article>)}{report && <pre className={css.report}>{report}</pre>}</>}
+        {(['markdown', ...(item.value.findingsMarkdown ? ['findingsMarkdown'] as const : []), 'json'] as const).map(format => <button disabled={busy} key={format} onClick={() => void perform(async () => { const current = generation.current; const text = await props.report(selected, item.value.id, format); if (current === generation.current) { setReport(text); setReportFormat(format === 'json' ? 'json' : 'markdown') } })}>{t(format === 'markdown' ? 'markdownReport' : format === 'json' ? 'jsonReport' : 'findingsReport')}</button>)}
+      </article>)}{report && (reportFormat === 'markdown' ? <div className={css.report}><MarkdownText text={report} labels={{ code: { copyLabel: t('markdownCopy'), copiedLabel: t('markdownCopied') }, footnotes: t('markdownFootnotes') }} /></div> : <pre className={css.report}>{report}</pre>)}</>}
       {tab === 'laboratories' && <>
         <p>{t('toolLimit')}</p><p>{t('labResetHelp')}</p>
         <p>{t('reuseToolboxHelp')}</p>

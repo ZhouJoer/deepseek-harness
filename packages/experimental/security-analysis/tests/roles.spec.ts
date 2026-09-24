@@ -28,6 +28,7 @@ describe('security role assignments', () => {
     const prompt = delegationPrompt({ role: 'reviewer', task: 'review', assetId: 'sample', question: 'Confirm?',
       criterion: 'Cite contrary evidence', durationMs: 3000, maxOutputBytes: 4096 })
     expect(prompt).toContain('Independently')
+    expect(prompt).toContain('confirmed, refuted or inconclusive')
     expect(prompt).toContain('3000 ms total')
     expect(prompt).toContain('Assigned asset: sample')
     expect(prompt).toContain('"completionCriterion":"Cite contrary evidence"')

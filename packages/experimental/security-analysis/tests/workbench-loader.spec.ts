@@ -52,7 +52,10 @@ afterEach(async () => {
 
 class ScopeModel extends LlmAdapter {
   readonly requests: GenerateOptions[] = []
+  usageTokens = 0
+  reportFailure = false
   refinementOutput: ((prompt: string) => string) | undefined
+  reportOutput: ((prompt: string) => string) | undefined
   refinementWait: ((signal: AbortSignal | undefined) => Promise<void>) | undefined
   override resolveModel(provider: string, model: string): Promise<LlmResolvedModelInfo> {
     return Promise.resolve({ provider, id: model, name: model, inputModalities: ['text'] })
@@ -60,9 +63,15 @@ class ScopeModel extends LlmAdapter {
   async *stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
     this.requests.push(options)
     const refinement = options.messages.flatMap(message => message.content).filter(block => block.type === 'text').map(block => block.text).find(text => text.includes('\nNotes: '))
-    if (refinement && this.refinementOutput) {
+    const report = options.messages.flatMap(message => message.content).filter(block => block.type === 'text').map(block => block.text).find(text => text.includes('Write a concise Chinese security brief'))
+    if (this.usageTokens) yield { type: 'usage', usage: { inputTokens: this.usageTokens, outputTokens: 0 } }
+    if (report && this.reportFailure) {
+      yield { type: 'finish', reason: { kind: 'error', failure: { message: 'Fixture model rejected report', code: 'UNKNOWN' } } }
+      return
+    }
+    if ((refinement && this.refinementOutput) || (report && this.reportOutput)) {
       await this.refinementWait?.(options.signal)
-      const text = this.refinementOutput(refinement)
+      const text = refinement && this.refinementOutput ? this.refinementOutput(refinement) : this.reportOutput!(report!)
       yield { type: 'block-start', index: 0, blockType: 'text' }
       yield { type: 'text-delta', index: 0, text }
       yield { type: 'block-end', index: 0, block: { type: 'text', text } }
@@ -121,7 +130,8 @@ function independentTool(ctx: Context, name: string, execute = vi.fn(async () =>
   return execute
 }
 
-async function load(inheritJobTool = false, knowledgeIntervalMs = 0) {
+async function load(inheritJobTool = false, knowledgeIntervalMs = 0,
+  options: { dedicatedModel?: boolean; analysisTurnTokens?: number } = {}) {
   const root = await mkdtemp(join(tmpdir(), 'dsh-workbench-loader-'))
   roots.push(root)
   const model = new ScopeModel()
@@ -185,7 +195,10 @@ async function load(inheritJobTool = false, knowledgeIntervalMs = 0) {
                 : name === 'ghidra'
                   ? { programs: [] }
                   : name === 'security'
-                    ? { knowledgeIntervalMs, knowledgeProvider: 'fixture', knowledgeModel: 'fixture', root: join(root, 'workbench'), importRoots: [root], environments: [{ id: 'local', kind: 'local', label: 'Host', cwd: root, tools: [] }] }
+                    ? { knowledgeIntervalMs, ...(options.dedicatedModel === false ? {} : { knowledgeProvider: 'fixture', knowledgeModel: 'fixture' }),
+                      ...(options.analysisTurnTokens === undefined ? {} : { analysisTurnTokens: options.analysisTurnTokens }),
+                      root: join(root, 'workbench'), importRoots: [root],
+                      environments: [{ id: 'local', kind: 'local', label: 'Host', cwd: root, tools: [] }] }
                     : {},
       })),
     ),
@@ -393,7 +406,7 @@ it('runs logged tool-free refinement through the Loader and disposes its model S
   const entry = { category: 'experience', title: 'Bounds', summary: 'Check lengths', conditions: 'Binary parsers', actions: ['Validate before reading'], pitfalls: [], tags: [] }
   await send({ kind: 'remember', entry })
   const note = controller.view(agent.id).records.find(item => item.kind === 'knowledge')!
-  model.refinementOutput = () => JSON.stringify({ entries: [{ sourceIds: ['id' in note.value ? note.value.id : ''], entry: { ...entry, summary: 'Validate available bytes before each read.' } }] })
+  model.refinementOutput = () => JSON.stringify({ entries: [{ sourceIds: ['id' in note.value ? note.value.id : ''], entry: { ...entry, summary: 'Validate available bytes before each read.' } }], excludedSourceIds: [] })
   const logged: string[] = []
   let worker: Agent | undefined
   ctx.on('agent/created', ({ agent: created }) => { if (created.id !== agent.id) worker = created })
@@ -411,6 +424,47 @@ it('runs logged tool-free refinement through the Loader and disposes its model S
   expect(model.requests).toHaveLength(1)
 })
 
+it('generates a tool-free brief through the Loader and stores a readable report', async () => {
+  const { ctx, agent, controller, model } = await load(false, 0, { dedicatedModel: false })
+  ctx.systemPrompt.section({ name: 'fixture:requires-model', order: 5, text: 'Model {{model}} in {{cwd}}' })
+  const send = operator(controller, agent)
+  await send({ kind: 'create', title: 'Report fixture', objective: 'Assess source and Web exposure', environmentIds: ['local'], maxAttempts: 1 })
+  model.reportOutput = (prompt) => {
+    expect(prompt).toContain('Report fixture')
+    return JSON.stringify({ assessment: '尚未检查目标实现，尚不能判断安全性。', findings: [], excludedIndices: [],
+      lessons: [], uncovered: ['源码、二进制及 Web 行为未检查。'] })
+  }
+  const result = await send({ kind: 'report' })
+  const report = result.records.find(item => item.kind === 'report')
+  expect(report?.kind).toBe('report')
+  if (report?.kind !== 'report') throw new Error('Report missing')
+  expect((await controller.artifacts.read(report.value.markdown)).toString()).toContain('尚不能判断')
+  expect(model.requests).toHaveLength(1)
+  expect(model.requests[0]?.tools ?? []).toHaveLength(0)
+})
+
+it('reports the model failure and does not publish a partial report', async () => {
+  const { agent, controller, model } = await load(false, 0, { dedicatedModel: false })
+  const send = operator(controller, agent)
+  await send({ kind: 'create', title: 'Failed report', objective: 'Assess source', environmentIds: ['local'], maxAttempts: 1 })
+  model.reportFailure = true
+  await expect(send({ kind: 'report' })).rejects.toThrow('Fixture model rejected report')
+  expect(controller.view(agent.id).records.some(item => item.kind === 'report')).toBe(false)
+})
+
+it('stops project analysis before another model request when the turn token budget is reached', async () => {
+  const { agent, controller, model } = await load(false, 0, { analysisTurnTokens: 1000 })
+  const send = operator(controller, agent)
+  await send({ kind: 'create', title: 'Bounded analysis', objective: 'Inspect source', environmentIds: ['local'], maxAttempts: 1 })
+  model.usageTokens = 1200
+  agent.followup(createUserMessage({ content: [{ type: 'text', text: 'Inspect the project.' }], source: { kind: 'user' } }))
+  await agent.whenIdle()
+  expect(model.requests).toHaveLength(1)
+  const end = agent.session.snapshotEvents().findLast(event => event.type === 'turn/end')
+  expect(end?.type === 'turn/end' && end.data.reason.kind === 'error'
+    ? end.data.reason.error.message : '').toContain('1000-token budget')
+})
+
 it('periodically refines changed notes and stops its timer when unloaded', async () => {
   const { ctx, agent, controller, model } = await load(false, 40)
   const send = operator(controller, agent)
@@ -418,7 +472,7 @@ it('periodically refines changed notes and stops its timer when unloaded', async
   const entry = { category: 'experience', title: 'Validate input', summary: 'Check lengths', conditions: 'Parsers', actions: ['Check bytes'], pitfalls: [], tags: [] }
   model.refinementOutput = (prompt) => {
     const notes = JSON.parse(prompt.split('\nNotes: ')[1]!) as { id: string }[]
-    return JSON.stringify({ entries: [{ sourceIds: notes.map(note => note.id), entry }] })
+    return JSON.stringify({ entries: [{ sourceIds: notes.map(note => note.id), entry }], excludedSourceIds: [] })
   }
   await send({ kind: 'remember', entry })
   await vi.waitFor(() =>{  expect(controller.view(agent.id).records.find(item => item.kind === 'knowledge-maintenance')?.value).toMatchObject({ status: 'completed' }) })
@@ -436,7 +490,7 @@ it('cancels an active refinement and drains the worker before project stop retur
   await send({ kind: 'remember', entry })
   const before = controller.view(agent.id).records.filter(item => item.kind === 'knowledge')
   const started = Promise.withResolvers<undefined>()
-  model.refinementOutput = () => JSON.stringify({ entries: [] })
+  model.refinementOutput = () => JSON.stringify({ entries: [], excludedSourceIds: [] })
   model.refinementWait = signal => new Promise((resolve, reject) => {
     if (!signal) { reject(new Error('Missing model cancellation signal')); return }
     started.resolve(undefined)
@@ -459,7 +513,7 @@ it('imports and reads source through the real Loader tool composition', async ()
   const root = roots[roots.length - 1]!
   const source = join(root, 'source')
   await mkdir(source)
-  await writeFile(join(source, 'app.py'), 'VALUE = 1\nprint(VALUE)\n')
+  await writeFile(join(source, 'app.py'), 'VALUE = "中文\\n"\nprint(VALUE)\n')
   const send = operator(controller, agent)
   await send({ kind: 'create', title: 'Source', objective: 'Read immutable lines', environmentIds: ['local'], maxAttempts: 2 })
   await send({ kind: 'import-source', path: source, label: 'Sources' })
@@ -469,10 +523,40 @@ it('imports and reads source through the real Loader tool composition', async ()
     provider: 'source', operation: 'read', assetId: asset.value.id, environmentId: 'local', parameters: JSON.stringify({ path: 'app.py', startLine: 2, limit: 1 }),
   })
   expect(result.isError, JSON.stringify(result)).toBe(false)
+  const receipt = JSON.parse(result.content.filter(block => block.type === 'text').map(block => block.text).join('')) as { evidenceId: string; detail: string }
+  expect(receipt.detail).toContain('security_evidence')
   const evidence = controller.view(agent.id).records.find(item => item.kind === 'evidence')
   expect(evidence).toMatchObject({ kind: 'evidence', value: { provider: 'source', method: 'static', source: { sessionId: agent.id } } })
   if (evidence?.kind !== 'evidence') throw new Error('Missing observation')
   expect((await controller.artifacts.read(evidence.value.artifact)).toString()).toContain('print(VALUE)')
+  const detail = await execute(ctx, agent, 'security_scope', { kind: 'evidence', recordId: evidence.value.id,
+    expectedRevision: controller.view(agent.id).revision })
+  expect(detail.isError, JSON.stringify(detail)).toBe(false)
+  expect(detail.content.filter(block => block.type === 'text').map(block => block.text).join('')).toContain('observationKind')
+  const original = await controller.artifacts.read(evidence.value.artifact)
+  const pages: Buffer[] = []
+  for (let offset = 0; offset < original.length;) {
+    const response = await execute(ctx, agent, 'security_evidence', { evidenceId: evidence.value.id, offset, length: 7 })
+    expect(response.isError, JSON.stringify(response)).toBe(false)
+    const page = JSON.parse(response.content.filter(block => block.type === 'text').map(block => block.text).join('')) as
+      { offset: number; nextOffset: number; text?: string; base64?: string }
+    expect(page.nextOffset).toBeGreaterThan(offset)
+    pages.push(page.base64 === undefined ? Buffer.from(page.text ?? '') : Buffer.from(page.base64, 'base64'))
+    offset = page.nextOffset
+  }
+  expect(Buffer.concat(pages)).toEqual(original)
+  const lines = await execute(ctx, agent, 'security_evidence', {
+    evidenceId: evidence.value.id, startLine: 2, lineCount: 1,
+  })
+  expect(lines.isError, JSON.stringify(lines)).toBe(false)
+  const selected = JSON.parse(lines.content.filter(block => block.type === 'text').map(block => block.text).join('')) as
+    { lines: { line: number; text: string }[]; incomplete: boolean }
+  expect(selected.lines).toEqual([{ line: 2, text: 'print(VALUE)' }])
+  expect(selected.incomplete).toBe(true)
+  const mixed = await execute(ctx, agent, 'security_evidence', {
+    evidenceId: evidence.value.id, offset: 0, length: 10, startLine: 2, lineCount: 1,
+  })
+  expect(mixed.isError).toBe(true)
 })
 
 it('acknowledges reviews in a large project without turning a committed review into an output error', async () => {
@@ -498,7 +582,7 @@ it('acknowledges reviews in a large project without turning a committed review i
   const { agent: child } = await ctx.agents.create({ sessionId: childId, parentAgent: agent,
     meta: { cwd: root, parentSession: agent.id, origin: 'subagent', delegationDepth: 1 } })
   const result = await execute(ctx, child, 'security_review', { review: JSON.stringify({
-    findingId: finding.value.id, findingHash: findingHash(finding.value), verdict: 'inconclusive',
+    findingId: finding.value.id, findingHash: findingHash(finding.value), basis: 'static', verdict: 'inconclusive',
     supportingEvidenceIds: [evidence.value.id], opposingEvidenceIds: [], explanation: 'No validation yet', uncertainty: 'Static only',
   }) })
   expect(result.isError, JSON.stringify(result)).toBe(false)

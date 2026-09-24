@@ -3,6 +3,7 @@ import { randomUUID } from '@deepseek-ai/dsh-util-crypto'
 import { useEffect, useRef, useState } from 'react'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import { MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { SecurityCommand, WorkbenchView } from '@deepseek-ai/dsh-experimental-security-analysis/client'
 import type { NS, SecurityKey } from './locales.ts'
@@ -22,6 +23,7 @@ export interface WorkbenchActions {
   execute(sessionId: SessionId, planId: string, operationId: string, revision: number): Promise<WorkbenchView>
   search(sessionId: SessionId, query: string, shared: boolean): Promise<WorkbenchView>
   artifact(sessionId: SessionId, sha256: string): Promise<string>
+  report(projectId: string, reportId: string, format: 'markdown' | 'json' | 'findingsMarkdown'): Promise<string>
 }
 /** Framework-derived input dock props. */
 export type WorkbenchProps = Pick<PropsRuntime<'conversation.input.dock'>, 'sessionId'> &
@@ -51,6 +53,7 @@ export function Workbench(props: WorkbenchProps) {
   const [draft, setDraft] = useState<Record<string, string>>({})
   const [error, setError] = useState('')
   const [detail, setDetail] = useState('')
+  const [detailFormat, setDetailFormat] = useState<'raw' | 'markdown'>('raw')
   const [busy, setBusy] = useState(0)
   const [shared, setShared] = useState(false)
   const [searchResults, setSearchResults] = useState<WorkbenchView | undefined>()
@@ -95,16 +98,24 @@ export function Workbench(props: WorkbenchProps) {
     if (open) void perform(load)
   }), [props.subscribeReset, sessionId, open])
   const command = async (action: SecurityCommand['action']) => {
-    generation.current++
+    const current = ++generation.current
     const next = await props.command(
       sessionId,
       JSON.stringify({ operationId: randomUUID(), expectedRevision: view.revision, action }),
     )
-    if (activeSession.current === sessionId) { setView(next); setSearchResults(undefined) }
+    if (activeSession.current === sessionId && generation.current === current) {
+      setView(next)
+      setSearchResults(undefined)
+      if (action.kind === 'create' || action.kind === 'select' || action.kind === 'leave') {
+        setTab('overview')
+        setDraft({})
+        setDetail('')
+      }
+    }
   }
-  const preview = async (request: Promise<string>) => {
+  const preview = async (request: Promise<string>, format: 'raw' | 'markdown' = 'raw') => {
     const detail = await request
-    if (activeSession.current === sessionId) setDetail(detail)
+    if (activeSession.current === sessionId) { setDetail(detail); setDetailFormat(format) }
   }
   const field = (key: SecurityKey, multiline = false) => (
     <label className={css.field}>
@@ -189,6 +200,9 @@ export function Workbench(props: WorkbenchProps) {
             </strong>
             <button onClick={() => void perform(load)}>{t('refresh')}</button>
             {project?.kind === 'engagement' && (
+              <button disabled={busy > 0} onClick={() => void perform(() => command({ kind: 'leave' }))}>{t('leaveProject')}</button>
+            )}
+            {project?.kind === 'engagement' && (
               <button
                 className={css.stop}
                 onClick={() => void perform(() => command({ kind: project.value.stopped ? 'resume' : 'stop' }))}
@@ -242,7 +256,10 @@ export function Workbench(props: WorkbenchProps) {
                       </button>
                     </div>
                     {project?.kind === 'engagement' ? (
-                      <p>{project.value.objective}</p>
+                      <>
+                        <p>{project.value.objective}</p>
+                        <button disabled={busy > 0} onClick={() => void perform(() => command({ kind: 'leave' }))}>{t('newProject')}</button>
+                      </>
                     ) : (
                       <div className={css.form}>
                         {field('name')}
@@ -369,8 +386,9 @@ export function Workbench(props: WorkbenchProps) {
                   <button disabled={busy > 0 || !project} onClick={() => void perform(() => command({ kind: 'report' }))}>{t('generateReport')}</button>
                   {view.records.filter(item => item.kind === 'report').map(item => <article key={item.value.id} className={css.card}>
                     <strong>{t('revision')} {item.value.revision}</strong>
-                    <button onClick={() => void perform(() => preview(props.artifact(sessionId, item.value.markdown.sha256)))}>{t('markdownReport')}</button>
-                    <button onClick={() => void perform(() => preview(props.artifact(sessionId, item.value.json.sha256)))}>{t('jsonReport')}</button>
+                    <button onClick={() => void perform(() => preview(props.report(item.value.engagementId, item.value.id, 'markdown'), 'markdown'))}>{t('markdownReport')}</button>
+                    {item.value.findingsMarkdown && <button onClick={() => void perform(() => preview(props.report(item.value.engagementId, item.value.id, 'findingsMarkdown'), 'markdown'))}>{t('findingsReport')}</button>}
+                    <button onClick={() => void perform(() => preview(props.report(item.value.engagementId, item.value.id, 'json')))}>{t('jsonReport')}</button>
                   </article>)}
                 </>}
                 {tab === 'checks' && (
@@ -682,7 +700,7 @@ export function Workbench(props: WorkbenchProps) {
                     </div>
                     {(searchResults ?? view).records
                       .filter(item => item.kind === 'evidence' || item.kind === 'knowledge')
-                      .filter(item => item.kind === 'evidence' || (item.value.published && item.value.entry && !item.value.supersededBy))
+                      .filter(item => item.kind === 'evidence' || (item.value.published && item.value.entry && !item.value.supersededBy && !item.value.excluded))
                       .map(item => (
                         <article key={item.value.id} className={css.card}>
                           <strong>{item.value.title}</strong>
@@ -717,7 +735,7 @@ export function Workbench(props: WorkbenchProps) {
                       ))}
                   </>
                 )}
-                {detail && <pre className={css.detail}>{detail}</pre>}
+                {detail && (detailFormat === 'markdown' ? <div className={css.report}><MarkdownText text={detail} labels={{ code: { copyLabel: t('markdownCopy'), copiedLabel: t('markdownCopied') }, footnotes: t('markdownFootnotes') }} /></div> : <pre className={css.detail}>{detail}</pre>)}
               </div>
             </div>
           </div>

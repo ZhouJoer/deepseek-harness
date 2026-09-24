@@ -28,7 +28,8 @@ import {
 } from './model.ts'
 import type { SecurityJournal } from './journal.ts'
 import { canObserve, type DelegatedRole } from './roles.ts'
-import { findingHash, projectMarkdown } from './assessment.ts'
+import { findingHash } from './assessment.ts'
+import { reportPrompt, renderReport, type ReportLimits } from './report.ts'
 import { importSource } from './source.ts'
 import { apkMembers } from './apk.ts'
 import { ArtifactStore } from './artifacts.ts'
@@ -59,6 +60,7 @@ const actions = z.discriminatedUnion('kind', [
     })
     .strict(),
   z.object({ kind: z.literal('select'), engagementId: text }).strict(),
+  z.object({ kind: z.literal('leave') }).strict(),
   z.object({ kind: z.literal('import'), path: text, label: text }).strict(),
   z.object({ kind: z.literal('import-source'), path: text, label: text }).strict(),
   z.object({ kind: z.literal('import-legacy'), path: text, title: text }).strict(),
@@ -111,6 +113,7 @@ export interface WorkbenchOptions {
   approvalTtlMs: number
   maxDerivedAssets: number
   maxArtifactBytes: number
+  reportLimits?: ReportLimits
 }
 
 /** Business owner shared by tools, Remote and provider consumers. */
@@ -150,6 +153,7 @@ export class SecurityController {
     return createHash('sha256').update(JSON.stringify(configuration)).digest('hex')
   }
   private readonly observations = new Map<string, { fingerprint: string; pending: Promise<SecurityRecord> }>()
+  private readonly reports = new Map<string, { fingerprint: string; pending: Promise<WorkbenchView> }>()
   private readonly delegated = new Map<AbortController, { project: string; done: Promise<unknown> }>()
   private readonly active = new Map<
     string,
@@ -159,6 +163,7 @@ export class SecurityController {
     private readonly journal: SecurityJournal,
     readonly artifacts: ArtifactStore,
     readonly options: WorkbenchOptions,
+    private readonly generateReport?: (prompt: string, signal: AbortSignal, sessionId: string) => Promise<string>,
   ) {}
   /**
    * Bind a delegated job to project stop and service teardown.
@@ -200,7 +205,7 @@ export class SecurityController {
     const record = this.journal
       .view()
       .records.find(item => item.kind === 'binding' && item.value.sessionId === sessionId)
-    return record?.kind === 'binding' ? record.value : undefined
+    return record?.kind === 'binding' && record.value.active !== false ? record.value : undefined
   }
   /** Save a validated child summary without treating it as original evidence.
    * @param sessionId - child Session bound by the Host.
@@ -210,7 +215,7 @@ export class SecurityController {
     const report = childReportSchema.parse(input)
     await this.journal.commit(randomUUID(), undefined, { sessionId, report }, (view) => {
       const binding = view.records.find(item => item.kind === 'binding' && item.value.sessionId === sessionId)
-      if (binding?.kind !== 'binding' || binding.value.role === 'coordinator') throw new Error('A delegated Session is required')
+      if (binding?.kind !== 'binding' || binding.value.active === false || binding.value.role === 'coordinator') throw new Error('A delegated Session is required')
       for (const id of report.evidenceIds) {
         if (!view.records.some(item => item.kind === 'evidence' && item.value.id === id &&
           item.value.engagementId === binding.value.engagementId && binding.value.assetIds.includes(item.value.assetId)))
@@ -239,7 +244,7 @@ export class SecurityController {
     return {
       revision: view.revision,
       records: view.records.filter((item) => {
-        if (item.kind === 'knowledge' && item.value.supersededBy) return false
+        if (item.kind === 'knowledge' && (item.value.supersededBy || item.value.excluded)) return false
         const project = item.kind === 'engagement' ? item.value.id : item.value.engagementId
         if (project !== binding.engagementId) return false
         if (item.kind === 'engagement') return true
@@ -261,13 +266,16 @@ export class SecurityController {
    * @param sessionId - authenticated session identity.
    * @param input - untrusted command JSON.
    * @param operator - true only for a user gesture, never model-supplied.
+   * @param signal - cancellation of a pending model-generated report.
    * @returns committed project state.
    */
-  async command(sessionId: string, input: unknown, operator: boolean = false): Promise<WorkbenchView> {
+  async command(sessionId: string, input: unknown, operator: boolean = false,
+    signal: AbortSignal = new AbortController().signal): Promise<WorkbenchView> {
     const command = commandSchema.parse(input)
     const action = command.action
-    const operatorActions = ['create', 'select', 'approve', 'publish', 'resume', 'web-target']
+    const operatorActions = ['create', 'select', 'leave', 'approve', 'publish', 'resume', 'web-target']
     if (operatorActions.includes(action.kind) && !operator) throw new Error('This action requires an operator gesture')
+    if (action.kind === 'report') return this.createReport(sessionId, command, operator, signal)
     await this.journal.commit(
       command.operationId,
       action.kind === 'stop' || action.kind === 'revoke' ? undefined : command.expectedRevision,
@@ -305,6 +313,11 @@ export class SecurityController {
               value: { sessionId, engagementId: action.engagementId, role: 'coordinator', assetIds: [] },
             },
           ]
+        }
+        if (action.kind === 'leave') {
+          const binding = this.requireBinding(view, sessionId)
+          if (binding.role !== 'coordinator') throw new Error('Coordinator role required')
+          return [{ kind: 'binding', value: { ...binding, active: false } }]
         }
         const binding = this.requireBinding(view, sessionId)
         const project = this.project(view, binding.engagementId)
@@ -345,15 +358,6 @@ export class SecurityController {
               pathPrefix: action.pathPrefix,
             }) }]
           }
-          case 'report': {
-            const records = view.records.filter(record => record.kind !== 'binding' && record.kind !== 'report' &&
-              (record.kind === 'engagement' ? record.value.id : record.value.engagementId) === project.id)
-            return [{ kind: 'report', value: reportSchema.parse({
-              id: randomUUID(), engagementId: project.id, revision: view.revision, createdAt: Date.now(),
-              markdown: await this.artifacts.put(Buffer.from(projectMarkdown(records, view.revision)), 'text/markdown'),
-              json: await this.artifacts.put(Buffer.from(JSON.stringify({ revision: view.revision, records })), 'application/json'),
-            }) }]
-          }
           case 'revise-finding': {
             const item = scoped('finding', action.findingId)
             if (item.kind !== 'finding') throw new Error('Finding required')
@@ -375,7 +379,13 @@ export class SecurityController {
                 if (observation.kind !== 'evidence' || observation.value.incomplete || observation.value.assetId !== item.value.assetId)
                   throw new Error('Conclusions require complete evidence for the finding asset')
               }
-              if (!ids.some((id) => {
+              if (review.value.basis === 'static') {
+                if (!ids.some((id) => {
+                  const observation = scoped('evidence', id)
+                  return observation.kind === 'evidence' && observation.value.method === 'static' &&
+                    observation.value.observationKind === 'implementation'
+                })) throw new Error('Static conclusions require complete implementation evidence')
+              } else if (!ids.some((id) => {
                 const observation = scoped('evidence', id)
                 const plan = observation.kind === 'evidence' && view.records.find(record => record.kind === 'plan' && record.value.id === observation.value.planId)
                 if (!plan || plan.kind !== 'plan' || !view.records.some(record => record.kind === 'check' && record.value.id === plan.value.checkId && record.value.phase === 'validation')) return false
@@ -650,7 +660,7 @@ export class SecurityController {
           case 'publish': {
             const item = scoped('knowledge', action.knowledgeId)
             if (item.kind !== 'knowledge') throw new Error('Knowledge entry required')
-            if (item.value.supersededBy || !item.value.entry) throw new Error('Refine this entry before sharing')
+            if (item.value.supersededBy || item.value.excluded || !item.value.entry) throw new Error('Refine this entry before sharing')
             return [{ kind: 'knowledge', value: { ...item.value, published: true } }]
           }
         }
@@ -668,12 +678,62 @@ export class SecurityController {
     }
     return this.view(sessionId)
   }
+  private async createReport(sessionId: string, command: SecurityCommand, operator: boolean, signal: AbortSignal): Promise<WorkbenchView> {
+    const snapshot = this.journal.view()
+    const binding = this.requireBinding(snapshot, sessionId)
+    if (binding.role !== 'coordinator') throw new Error('Coordinator role required')
+    const project = this.project(snapshot, binding.engagementId)
+    const input = { sessionId, operator, action: command.action }
+    if (this.journal.replay(command.operationId, input)) return this.view(sessionId)
+    const key = command.operationId
+    const fingerprint = JSON.stringify(input)
+    const running = this.reports.get(key)
+    if (running) {
+      if (running.fingerprint !== fingerprint) throw new Error('operationId was already used for different input')
+      return running.pending
+    }
+    if (project.stopped) throw new Error('Project is stopped')
+    if (snapshot.revision !== command.expectedRevision) throw new Error('Security state changed; reload before retrying')
+    if (!this.generateReport || !this.options.reportLimits) throw new Error('Report model is unavailable')
+    const generate = this.generateReport
+    const limits = this.options.reportLimits
+    const recordsOf = (view: WorkbenchView) => view.records.filter(record => record.kind !== 'binding' && record.kind !== 'report' &&
+      (record.kind === 'engagement' ? record.value.id : record.value.engagementId) === project.id)
+    const records = recordsOf(snapshot)
+    const source = JSON.stringify(records)
+    const abort = new AbortController()
+    const combined = AbortSignal.any([signal, abort.signal])
+    const pending = (async () => {
+      combined.throwIfAborted()
+      const prompt = reportPrompt(records, limits)
+      const response = await generate(prompt, combined, sessionId)
+      combined.throwIfAborted()
+      const rendered = renderReport(records, response, limits)
+      const markdown = await this.artifacts.put(Buffer.from(rendered.markdown), 'text/markdown')
+      const findingsMarkdown = rendered.findingsMarkdown === undefined ? undefined
+        : await this.artifacts.put(Buffer.from(rendered.findingsMarkdown), 'text/markdown')
+      const json = await this.artifacts.put(Buffer.from(JSON.stringify({ revision: snapshot.revision, records })), 'application/json')
+      await this.journal.commit(command.operationId, undefined, input, (view) => {
+        combined.throwIfAborted()
+        if (this.requireBinding(view, sessionId).engagementId !== project.id || this.project(view, project.id).stopped ||
+          JSON.stringify(recordsOf(view)) !== source) throw new Error('Project analysis changed; generate the report again')
+        return [{ kind: 'report', value: reportSchema.parse({ id: randomUUID(), engagementId: project.id,
+          revision: snapshot.revision, createdAt: Date.now(), markdown, json, findingsMarkdown }) }]
+      })
+      return this.view(sessionId)
+    })()
+    const release = this.trackDelegation(project.id, abort, pending)
+    const settled = pending.finally(() => { release(); this.reports.delete(key) })
+    this.reports.set(key, { fingerprint, pending: settled })
+    return settled
+  }
   /** Persist a reviewer-authored conclusion without granting execution authority.
    * @param sessionId - independently bound reviewer Session.
    * @param input - review fields supplied by the reviewer tool.
    * @returns committed review visible to the reviewer. */
   async review(sessionId: string, input: unknown): Promise<WorkbenchView> {
     const schema = reviewSchema.omit({ id: true, engagementId: true, assetId: true, reviewerSessionId: true, createdAt: true })
+      .extend({ basis: reviewSchema.shape.basis.unwrap() })
     const proposal = schema.parse(input)
     await this.journal.commit(randomUUID(), undefined, { sessionId, proposal }, (view) => {
       const binding = this.requireBinding(view, sessionId)
@@ -704,7 +764,7 @@ export class SecurityController {
   }
   private requireBinding(view: WorkbenchView, sessionId: string): SessionBinding {
     const record = view.records.find(item => item.kind === 'binding' && item.value.sessionId === sessionId)
-    if (record?.kind !== 'binding') throw new Error('Select a security project first')
+    if (record?.kind !== 'binding' || record.value.active === false) throw new Error('Select a security project first')
     return record.value
   }
   private project(view: WorkbenchView, id: string) {
@@ -794,7 +854,7 @@ export class SecurityController {
   /** Read reviewed cross-project reference material.
    * @returns published knowledge, which is never executable authority. */
   sharedKnowledge(): SecurityRecord[] {
-    return this.journal.view().records.filter(item => item.kind === 'knowledge' && item.value.published && !item.value.supersededBy)
+    return this.journal.view().records.filter(item => item.kind === 'knowledge' && item.value.published && !item.value.supersededBy && !item.value.excluded)
   }
 
   /**
@@ -918,7 +978,7 @@ export class SecurityController {
               request: plan.operation.parameters,
               source: { sessionId, callId, channel: callId.startsWith('operator:') ? 'operator' : 'tool' },
               incomplete: result.incomplete || !!result.failure || combined.aborted,
-              failure: result.failure, cleanup: result.cleanup, method: result.method,
+              failure: result.failure, cleanup: result.cleanup, method: result.method, observationKind: result.observationKind,
               createdAt: Date.now(),
             }),
           },
@@ -1085,7 +1145,7 @@ export class SecurityController {
           request: resolved.parameters, requestHash: fingerprint,
           source: { sessionId, callId, channel: callId.startsWith('operator:') ? 'operator' : 'tool' },
           incomplete: result.incomplete || !!result.failure || combined.aborted,
-          failure: result.failure, cleanup: result.cleanup, method: result.method ?? 'static', createdAt: Date.now(),
+          failure: result.failure, cleanup: result.cleanup, method: result.method ?? 'static', observationKind: result.observationKind, createdAt: Date.now(),
         }),
       }
       const committed = await this.journal.commit(sessionId + ':' + callId, undefined, { operation }, () => [record])

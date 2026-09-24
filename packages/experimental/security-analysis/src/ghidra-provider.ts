@@ -203,6 +203,7 @@ export class GhidraProvider implements AnalysisProvider {
       summary: text.slice(0, 4096),
       incomplete,
       method: 'static' as const,
+      observationKind: ['decompile', 'disassemble', 'xrefs-to', 'xrefs-from'].includes(request.operation) ? 'implementation' as const : 'inventory' as const,
       toolVersion: 'Ghidra ' + version + '; GhidraMCP 1.4 + dsh binding v1',
     }
   }

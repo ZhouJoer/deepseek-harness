@@ -145,6 +145,6 @@ export class SourceProvider implements AnalysisProvider {
     const bytes = Buffer.from(JSON.stringify(payload()))
     if (bytes.length > context.maxOutputBytes) throw new Error('Source result exceeds the output budget')
     return { bytes, mediaType: 'application/json', summary: request.operation + ': ' + String(items.length) + ' source entries; use security_evidence for file hashes, line numbers and content', incomplete: hasMore,
-      toolVersion: 'dsh-source/1', method: 'static' }
+      toolVersion: 'dsh-source/1', method: 'static', observationKind: request.operation === 'read' ? 'implementation' : 'inventory' }
   }
 }

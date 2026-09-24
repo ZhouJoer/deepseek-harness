@@ -43,7 +43,7 @@ export class SecuritySearchIndex {
       this.database.exec('DELETE FROM records')
       const insert = this.database.prepare('INSERT INTO records(id, engagement, content) VALUES (?, ?, ?)')
       for (const record of records) {
-        if (record.kind === 'binding') continue
+        if (record.kind === 'binding' || (record.kind === 'knowledge' && (record.value.supersededBy || record.value.excluded))) continue
         const project = record.kind === 'engagement' ? record.value.id : record.value.engagementId
         insert.run(record.kind + ':' + record.value.id, project, this.words(JSON.stringify(record.value)))
       }

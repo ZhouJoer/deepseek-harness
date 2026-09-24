@@ -55,7 +55,7 @@ Optional security profile service; default application compositions remain indep
  * @param reportId - saved report.
  * @param format - Markdown or JSON.
  * @returns complete immutable report text. */
-@Remote('report') async report(projectId: string, reportId: string, format: 'markdown' | 'json'): Promise<string>
+@Remote('report') async report(projectId: string, reportId: string, format: 'markdown' | 'json' | 'findingsMarkdown'): Promise<string>
 
 /** Read selected project state for an authenticated Web session.
  * @param agent - carrier-resolved agent.

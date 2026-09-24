@@ -21,7 +21,7 @@ export function KnowledgePanel({ t, view, busy, intervalMs, command, refine }: K
   const [query, setQuery] = useState('')
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState({ title: '', summary: '', conditions: '', actions: '', pitfalls: '', tags: '' })
-  const notes = view.records.filter(item => item.kind === 'knowledge').filter(item => !item.value.supersededBy)
+  const notes = view.records.filter(item => item.kind === 'knowledge').filter(item => !item.value.supersededBy && !item.value.excluded)
   const state = view.records.find(item => item.kind === 'knowledge-maintenance')
   const pending = notes.filter(item => !item.value.entry).length
   const visible = notes.filter(item => item.value.entry?.category === category &&

@@ -26,7 +26,7 @@ View security projects, checks, environments and evidence inside the conversatio
 
 Compose `@deepseek-ai/dsh-base`, an application bundle, and `@deepseek-ai/dsh-experimental-security-profile` in a dedicated profile. For Web, append `@deepseek-ai/dsh-experimental-security-web-profile`. Launch through `dsh --profile <name>`. See [security analysis](../security-analysis/README.md).
 
-Open Security analysis above the message composer, including in a new empty Session. Create or select a project, import a sample and create its check template. Preview, approve, revoke and execute plans under Findings. Use Retrospectives and experience to switch categories, search concise cards, expand recommendations, add structured notes or refine existing notes. The sidebar separates Material search and reviewed shared knowledge from the notes. Legacy prose stays hidden until refinement. The maintenance bar reports automatic refinement availability and the last result. Project stop waits for cleanup; refresh after a disconnect to reload authoritative state.
+Open Security analysis above the message composer, including in a new empty Session. Create or select a project, import a sample and create its check template. Use New project or Leave current project to clear the conversation selection; saved project records remain available in the sidebar. Preview, approve, revoke and execute plans under Findings. Use Retrospectives and experience to switch categories, search concise cards, expand recommendations, add structured notes or refine existing notes. The sidebar separates Material search and reviewed shared knowledge from the notes. Legacy prose stays hidden until refinement. The maintenance bar reports automatic refinement availability and the last result. Project stop waits for cleanup; refresh after a disconnect to reload authoritative state.
 
 -----
 
@@ -54,7 +54,7 @@ This package composes capabilities through a profile patch or input dock slot. I
 
 ## Persistent security projects
 
-The sidebar Security analysis panel lists projects, targets, checks, findings, reviews, reports and laboratory generations without requiring a selected conversation. The toolbox page offers explicit local-image reuse and new-image builds; both preserve existing laboratory image identities. The conversation workbench registers running Web targets, applies independent reviews and generates revision reports. The [Web guide](../../../docs/user/guide/security-analysis.md#local-web-laboratory) describes the workflow and current provider limits.
+The sidebar Security analysis panel lists projects, targets, checks, findings, reviews, reports and laboratory generations without requiring a selected conversation. The toolbox page offers explicit local-image reuse and new-image builds; both preserve existing laboratory image identities. The conversation workbench registers running Web targets, applies independent reviews and generates revision reports. Both project views render saved Markdown briefs and optional findings appendices directly. The [Web guide](../../../docs/user/guide/security-analysis.md#local-web-laboratory) describes the workflow and current provider limits.
 
 <a id="model-experience"></a>
 

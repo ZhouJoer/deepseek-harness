@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-按项目组织侦察、攻击面分析、漏洞评估与受控验证，保留可追溯的原始证据。通过可选 profile 使用 Ghidra、Frida 和 Android 专用工具，并委派有边界的查询。操作计划需要用户批准，工具能力在执行时再次检查。外部环境必须事先准备。
+使用独立 provider 和复核结论研究自有源码、二进制与 Web 目标。根据安全问题选择检查方法和验证深度，不要求固定顺序。操作计划需要用户批准，工具能力在执行时再次检查。人读报告是简短安全简报，原始证据仍可供深入分析。
 
 ## 目录
 
@@ -27,9 +27,9 @@ kind: "package-reference"
 在专用 `dsh` profile 中使用 [security-profile](../security-profile/README.zh.md)，添加 [security-web-profile](../security-web-profile/README.zh.md) 即可打开会话内工作台。默认通用 profile 不加载这些组合。
 
 1. 创建项目并指定目标和已配置环境。从部署的 `importRoots` 导入 PE、ELF、APK、DEX 文件，或不可变源码目录。
-2. 为每个资产生成四阶段检查模板。APK 导入会分别测量 DEX 和 native 库，并保存父子关系。
+2. 根据每项资产的研究问题选择下一步分析和 provider。APK 导入会分别测量 DEX 和 native 库，并保存父子关系。
 3. 检查环境健康状态。在 `environments[].tools` 配置可执行文件；工具已安装不代表目标当前可访问。
-4. 根据静态证据整理入口并评估假设，准备包含目标、脚本、预期观察、影响、时限及清理方式的验证计划。
+4. 使用实现材料评估假设。需要运行验证时，准备包含目标、脚本、预期观察、影响、时限及清理方式的计划。
 5. 在工作台检查并批准不可变计划。停止或撤销会阻止新执行，并等待活动 provider 清理。中断的检查必须先核对再重试。
 
 用户也可通过 `/security` 查看状态，或通过 `/security <JSON command>` 提交相同的修订检查命令。`security_help` 提供命令 schema。模型不能批准计划或共享经验。普通命令必须携带稳定的操作 ID 和已观察修订号；停止与撤销只减少执行权限，因此接受较旧修订号。
@@ -79,13 +79,13 @@ Host 操作者在[示例 overlay](../../../apps/cli/config/examples/security-ana
 
 ### 证据与恢复
 
-provider 原始输出先保存，再提交证据引用。证据记录保留样本、工具版本、参数、来源 Session/call、完整性和批准计划。`security_evidence` 分页读取原始字节。检索根据项目记录及原始证据重建 SQLite FTS，支持中文分词和标识符。共享经验必须经过用户审核，始终是参考材料，不是本项目证据。
+provider 原始输出先保存，再提交证据引用。证据记录保留样本、工具版本、参数、来源 Session/call、完整性和批准计划。`security_evidence` 按字节分页，或按行号选取已保存的源码读取结果；分页读取原始字节。检索根据项目记录及原始证据重建 SQLite FTS，支持中文分词和标识符。共享经验必须经过用户审核，始终是参考材料，不是本项目证据。
 
-复盘和经验通过 `remember` 命令保存 `category`、`title`、`summary`、`conditions`、`actions`、`pitfalls` 和 `tags`。复盘记录结果、问题和改进，经验记录可复用做法和注意事项。条目不包含思维链、证据或执行日志。旧版自由文本可由提炼任务读取，完成提炼后才在界面中显示。
+复盘和经验通过 `remember` 命令保存 `category`、`title`、`summary`、`conditions`、`actions`、`pitfalls` 和 `tags`。条目描述目标弱点、适用条件，以及能帮助下次识别、验证或防护的做法。工具报错和格式修正不属于可复用的安全经验。旧版自由文本可由整理任务读取，完成整理后才在界面中显示。
 
-Host 运行期间，知识整理按 `knowledgeIntervalMs` 定期执行（默认 3,600,000 毫秒；设为零关闭自动整理），工作台也支持手动整理。独立且禁用工具的 Agent Session 记录完整模型请求与响应。`knowledgeProvider` 和 `knowledgeModel` 可成对指定专用模型路由；省略时使用默认 Agent 模型。`knowledgeInputBytes` 默认为 131,072 字节，`knowledgeOutputTokens` 默认为 8,192 token；`maxOutputBytes` 限制完整响应大小，`delegationTimeoutMs` 限制运行时间。
+Host 运行期间，配置成对的 `knowledgeProvider` 和 `knowledgeModel` 后，知识整理按 `knowledgeIntervalMs` 定期执行（默认 3,600,000 毫秒；设为零关闭自动整理）。工作台也支持手动整理；未配置专用模型时，手动整理沿用发起会话的模型。独立且禁用工具的 Agent Session 记录完整模型请求与响应。`knowledgeInputBytes` 默认为 131,072 字节，`knowledgeOutputTokens` 默认为 8,192 token；`maxOutputBytes` 限制完整响应大小，`delegationTimeoutMs` 限制运行时间。
 
-整理跳过未变化的内容，只在同一项目内合并条目。结构化分类不可改变，响应必须且只能包含每个来源条目一次。无效、超限、已取消或与并发编辑冲突的结果不能覆盖记录。成功整理以原子操作保存条目和重复替代关系；已共享内容变化后需要重新审核。journal 保留历史修订。失败任务可手动重试或等待下一周期。用户停止项目时会取消并等待活动整理任务结束。
+整理跳过未变化的内容，只处理同一项目。每条输入须恰好归入保留、合并或排除，也可以全部排除。被排除的操作笔记退出报告、搜索、共享和日常知识视图，journal 仍保留历史。无效、超限、已取消或与并发编辑冲突的结果不能覆盖记录；已共享内容变化后须重新审核。失败可手动重试或等待下一周期，停止项目会取消活动整理。
 
 日志以一个 storage-domain 记录追加一个完整命令。独立 SQLite 占用锁保证每个安全目录只有一个 Host。重启撤销批准，并将未结算执行标记为待核对，不会重放注入或进程创建。相同操作重试不会再次执行。`import-legacy` 将原型 JSON 归档保留为不可变的用户声明记录；必须另行导入实际样本才能获得实测身份，原归档不会提升为已验证证据。
 
@@ -99,7 +99,7 @@ Host 运行期间，知识整理按 `knowledgeIntervalMs` 定期执行（默认 
 
 每次执行使用新的非特权容器，禁用网络和设备访问，根目录与源码挂载只读，临时存储有界。浏览器请求从快照拦截到 `http://localhost`。脚本注入模拟硬件，打印运行时版本、事件与断言，并在断言失败时返回失败。证据区分模拟、静态和设备观察，保留失败及清理详情。容器测试覆盖 Python 和 Chromium，但不能证明固件或无线行为；Host 崩溃后仍需操作者核对残留离线容器。
 
-模型的项目视图与搜索结果分页返回。命令返回有界的已提交确认，调用方随后读取变更记录。完全相同的观察重试返回已保存证据 ID。已完成子任务的摘要保留在 Session 绑定并进入项目报告，不会成为原始证据。
+模型的项目视图与搜索结果返回短摘要，包含源码证据的文件路径与读取范围；`security_scope` 按字节分页读取绑定项目修订的记录详情，`security_evidence` 可按字节分页读取原始观察，也可按行号选取已保存的源码读取结果。`modelResultBytes` 默认将完整模型工具响应限制为 16,384 字节，`maxOutputBytes` 仍用于采集。命令返回有界回执，完全相同的观察重试返回已保存证据 ID。子任务摘要保留在 Session 绑定中，不作为原始证据或报告正文。
 
 <a id="understand-the-implementation"></a>
 ## 实现
@@ -128,7 +128,7 @@ Host 运行期间，知识整理按 `knowledgeIntervalMs` 定期执行（默认 
 
 ./web 和 ./laboratory 插件提供批准后的 HTTP 证据采集与操作者显式管理的靶场生命周期。配置见 [Web 靶场指南](../../../docs/user/guide/security-analysis.zh.md#local-web-laboratory)，未验收或延后项见 [交付范围](../../../docs/roadmaps/security-analysis.zh.md#web-delivery-scope-2026-09-22)。版本化配方使用官方 Kali，记录已安装软件包，并以已知 yescrypt 向量检测作为构建条件。操作者可从本地 Docker 镜像库复用 `existingImage`（默认 `vxcontrol/kali-linux:latest`），不拉取或构建工具箱。复用会固定镜像 ID，在自有断网容器内检测工具，记录 yescrypt 失败而不阻塞 HTTP；缺少 Python 运行时则拒绝登记。每次复用或构建产生独立版本，升级时保留已有靶场。Nuclei 和 Metasploit 安装不会开放执行能力。
 
-独立复核记录绑定发现内容、同目标证据和复核子 Session。报告将项目修订保存为含证据引用的 Markdown 与 JSON。确认/反驳须具备完整验证计划证据和独立复核，调用方不能在新发现中直接设置这些结论。生成报告只记录当前结论，不表示覆盖完整。
+独立复核绑定发现内容、同目标证据和复核子 Session。完整的静态实现材料可支持独立复核后的确认或反驳；身份、版本及字符串线索不能单独确认。运行验证结论仍须具备已完成的批准计划。报告生成通过一次禁用工具的模型调用整理安全判断与覆盖，并核对每条发现的去向。Markdown 正文是简短安全报告，多余的目标发现进入可选附表；JSON 保留项目记录。`reportMaxChars` 默认以 1,200 字为写作目标，不作为硬性截断上限，`reportInputBytes` 默认 131,072，`reportOutputTokens` 默认 4,096，`reportMaxFindings` 默认五条，`reportMaxLessons` 默认三条。未配置专用模型时，报告沿用发起会话的模型。生成失败或超限时不发布报告。
 
 <a id="model-experience"></a>
 
@@ -142,7 +142,7 @@ Host 运行期间，知识整理按 `knowledgeIntervalMs` 定期执行（默认 
 
 #### Token 影响
 
-领域工具定义和检索到的证据按配置的输出限额占用上下文。此包不改变 token 统计。
+领域工具定义和检索证据按 `modelResultBytes` 占用上下文；原始采集使用 `maxOutputBytes`。`analysisTurnTokens` 默认将每个项目分析轮次限制为模型回报的 120,000 token，包含缓存读取。达到限额后拒绝下一次模型请求，已保存证据仍可用于更聚焦的后续提问；此包不改变 token 统计。
 
 #### KV Cache effect
 
@@ -154,7 +154,7 @@ Host 运行期间，知识整理按 `knowledgeIntervalMs` 定期执行（默认 
 
 - Ghidra 安装、扩展编译、GUI 启动和样本导入需要操作者准备。DSH 函数、反编译和交叉引用验收仍待完成；导入成功或操作者探查不能证明 DSH 查询能力。
 - 已在本任务创建的 Windows 进程上实际验证 Frida 17.18.0 观察与清理。目前没有 Android 设备；现有 Kali 镜像缺少 Frida、JADX 和 Ghidra，镜像存在不等于分析环境受支持。
-- 真实 DeepSeek 教程分析已跑通静态证据和子 agent 报告回收，但出现错误的 ELF 解读。结构化格式解析尚未完成，真实模型 GUI GIF 仍待录制。keyless 测试与外部响应模拟分别作为证据。
+- 真实 DeepSeek 教程分析已跑通静态证据和子 agent 报告回收，但出现错误的 ELF 解读。结构化格式解析尚未完成；新版简报仍需真实模型运行与 GUI GIF 验证。keyless 测试与外部响应模拟分别作为证据。
 - 不可变源码和二进制读取可独立运行。Provider 标识共享外部实例并使用独占租约；Ghidra 按实际回环地址租约。自动 GUI 部署、丰富的组件/JNI 关联、远程实验室、语义搜索、设备专属 IoT 验证、fastboot 写入和 John 密码审计仍不可用。
 - Android split APK 验证会被拒绝，因为单个导入的 base APK 不能证明完整安装包身份。本机 attach 会拒绝无法提供启动身份或可执行文件身份的平台。
 - 整理处理项目的完整知识集合；超过 `knowledgeInputBytes` 时直接失败，不截断内容。自动任务需要 Host 持续运行且已配置模型。语义等价由模型判断，共享结果仍需用户审核。

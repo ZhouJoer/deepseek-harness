@@ -1694,7 +1694,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'settled project records.',
       },
       {
-        signature: '@Remote(\'report\') async report(projectId: string, reportId: string, format: \'markdown\' | \'json\'): Promise<string>',
+        signature: '@Remote(\'report\') async report(projectId: string, reportId: string, format: \'markdown\' | \'json\' | \'findingsMarkdown\'): Promise<string>',
         description: 'Read a report after reopening its project without a chat Session.',
         parameters: [{ name: 'projectId', description: 'owning project.' }, { name: 'reportId', description: 'saved report.' }, { name: 'format', description: 'Markdown or JSON.' }],
         returns: 'complete immutable report text.',
@@ -4164,7 +4164,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'AnalysisResult',
-    declaration: 'export interface AnalysisResult {\n    bytes: Uint8Array;\n    mediaType: string;\n    summary: string;\n    incomplete: boolean;\n    toolVersion: string;\n    failure?: string;\n    cleanup?: string;\n    method?: \'static\' | \'simulation\' | \'device\';\n}',
+    declaration: 'export interface AnalysisResult {\n    bytes: Uint8Array;\n    mediaType: string;\n    summary: string;\n    incomplete: boolean;\n    toolVersion: string;\n    failure?: string;\n    cleanup?: string;\n    method?: \'static\' | \'simulation\' | \'device\';\n    observationKind?: \'inventory\' | \'implementation\';\n}',
   },
   {
     name: 'ApiKeyRecord',
@@ -4657,10 +4657,6 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'DeepSeekLlmApiJson',
     declaration: 'export type DeepSeekLlmApiJson = null | boolean | number | string | DeepSeekLlmApiJson[] | {\n    [key: string]: DeepSeekLlmApiJson;\n};',
-  },
-  {
-    name: 'DelegatedRole',
-    declaration: 'export type DelegatedRole = Exclude<SecurityRole, \'coordinator\'>;',
   },
   {
     name: 'DiffCallView',
@@ -5671,6 +5667,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface ReplayEnvelope {\n    response: unknown;\n    blocks?: readonly unknown[];\n}',
   },
   {
+    name: 'ReportLimits',
+    declaration: 'export interface ReportLimits {\n    inputBytes: number;\n    maxChars: number;\n    maxFindings: number;\n    maxLessons: number;\n    outputBytes: number;\n}',
+  },
+  {
     name: 'RequestContext',
     declaration: 'export interface RequestContext {\n    provider: string;\n    model: string;\n    contextWindow?: number;\n    systemPromptUpdate?: SystemPromptUpdate;\n}',
   },
@@ -5804,7 +5804,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SecurityController',
-    declaration: 'export class SecurityController {\n    readonly providers: ProviderRegistry<AnalysisProvider>;\n    readonly environments: ProviderRegistry<{\n        id: string;\n        manager: EnvironmentManager;\n    }>;\n    readonly laboratories: ProviderRegistry<{\n        id: string;\n        action(projectId: string, action: string, laboratoryId?: string): Promise<WorkbenchView>;\n    }>;\n    laboratoriesView(): Laboratory[];\n    async saveLaboratory(input: Laboratory): Promise<Laboratory>;\n    constructor(private readonly journal: SecurityJournal, readonly artifacts: ArtifactStore, readonly options: WorkbenchOptions);\n    trackDelegation(project: string, controller: AbortController, done: Promise<unknown>): () => void;\n    async manageEnvironment<T>(environmentId: string, run: (signal: AbortSignal) => Promise<T>, project: string = \'\'): Promise<T>;\n    binding(sessionId: string): SessionBinding | undefined;\n    async saveChildReport(sessionId: string, input: unknown): Promise<void>;\n    projects(): Engagement[];\n    view(sessionId: string): WorkbenchView;\n    async command(sessionId: string, input: unknown, operator: boolean = false): Promise<WorkbenchView>;\n    async review(sessionId: string, input: unknown): Promise<WorkbenchView>;\n    projectView(projectId: string): WorkbenchView;\n    async recover(): Promise<void>;\n    async bindChild(parentId: string, childId: string, assetIds: string[], role: DelegatedRole): Promise<void>;\n    sharedKnowledge(): SecurityRecord[];\n    async execute(ses /* …truncated — full shape in source */',
+    declaration: 'export class SecurityController {\n    readonly providers: ProviderRegistry<AnalysisProvider>;\n    readonly environments: ProviderRegistry<{\n        id: string;\n        manager: EnvironmentManager;\n    }>;\n    readonly laboratories: ProviderRegistry<{\n        id: string;\n        action(projectId: string, action: string, laboratoryId?: string): Promise<WorkbenchView>;\n    }>;\n    laboratoriesView(): Laboratory[];\n    async saveLaboratory(input: Laboratory): Promise<Laboratory>;\n    constructor(private readonly journal: SecurityJournal, readonly artifacts: ArtifactStore, readonly options: WorkbenchOptions, private readonly generateReport?: (prompt: string, signal: AbortSignal, sessionId: string) => Promise<string>);\n    trackDelegation(project: string, controller: AbortController, done: Promise<unknown>): () => void;\n    async manageEnvironment<T>(environmentId: string, run: (signal: AbortSignal) => Promise<T>, project: string = \'\'): Promise<T>;\n    binding(sessionId: string): SessionBinding | undefined;\n    async saveChildReport(sessionId: string, input: unknown): Promise<void>;\n    projects(): Engagement[];\n    view(sessionId: string): WorkbenchView;\n    async command(sessionId: string, input: unknown, operator: boolean = false, signal: AbortSignal = new AbortController().signal): Promise<WorkbenchView>;\n    async review(sessionId: string, input: unknown): Promise<WorkbenchView>;\n    projectView(projectId: string): WorkbenchView;\n    async recover(): Promise<void>;\n    async b /* …truncated — full shape in source */',
   },
   {
     name: 'SecurityEnvironment',
@@ -5812,11 +5812,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SecurityJournal',
-    declaration: 'export interface SecurityJournal {\n    view(): WorkbenchView;\n    commit(operationId: string, expectedRevision: number | undefined, input: unknown, produce: (view: WorkbenchView) => Promise<SecurityRecord[]> | SecurityRecord[]): Promise<WorkbenchView>;\n    close(): Promise<void>;\n}',
-  },
-  {
-    name: 'SecurityRole',
-    declaration: 'export type SecurityRole = SessionBinding[\'role\'];',
+    declaration: 'export interface SecurityJournal {\n    view(): WorkbenchView;\n    replay(operationId: string, input: unknown): WorkbenchView | undefined;\n    commit(operationId: string, expectedRevision: number | undefined, input: unknown, produce: (view: WorkbenchView) => Promise<SecurityRecord[]> | SecurityRecord[]): Promise<WorkbenchView>;\n    close(): Promise<void>;\n}',
   },
   {
     name: 'SendTeamMessageRequest',
@@ -7220,7 +7216,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'WorkbenchOptions',
-    declaration: 'export interface WorkbenchOptions {\n    importRoots: string[];\n    environments: SecurityEnvironment[];\n    maxDurationMs: number;\n    maxOutputBytes: number;\n    approvalTtlMs: number;\n    maxDerivedAssets: number;\n    maxArtifactBytes: number;\n}',
+    declaration: 'export interface WorkbenchOptions {\n    importRoots: string[];\n    environments: SecurityEnvironment[];\n    maxDurationMs: number;\n    maxOutputBytes: number;\n    approvalTtlMs: number;\n    maxDerivedAssets: number;\n    maxArtifactBytes: number;\n    reportLimits?: ReportLimits;\n}',
   },
   {
     name: 'WorkbenchView',
