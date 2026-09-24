@@ -9,6 +9,7 @@ import type { SecurityCommand, WorkbenchView } from '@deepseek-ai/dsh-experiment
 import { recordSchema } from '@deepseek-ai/dsh-experimental-security-analysis/src/workbench/model.ts'
 import { Workbench, type WorkbenchActions, type WorkbenchProps } from '../src/client/Workbench.tsx'
 import { Projects } from '../src/client/Projects.tsx'
+import type {} from '../src/client/index.ts'
 import { en, zh } from '../src/client/locales.ts'
 
 afterEach(cleanup)
@@ -16,6 +17,8 @@ const project = recordSchema.parse({ kind: 'engagement', value: { id: 'project',
 const view: WorkbenchView = { revision: 8, records: [project] }
 function actions(overrides: Partial<WorkbenchActions> = {}) {
   return {
+    manageProject: vi.fn(async () => '[]'),
+    importMaterials: vi.fn(async () => view),
     observe: vi.fn(async () => view),
     subscribeReset: () => () => {},
     refine: vi.fn(async () => view), load: vi.fn(async () => view), command: vi.fn(async () => view),
@@ -473,3 +476,21 @@ it.each([{ locale: 'zh', dictionary: zh }, { locale: 'en', dictionary: en }])(
     expect(api.command).not.toHaveBeenCalled()
   },
 )
+
+it('adds pasted material from the task overview and exposes reversible project removal', async () => {
+  const api = actions()
+  render(<Workbench {...props(api)} />)
+  fireEvent.click(screen.getByRole('button', { name: '安全分析' }))
+  await screen.findByRole('heading', { name: 'Review the sample' })
+  fireEvent.click(screen.getByRole('button', { name: '粘贴文字' }))
+  fireEvent.change(screen.getByLabelText('要分析的文字'), { target: { value: '  const value = 1;\n' } })
+  fireEvent.click(screen.getByRole('button', { name: '添加文字' }))
+  await waitFor(() =>{  expect(api.importMaterials).toHaveBeenCalledTimes(1) })
+  expect((JSON.parse(vi.mocked(api.importMaterials).mock.calls[0]![1]) as { material: unknown }).material).toEqual({ kind: 'text', name: 'notes.txt', text: '  const value = 1;\n' })
+  await waitFor(() =>{  expect(screen.getByRole('button', { name: '刷新' }).hasAttribute('disabled')).toBe(false) })
+  fireEvent.click(screen.getByText('管理项目'))
+  fireEvent.change(screen.getByLabelText('项目名称'), { target: { value: 'New name' } })
+  fireEvent.click(screen.getByRole('button', { name: '保存名称' }))
+  await waitFor(() =>{  expect(api.manageProject).toHaveBeenCalledTimes(1) })
+  expect((JSON.parse(vi.mocked(api.manageProject).mock.calls[0]![1]) as { action: unknown }).action).toEqual({ kind: 'rename', title: 'New name' })
+})

@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write docs/roadmaps/security-harness-simplification.md
-security-harness-simplification.md: b037f2caf32045197a668c1b61689456995ba912
-security-harness-simplification.zh.md: 5aaa9da0cc737cd8ab16138495f32a8266fdfbfb
+security-harness-simplification.md: d47751e45528676a2cf9d6ab24f0d626cce29d40
+security-harness-simplification.zh.md: f0f19be9a61d3680a48c3434783964fc29796207

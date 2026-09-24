@@ -3,6 +3,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import {
   engagementSchema,
+  assetSchema,
   fileAssetSchema,
   sourceAssetSchema,
   webAssetSchema,
@@ -31,6 +32,7 @@ import { canObserve, type DelegatedRole } from './roles.ts'
 import { findingHash } from './assessment.ts'
 import { reportPrompt, renderReport, type ReportLimits } from './report.ts'
 import { importSource } from './source.ts'
+import { materialInputSchema, prepareMaterials } from './materials.ts'
 import { apkMembers } from './apk.ts'
 import { ArtifactStore } from './artifacts.ts'
 import {
@@ -225,12 +227,84 @@ export class SecurityController {
     })
   }
   /** List projects for operator selection.
+   * @param includeArchived - include removed projects for explicit restoration.
    * @returns project labels available to the local operator, never delegated tool callers. */
-  projects(): Engagement[] {
+  projects(includeArchived: boolean = false): Engagement[] {
     return this.journal
       .view()
-      .records.filter(item => item.kind === 'engagement')
+      .records.filter(item => item.kind === 'engagement').filter(item => includeArchived || !item.value.archived)
       .map(item => item.value)
+  }
+  /** Rename, remove or restore a project from an authenticated operator gesture.
+   * @param projectId - existing project identity.
+   * @param input - revision-checked rename, archive or restore request.
+   * @returns committed project list, including archived entries for recovery.
+   */
+  async manageProject(projectId: string, input: unknown): Promise<Engagement[]> {
+    const request = z.object({ operationId: text, expectedRevision: z.number().int().nonnegative(),
+      action: z.discriminatedUnion('kind', [
+        z.object({ kind: z.literal('rename'), title: text }).strict(),
+        z.object({ kind: z.literal('archive') }).strict(),
+        z.object({ kind: z.literal('restore') }).strict(),
+      ]),
+    }).strict().parse(input)
+    await this.journal.commit(request.operationId, request.expectedRevision, { projectId, request }, (view) => {
+      const project = this.project(view, projectId)
+      if (request.action.kind === 'rename') return [{ kind: 'engagement', value: { ...project, title: request.action.title } }]
+      if (request.action.kind === 'restore') return [{ kind: 'engagement', value: { ...project, archived: false } }]
+      return [{ kind: 'engagement', value: { ...project, archived: true, stopped: true } },
+        ...view.records.filter(item => item.kind === 'binding').filter(item => item.value.engagementId === projectId)
+          .map(item => ({ kind: 'binding' as const, value: { ...item.value, active: false } }))]
+    })
+    if (request.action.kind === 'archive') await this.cancelExecutions(projectId)
+    return this.projects(true)
+  }
+
+  /** Attach operator-selected materials, creating the first project atomically when needed.
+   * @param sessionId - authenticated operator Session, never a delegated child.
+   * @param input - revision, material selection and optional initial task fields.
+   * @returns the committed Session scope with measured materials.
+   */
+  async importMaterials(sessionId: string, input: unknown): Promise<WorkbenchView> {
+    const request = z.object({ operationId: text, expectedRevision: z.number().int().nonnegative(),
+      material: materialInputSchema,
+      task: actions.options[0].omit({ kind: true }).optional(),
+    }).strict().parse(input)
+    await this.journal.commit(request.operationId, request.expectedRevision, { sessionId, material: request }, async (view) => {
+      const bound = this.binding(sessionId)
+      if (bound && bound.role !== 'coordinator') throw new Error('Coordinator role required')
+      const created = bound ? [] : request.task ? this.createRecords(sessionId, { kind: 'create', ...request.task }) : []
+      const project = bound ? this.project(view, bound.engagementId) : created.find(item => item.kind === 'engagement')?.value
+      if (!project || !('stopped' in project))
+        throw new Error('Select a workspace and configure its resources before adding materials')
+      if (project.stopped || project.archived) throw new Error('Project is stopped')
+      const materials = await prepareMaterials(this.artifacts, request.material,
+        { bytes: this.options.maxArtifactBytes, entries: this.options.maxDerivedAssets })
+      const assets = materials.map(material => assetSchema.parse({ ...material, id: randomUUID(), engagementId: project.id }))
+      const records: SecurityRecord[] = [...created]
+      for (const asset of assets) records.push(...await this.importedRecords(asset))
+      return records
+    })
+    return this.view(sessionId)
+  }
+
+  private async importedRecords(sample: Asset): Promise<SecurityRecord[]> {
+    const samples: Asset[] = [sample]
+    if (!('kind' in sample) && sample.format === 'apk') {
+      const members = await apkMembers(await this.artifacts.read(sample.artifact),
+        this.options.maxArtifactBytes, this.options.maxDerivedAssets)
+      for (const member of members) samples.push(fileAssetSchema.parse({ id: randomUUID(), engagementId: sample.engagementId,
+        label: member.path, format: member.format, identity: 'measured', parentId: sample.id,
+        artifact: await this.artifacts.put(member.bytes, 'application/octet-stream') }))
+    }
+    return samples.map(value => ({ kind: 'asset', value }))
+  }
+
+  private async cancelExecutions(project: string, plan?: string): Promise<void> {
+    const cancelled = [...this.active.values(), ...[...this.delegated].map(([controller, job]) => ({ ...job, controller, plan: '' }))]
+      .filter(run => run.project === project && (plan === undefined || run.plan === plan))
+    for (const run of cancelled) run.controller.abort(new Error('Operator revoked execution'))
+    await Promise.allSettled(cancelled.map(run => run.done))
   }
   /**
    * Read only records in the selected project and assigned assets.
@@ -327,7 +401,7 @@ export class SecurityController {
       async (view) => {
         if (action.kind === 'create') return this.createRecords(sessionId, action)
         if (action.kind === 'select') {
-          this.project(view, action.engagementId)
+          if (this.project(view, action.engagementId).archived) throw new Error('Restore the removed project before selecting it')
           return [
             {
               kind: 'binding',
@@ -438,7 +512,7 @@ export class SecurityController {
             ]
           }
           case 'import-source': {
-            const artifact = await importSource(this.artifacts, action.path, this.options.importRoots,
+            const artifact = await importSource(this.artifacts, action.path, operator ? [action.path] : this.options.importRoots,
               { entries: this.options.maxDerivedAssets, bytes: this.options.maxArtifactBytes })
             return [{ kind: 'asset', value: sourceAssetSchema.parse({
               kind: 'source', id: randomUUID(), engagementId: project.id, label: action.label,
@@ -446,7 +520,7 @@ export class SecurityController {
             }) }]
           }
           case 'import': {
-            const measured = await this.artifacts.import(action.path, this.options.importRoots)
+            const measured = await this.artifacts.import(action.path, operator ? [action.path] : this.options.importRoots)
             const sample = fileAssetSchema.parse({
               id: randomUUID(),
               engagementId: project.id,
@@ -454,27 +528,7 @@ export class SecurityController {
               ...measured,
               identity: 'measured',
             })
-            const samples: Asset[] = [sample]
-            if (sample.format === 'apk') {
-              const members = await apkMembers(
-                await this.artifacts.read(sample.artifact),
-                this.options.maxArtifactBytes,
-                this.options.maxDerivedAssets,
-              )
-              for (const member of members)
-                samples.push(
-                  fileAssetSchema.parse({
-                    id: randomUUID(),
-                    engagementId: project.id,
-                    label: member.path,
-                    format: member.format,
-                    identity: 'measured',
-                    parentId: sample.id,
-                    artifact: await this.artifacts.put(member.bytes, 'application/octet-stream'),
-                  }),
-                )
-            }
-            return samples.map(value => ({ kind: 'asset' as const, value }))
+            return this.importedRecords(sample)
           }
           case 'template': {
             const selected = asset(action.assetId)
@@ -689,13 +743,7 @@ export class SecurityController {
     )
     if (action.kind === 'stop' || action.kind === 'revoke') {
       const project = this.binding(sessionId)?.engagementId
-      const cancelled = [...this.active.values(), ...[...this.delegated].map(([controller, job]) => ({ ...job, controller, plan: '' }))].filter(
-        run => run.project === project && (action.kind === 'stop' || run.plan === action.planId),
-      )
-      cancelled.forEach((run) => {
-        run.controller.abort(new Error('Operator revoked execution'))
-      })
-      await Promise.allSettled(cancelled.map(run => run.done))
+      if (project) await this.cancelExecutions(project, action.kind === 'revoke' ? action.planId : undefined)
     }
     return this.view(sessionId)
   }

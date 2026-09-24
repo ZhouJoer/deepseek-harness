@@ -19,6 +19,8 @@ Describe a security task in chat and review its findings, evidence and reports. 
 - [Model Experience](#model-experience)
 - [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
 
+Choose **Add materials** in the task overview to upload files or a folder, paste text, or import a Host path. Types are detected automatically. The first import can create a project from the saved workspace resources; imported names appear in the overview. **Manage project** renames or removes a project. Removal stops work and hides the project while retaining evidence and reports; the sidebar’s **Removed projects** list offers restoration. Restored projects remain paused until explicitly resumed. Long selection labels are shortened, with full names retained in tooltips.
+
 -----
 
 <a id="use-this-package"></a>

@@ -32,10 +32,22 @@ Optional security profile service; default application compositions remain indep
  */
 @Remote('refineKnowledge') async refineProjectKnowledge(agent: Agent): Promise<WorkbenchView>
 
-/**
- * List persistent security projects for the authenticated operator.
- * @returns project identities and objectives.
+/** Update a project from the authenticated project browser.
+ * @param projectId - operator-selected project.
+ * @param input - revision-checked management request.
+ * @returns complete project list, including removed projects.
  */
+@Remote('manageProject') async manageProject(projectId: string, input: string): Promise<string>
+
+/** Attach user-selected materials without granting model access to their live paths.
+ * @param agent - authenticated top-level conversation.
+ * @param input - material selection and current revision.
+ * @returns scope containing immutable imported assets.
+ */
+@Remote('importMaterials') async importMaterials(agent: Agent, input: string): Promise<WorkbenchView>
+
+/** List persistent projects, including removed projects available for restoration.
+ * @returns project identities and objectives. */
 @Remote('projects') async projects(): Promise<string>
 
 /** Read a project from the authenticated operator panel.
@@ -85,6 +97,14 @@ Optional security profile service; default application compositions remain indep
  * @returns environment labels, tool identities and registered operations.
  */
 @Remote('configuration') async configuration(agent: Agent): Promise<string>
+
+/**
+ * Save resources explicitly selected by a user for future tasks in this workspace.
+ * @param agent - authenticated Web session identifying the workspace.
+ * @param input - JSON containing environmentIds, maxAttempts, and expectedRevision.
+ * @returns refreshed configuration; existing project permissions are unchanged.
+ */
+@Remote('configureWorkspace') async configureWorkspace(agent: Agent, input: string): Promise<string>
 
 /**
  * Inspect or manage one configured environment from an operator gesture.

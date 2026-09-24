@@ -91,15 +91,7 @@ export class ArtifactStore {
       if (before.size !== after.size || before.mtimeMs !== after.mtimeMs || before.ino !== current.ino) {
         throw new Error('Sample changed during import')
       }
-      const format: FileAsset['format'] = bytes.subarray(0, 4).equals(Buffer.from([0x7f, 0x45, 0x4c, 0x46]))
-        ? 'elf'
-        : bytes.subarray(0, 2).toString() === 'MZ'
-          ? 'pe'
-          : bytes.subarray(0, 4).toString() === 'dex\n'
-            ? 'dex'
-            : bytes.subarray(0, 4).equals(Buffer.from([0x50, 0x4b, 0x03, 0x04])) && path.toLowerCase().endsWith('.apk')
-              ? 'apk'
-              : 'other'
+      const format = detectFileFormat(bytes, path)
       return { artifact: await this.put(bytes, 'application/octet-stream'), format }
     } finally {
       await handle.close()
@@ -141,4 +133,17 @@ export class ArtifactStore {
     }
     await rm(directory, { recursive: true, force: true })
   }
+}
+
+/** Recognize supported binary headers without executing the selected content.
+ * @param bytes - original file bytes.
+ * @param name - selected filename, used to distinguish APK archives.
+ * @returns supported format or other for unidentified content.
+ */
+export function detectFileFormat(bytes: Buffer, name: string): FileAsset['format'] {
+  if (bytes.subarray(0, 4).equals(Buffer.from([0x7f, 0x45, 0x4c, 0x46]))) return 'elf'
+  if (bytes.subarray(0, 2).toString() === 'MZ') return 'pe'
+  if (bytes.subarray(0, 4).toString() === 'dex\n') return 'dex'
+  if (bytes.subarray(0, 4).equals(Buffer.from([0x50, 0x4b, 0x03, 0x04])) && name.toLowerCase().endsWith('.apk')) return 'apk'
+  return 'other'
 }

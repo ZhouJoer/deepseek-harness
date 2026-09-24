@@ -19,6 +19,8 @@ Investigate owned source, binary and Web targets with independent providers and 
 - [Model Experience](#model-experience)
 - [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
 
+Authenticated operator material imports accept pasted UTF-8 text, uploaded files and folders, or an explicitly selected Host file or directory. Host selections authorize only that import; model tools remain restricted to configured import roots. All imports use immutable artifacts and configured byte and entry limits. Project removal is reversible: it stops execution, deactivates project bindings and hides the project from active selection; restoration retains the stopped state and does not reattach Sessions.
+
 -----
 
 <a id="use-this-package"></a>

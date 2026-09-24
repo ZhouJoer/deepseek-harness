@@ -1676,8 +1676,20 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the committed project view after refinement.',
       },
       {
+        signature: '@Remote(\'manageProject\') async manageProject(projectId: string, input: string): Promise<string>',
+        description: 'Update a project from the authenticated project browser.',
+        parameters: [{ name: 'projectId', description: 'operator-selected project.' }, { name: 'input', description: 'revision-checked management request.' }],
+        returns: 'complete project list, including removed projects.',
+      },
+      {
+        signature: '@Remote(\'importMaterials\') async importMaterials(agent: Agent, input: string): Promise<WorkbenchView>',
+        description: 'Attach user-selected materials without granting model access to their live paths.',
+        parameters: [{ name: 'agent', description: 'authenticated top-level conversation.' }, { name: 'input', description: 'material selection and current revision.' }],
+        returns: 'scope containing immutable imported assets.',
+      },
+      {
         signature: '@Remote(\'projects\') async projects(): Promise<string>',
-        description: 'List persistent security projects for the authenticated operator.',
+        description: 'List persistent projects, including removed projects available for restoration.',
         parameters: [],
         returns: 'project identities and objectives.',
       },
@@ -1722,6 +1734,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'List operator-configured environments before project creation.',
         parameters: [{ name: 'agent', description: 'authenticated Web session.' }],
         returns: 'environment labels, tool identities and registered operations.',
+      },
+      {
+        signature: '@Remote(\'configureWorkspace\') async configureWorkspace(agent: Agent, input: string): Promise<string>',
+        description: 'Save resources explicitly selected by a user for future tasks in this workspace.',
+        parameters: [{ name: 'agent', description: 'authenticated Web session identifying the workspace.' }, { name: 'input', description: 'JSON containing environmentIds, maxAttempts, and expectedRevision.' }],
+        returns: 'refreshed configuration; existing project permissions are unchanged.',
       },
       {
         signature: '@Remote(\'environment\') async environment(agent: Agent, environmentId: string, action: \'inspect\' | \'start\' | \'stop\'): Promise<string>',
@@ -5803,8 +5821,12 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type SearchResultView = SearchMatchesResultView | SearchPathsResultView;',
   },
   {
+    name: 'SecurityCommand',
+    declaration: 'export type SecurityCommand = z.infer<typeof commandSchema>;',
+  },
+  {
     name: 'SecurityController',
-    declaration: 'export class SecurityController {\n    readonly providers: ProviderRegistry<AnalysisProvider>;\n    readonly environments: ProviderRegistry<{\n        id: string;\n        manager: EnvironmentManager;\n    }>;\n    readonly laboratories: ProviderRegistry<{\n        id: string;\n        action(projectId: string, action: string, laboratoryId?: string): Promise<WorkbenchView>;\n    }>;\n    laboratoriesView(): Laboratory[];\n    async saveLaboratory(input: Laboratory): Promise<Laboratory>;\n    constructor(private readonly journal: SecurityJournal, readonly artifacts: ArtifactStore, readonly options: WorkbenchOptions, private readonly generateReport?: (prompt: string, signal: AbortSignal, sessionId: string) => Promise<string>);\n    trackDelegation(project: string, controller: AbortController, done: Promise<unknown>): () => void;\n    async manageEnvironment<T>(environmentId: string, run: (signal: AbortSignal) => Promise<T>, project: string = \'\'): Promise<T>;\n    binding(sessionId: string): SessionBinding | undefined;\n    async saveChildReport(sessionId: string, input: unknown): Promise<void>;\n    projects(): Engagement[];\n    view(sessionId: string): WorkbenchView;\n    async command(sessionId: string, input: unknown, operator: boolean = false, signal: AbortSignal = new AbortController().signal): Promise<WorkbenchView>;\n    async review(sessionId: string, input: unknown): Promise<WorkbenchView>;\n    projectView(projectId: string): WorkbenchView;\n    async recover(): Promise<void>;\n    async b /* …truncated — full shape in source */',
+    declaration: 'export class SecurityController {\n    readonly providers: ProviderRegistry<AnalysisProvider>;\n    readonly environments: ProviderRegistry<{\n        id: string;\n        manager: EnvironmentManager;\n    }>;\n    readonly laboratories: ProviderRegistry<{\n        id: string;\n        action(projectId: string, action: string, laboratoryId?: string): Promise<WorkbenchView>;\n    }>;\n    laboratoriesView(): Laboratory[];\n    async saveLaboratory(input: Laboratory): Promise<Laboratory>;\n    constructor(private readonly journal: SecurityJournal, readonly artifacts: ArtifactStore, readonly options: WorkbenchOptions, private readonly generateReport?: (prompt: string, signal: AbortSignal, sessionId: string) => Promise<string>);\n    trackDelegation(project: string, controller: AbortController, done: Promise<unknown>): () => void;\n    async manageEnvironment<T>(environmentId: string, run: (signal: AbortSignal) => Promise<T>, project: string = \'\'): Promise<T>;\n    binding(sessionId: string): SessionBinding | undefined;\n    async saveChildReport(sessionId: string, input: unknown): Promise<void>;\n    projects(includeArchived: boolean = false): Engagement[];\n    async manageProject(projectId: string, input: unknown): Promise<Engagement[]>;\n    async importMaterials(sessionId: string, input: unknown): Promise<WorkbenchView>;\n    view(sessionId: string): WorkbenchView;\n    async admitTask(sessionId: string, operationId: string, action: Extract<SecurityCommand[\'action\'], {\n        kind: \'create\';\n   /* …truncated — full shape in source */',
   },
   {
     name: 'SecurityEnvironment',

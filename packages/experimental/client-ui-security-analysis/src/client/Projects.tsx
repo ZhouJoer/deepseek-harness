@@ -1,4 +1,6 @@
 /** Persistent operator project browser, independent of conversation selection. @module */
+import { randomUUID } from '@deepseek-ai/dsh-util-crypto'
+import { ProjectManagement, projectLabel } from './ProjectManagement.tsx'
 import { useEffect, useRef, useState } from 'react'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import { MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
@@ -9,6 +11,7 @@ import css from './Workbench.module.css'
 
 /** Authenticated project reads and explicit laboratory gestures. */
 export interface ProjectActions {
+  manageProject(projectId: string, input: string): Promise<string>
   projects(): Promise<string>
   project(id: string): Promise<WorkbenchView>
   laboratory(projectId: string, action: string, id: string): Promise<WorkbenchView>
@@ -26,7 +29,8 @@ export function ProjectIcon({ size }: PropsRuntime<'sidebar.panellist'>) {
  * @returns project panel. */
 export function Projects(props: ProjectActions & PropsLocale<typeof NS>) {
   const { t } = props
-  const [projects, setProjects] = useState<{ id: string; title: string }[]>([])
+  const [projects, setProjects] = useState<{ id: string; title: string; archived?: boolean }[]>([])
+  const [removed, setRemoved] = useState(false)
   const [selected, setSelected] = useState('')
   const [view, setView] = useState<WorkbenchView>({ revision: 0, records: [] })
   const [tab, setTab] = useState<SecurityKey>('overview')
@@ -42,7 +46,7 @@ export function Projects(props: ProjectActions & PropsLocale<typeof NS>) {
   }
   const refresh = async () => {
     const current = ++generation.current
-    const items = JSON.parse(await props.projects()) as { id: string; title: string }[]
+    const items = JSON.parse(await props.projects()) as { id: string; title: string; archived?: boolean }[]
     const next = selected ? await props.project(selected) : { revision: 0, records: [] }
     if (generation.current === current) { setProjects(items); setView(next) }
   }
@@ -58,10 +62,20 @@ export function Projects(props: ProjectActions & PropsLocale<typeof NS>) {
   return <section role="region" className={css.projectPanel} aria-label={t('title')}>
     <header className={css.header}><strong>{t('title')}</strong><button disabled={busy} onClick={() => void perform(refresh)}>{t('refresh')}</button></header>
     <div className={css.body}>
+      <label><input type="checkbox" checked={removed} onChange={(event) => { generation.current++; setRemoved(event.target.checked); setSelected(''); setView({ revision: 0, records: [] }) }} />{t('removedProjects')}</label>
       <label className={css.field}>{t('project')}<select disabled={busy} value={selected} onChange={(event) => { generation.current++; setView({ revision: 0, records: [] }); setSelected(event.target.value) }}>
-        <option value="">{t('notSelected')}</option>{projects.map(item => <option key={item.id} value={item.id}>{item.title}</option>)}
+        <option value="">{t('notSelected')}</option>{projects.filter(item => Boolean(item.archived) === removed).map(item => <option key={item.id} value={item.id} title={item.title}>{projectLabel(item.title, item.id)}</option>)}
       </select></label>
       <p>{t('projectEntryHelp')}</p>
+      {project?.kind === 'engagement' && <ProjectManagement key={project.value.id + project.value.title} t={t} title={project.value.title} archived={project.value.archived} disabled={busy}
+        manage={action => perform(async () => {
+          const current = ++generation.current
+          const items = JSON.parse(await props.manageProject(selected, JSON.stringify({
+            operationId: randomUUID(), expectedRevision: view.revision, action }))) as typeof projects
+          if (generation.current !== current) return
+          if (action.kind === 'rename') await refresh()
+          else { setProjects(items); setSelected(''); setView({ revision: 0, records: [] }); setReport('') }
+        })} />}
       {error && <p role="alert">{error}</p>}
       <nav className={css.tabs}>{(['overview', 'assets', 'checks', 'findings', 'reviews', 'reports', 'laboratories'] as const).map(key => <button key={key} aria-pressed={tab === key} onClick={() =>{  setTab(key) }}>{t(key)}</button>)}</nav>
       {tab === 'overview' && project?.kind === 'engagement' && <article className={css.card}><h2>{project.value.title}</h2><p>{project.value.objective}</p><p>{t('revision')} {view.revision}</p></article>}

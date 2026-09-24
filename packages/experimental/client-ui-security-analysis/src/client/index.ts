@@ -41,6 +41,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       scoped.slots.register({ name: 'tool.call.toolview', key, locale: NS }, SecurityToolRow))
     const remote = scoped.remote.securityWorkbench
     const projectActions: ProjectActions = {
+      manageProject: (id, input) => unwrap(remote.manageProject(id, input)),
       projects: () => unwrap(remote.projects()), project: id => unwrap(remote.project(id)),
       laboratory: (project, action, id) => unwrap(remote.laboratory(project, action, id)),
       report: (project, id, format) => unwrap(remote.report(project, id, format)),
@@ -50,6 +51,8 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     scoped.slots.inject('main', () => scoped.slots.register({ name: 'main', key: panel, locale: NS, inject: () => projectActions }, Projects))
     scoped.slots.inject('sidebar.panellist', () => scoped.slots.register({ name: 'sidebar.panellist', id: panel, order: 30, label: () => scoped.locale.bind(NS)('title'), locale: NS }, ProjectIcon))
     const actions: WorkbenchActions = {
+      manageProject: (id, input) => unwrap(remote.manageProject(id, input)),
+      importMaterials: (id, input) => unwrap(remote.importMaterials(id, input)),
       subscribeReset: listener => scoped.on('connection/reset', listener),
       load: id => unwrap(remote.view(id)),
       observe: (id, input) => unwrap(remote.observe(id, input)),

@@ -40,6 +40,7 @@ export const engagementSchema = z
     objective: text,
     environmentIds: z.array(id),
     stopped: z.boolean(),
+    archived: z.boolean().optional(),
     maxAttempts: z.number().int().positive(),
   })
   .strict()

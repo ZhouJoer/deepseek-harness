@@ -133,12 +133,14 @@
 .stop {
   color: var(--dsw-alias-state-error-primary);
 }
-.panel button {
+.panel button,
+.projectPanel button {
   padding: 6px 11px;
   border: 0.5px solid var(--dsw-alias-border-l2);
   border-radius: 5px;
 }
-.panel button:disabled {
+.panel button:disabled,
+.projectPanel button:disabled {
   opacity: 0.5;
 }
 @media (max-width: 720px) {
@@ -249,3 +251,15 @@
 .resourceForm summary, .resourceSummary summary { cursor: pointer; color: var(--dsw-alias-label-secondary); font-size: 13px; line-height: 1.5; }
 .resourceForm .field { margin-top: 12px; }
 .resourceSummary { padding: 16px 0; margin-bottom: 14px; }
+
+.field { min-width: 0; max-width: 100%; }
+.field input, .field select, .field textarea { box-sizing: border-box; width: 100%; min-width: 0; max-width: 100%; }
+.field select { text-overflow: ellipsis; }
+.form, .card, .projectPanel, .body { min-width: 0; }
+.card, .projectPanel h2, .materialPanel { overflow-wrap: anywhere; }
+.materialPanel { padding: 16px; border: 1px solid var(--border-color, #ddd); border-radius: 12px; display: grid; gap: 10px; }
+.materialPanel h3, .materialPanel p { margin: 0; }
+.uploadChoices { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr)); gap: 12px; }
+
+.projectPanel { font-family: system-ui, sans-serif; font-size: 14px; line-height: 1.5; }
+.projectPanel input, .projectPanel select, .projectPanel textarea, .projectPanel button { font: inherit; }

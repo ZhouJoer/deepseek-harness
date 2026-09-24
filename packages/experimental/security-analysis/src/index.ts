@@ -845,13 +845,41 @@ export default class SecurityWorkbench extends TypertRemoteService {
     return controller.view(agent.id)
   }
 
-  /**
-   * List persistent security projects for the authenticated operator.
-   * @returns project identities and objectives.
+  /** Update a project from the authenticated project browser.
+   * @param projectId - operator-selected project.
+   * @param input - revision-checked management request.
+   * @returns complete project list, including removed projects.
    */
+  @Remote('manageProject')
+  async manageProject(projectId: string, input: string): Promise<string> {
+    return JSON.stringify(await (await this.ready).manageProject(projectId, JSON.parse(input)))
+  }
+
+  /** Attach user-selected materials without granting model access to their live paths.
+   * @param agent - authenticated top-level conversation.
+   * @param input - material selection and current revision.
+   * @returns scope containing immutable imported assets.
+   */
+  @Remote('importMaterials')
+  async importMaterials(agent: Agent, input: string): Promise<WorkbenchView> {
+    const controller = await this.ready
+    if (agent.session.header.origin === 'subagent') throw new Error('Delegated sessions cannot import operator materials')
+    const request = z.object({ operationId: z.string().min(1), expectedRevision: z.number().int().nonnegative(),
+      material: z.unknown(), title: z.string().trim().min(1), objective: z.string().trim().min(1),
+    }).strict().parse(JSON.parse(input))
+    const config = this.intakeConfig(agent.session.header.cwd)
+    const workspace = config?.workspaces.find(item => agent.session.header.cwd !== undefined
+      && workspaceKey(item.cwd) === workspaceKey(agent.session.header.cwd))
+    return controller.importMaterials(agent.id, { operationId: request.operationId, expectedRevision: request.expectedRevision,
+      material: request.material, ...(workspace && config ? { task: { title: request.title, objective: request.objective,
+        environmentIds: workspace.environmentIds, maxAttempts: config.maxAttempts } } : {}) })
+  }
+
+  /** List persistent projects, including removed projects available for restoration.
+   * @returns project identities and objectives. */
   @Remote('projects')
   async projects(): Promise<string> {
-    return JSON.stringify((await this.ready).projects())
+    return JSON.stringify((await this.ready).projects(true))
   }
   /** Read a project from the authenticated operator panel.
    * @param projectId - selected project.
@@ -962,6 +990,7 @@ export default class SecurityWorkbench extends TypertRemoteService {
         environmentIds: saved?.environmentIds ?? selected?.environmentIds ?? [],
         maxAttempts: saved?.maxAttempts ?? this.config.taskIntake?.maxAttempts,
       },
+      materialLimits: { bytes: this.config.maxArtifactBytes, entries: this.config.maxDerivedAssets },
       selectedProject: controller.binding(agent.id)?.engagementId,
       projects: controller.projects().map(({ id, title }) => ({ id, title })),
       environments: this.config.environments.map(({ id, kind, label, tools }) => ({

@@ -9,6 +9,7 @@ import { DomainFacility } from '@deepseek-ai/dsh-storage-domain'
 import { JsonStorageBackend } from '@deepseek-ai/dsh-storage-json'
 import { describe, it, expect, onTestFinished, vi } from 'vitest'
 import { openSecurityJournal } from '../src/workbench/journal.ts'
+import { sourceManifestSchema } from '../src/workbench/source.ts'
 import { ArtifactStore } from '../src/workbench/artifacts.ts'
 import { SecurityController } from '../src/workbench/controller.ts'
 import { BinaryProvider } from '../src/workbench/binary.ts'
@@ -71,6 +72,55 @@ async function harness(generateReport?: (prompt: string, signal: AbortSignal) =>
 }
 
 describe('security workbench', () => {
+  it('removes projects reversibly, detaches their sessions and preserves their assets', async () => {
+    const { controller, journal, send } = await harness()
+    const id = controller.binding('parent')!.engagementId
+    const manage = (action: unknown) => controller.manageProject(id,
+      { operationId: randomUUID(), expectedRevision: journal.view().revision, action })
+    await manage({ kind: 'rename', title: 'Short name' })
+    expect(controller.projects()[0]!.title).toBe('Short name')
+    await manage({ kind: 'archive' })
+    expect(controller.projects()).toEqual([])
+    expect(controller.projects(true)[0]).toMatchObject({ archived: true, stopped: true })
+    expect(controller.binding('parent')).toBeUndefined()
+    expect(controller.projectView(id).records.some(item => item.kind === 'asset')).toBe(true)
+    await expect(send({ kind: 'select', engagementId: id }, true)).rejects.toThrow(/removed|archived/i)
+    await manage({ kind: 'restore' })
+    expect(controller.projects()[0]).toMatchObject({ archived: false, stopped: true })
+    await send({ kind: 'select', engagementId: id }, true)
+    expect(controller.binding('parent')?.engagementId).toBe(id)
+  })
+
+  it('imports pasted text into a new task without losing whitespace and rejects oversized input atomically', async () => {
+    const { controller, journal, artifacts } = await harness()
+    const task = { title: 'Notes', objective: 'Inspect notes', environmentIds: ['local'], maxAttempts: 3 }
+    const input = (text: string) => ({ operationId: randomUUID(), expectedRevision: journal.view().revision,
+      material: { kind: 'text', name: 'notes.txt', text }, task })
+    await expect(controller.importMaterials('new-task', input('x'.repeat(65537)))).rejects.toThrow(/byte limit/)
+    expect(controller.binding('new-task')).toBeUndefined()
+    const text = '  中文代码\n  return input;\n'
+    const view = await controller.importMaterials('new-task', input(text))
+    const asset = view.records.find(item => item.kind === 'asset')!
+    if (asset.kind !== 'asset' || !('kind' in asset.value) || asset.value.kind !== 'source') throw new Error('Expected source asset')
+    const manifest = sourceManifestSchema.parse(JSON.parse((await artifacts.read(asset.value.artifact)).toString()))
+    expect((await artifacts.read(manifest.files[0]!.artifact)).toString()).toBe(text)
+  })
+
+  it('limits an operator path grant to that import while model imports retain configured roots', async () => {
+    const { controller, journal, send } = await harness()
+    const external = await mkdtemp(join(tmpdir(), 'dsh-selected-material-'))
+    onTestFinished(() => rm(external, { recursive: true, force: true }))
+    const path = join(external, 'code.txt')
+    await writeFile(path, 'const owned = true')
+    await expect(send({ kind: 'import-source', label: 'outside', path })).rejects.toThrow(/outside/)
+    const view = await controller.importMaterials('parent', { operationId: randomUUID(), expectedRevision: journal.view().revision,
+      material: { kind: 'path', path: external } })
+    expect(view.records.filter(item => item.kind === 'asset')).toHaveLength(2)
+    await expect(send({ kind: 'import-source', label: 'outside', path })).rejects.toThrow(/outside/)
+    await expect(controller.importMaterials('parent', { operationId: randomUUID(), expectedRevision: journal.view().revision,
+      material: { kind: 'files', directory: true, files: [{ name: '../escape.js', base64: 'eA==' }] } })).rejects.toThrow()
+  })
+
 
   it('initializes simultaneous tasks independently without a shared revision conflict', async () => {
     const { controller, journal } = await harness()

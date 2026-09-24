@@ -14,6 +14,7 @@ This plan guides contributors extending the existing security packages so users 
 
 - [Outcome and first release](#outcome)
 - [Reuse and proposed responsibilities](#responsibilities)
+- [Delegation driven by missing evidence](#delegation-design)
 - [Implementation steps](#steps)
 - [Dependencies and change ownership](#dependencies)
 - [Acceptance scenarios](#acceptance)
@@ -45,6 +46,60 @@ The [security workbench](../subsystems/security-workbench.md) owns the existing 
 | Evidence and delivery | Retain raw observations, artifact identity, review fingerprints and revision reports; derive views from committed records | Existing artifacts, journal, reviews and report generation |
 
 The domain journal remains authoritative for security records. Session logs retain the context and tool results the model actually saw, with stable references to the relevant domain revision. The UI derives its view from committed data. This plan does not introduce a second independently writable copy of either state.
+
+<a id="delegation-design"></a>
+## Delegation driven by missing evidence
+
+This is the proposed design for stage 4, not implemented scheduling behavior. The supplied comparison table motivates preferring new observations over repeated discussion; it does not establish a measured benefit for DSH. Delegate only when a child can resolve a named uncertainty, cover a distinct part of the task, or perform a justified independent review. Keep the parent responsible for the objective, scope, evidence integration and final answer.
+
+### Admission and choice of feedback
+
+Before creating a child, state what is unknown, what observation could distinguish competing explanations, which available capability can obtain it, and how the result changes the next decision. First search existing project evidence. Reuse an applicable observation instead of recollecting it; freshness, a changed target or an explicit repeatability experiment can justify another measurement. A timestamp, another summary or agreement from another model is not new target evidence.
+
+| Work | Useful input or feedback | Scheduling decision |
+|---|---|---|
+| Re-read the author's answer or debate the same summary | No additional observation | Keep local; do not create a child solely for agreement |
+| Investigate independent components or trust boundaries | Different source paths, binary functions, callers or protocol stages | Parallelize distinct questions against immutable inputs |
+| Check a suspected implementation defect | Target code, execution logs, assertions and negative controls | Run a discriminating check, then evaluate its result |
+| Check a rendered page or interaction | Actual screenshot, DOM state and interaction trace | Verify the requested behavior; a screenshot alone cannot establish server authorization |
+| Check an external fact | Primary documentation, affected versions and configured tool observations | Use DSH web search or the applicable provider; external references do not demonstrate a target vulnerability |
+| Review a consequential conclusion | Exact claim plus original supporting and opposing evidence | Use a separate review context; request a specific missing observation instead of another debate |
+
+Use Web, firmware and IoT as expertise and method hints, not mandatory teams. A firmware task with an embedded Web application can split its native request handler and Web authorization path, then join the results at the shared input. A small source question stays with the parent when delegation cannot justify its context and coordination cost. Model diversity is optional and does not itself satisfy the evidence requirement.
+
+### Investigation, verification and review
+
+These are work purposes, not three new permission roles. Reuse compatible existing task and role bindings first. The current [reviewer](../../packages/experimental/security-analysis/src/workbench/roles.ts) reads evidence and records a verdict but cannot collect observations or execute validation. Preserve that restriction. Analysts can propose and perform permitted static collection; the coordinator routes runtime checks through existing plan approval, execution and cleanup. A browser or device check requires an actually available provider and the applicable authorization, even if the child calls it verification.
+
+When a test, scan or render already has a resolved specification, execute it through the existing tool/job path without allocating an LLM child for the call. Create a child when selecting a method, investigating a distinct scope or independently interpreting evidence requires substantial reasoning. The coordinator can consume direct tool feedback and finish a small task itself.
+
+An investigation produces a hypothesis and its conditions. Verification obtains the observation needed to test that hypothesis. Review checks whether the exact conclusion follows from original observations, considers alternatives and names missing proof. The reviewer receives the claim and references needed to find relevant artifacts, without inheriting the author's discussion or confidence rating. Re-reading raw evidence can expose a reasoning error, but that is an analytical correction, not an additional measurement. Preserve useful static review while reporting that distinction.
+
+The closed loop is question → existing evidence → missing observation → authorized collection → evidence integration → review when warranted → conclusion. If a review identifies a gap, create a check for that gap. If no relevant capability is available, retain an explicit unknown. Do not start another identical review to turn an inconclusive result into agreement. Independent review remains required wherever the existing conclusion policy requires it; inexpensive informational tasks do not gain a mandatory reviewer.
+
+### Task inputs and durable results
+
+Extend the existing delegation request only with information that the current question, criterion, asset binding and budget do not express. The resolved task needs its purpose, known evidence references, expected feedback, completion criterion, dependencies, assigned assets/resources and claim or task revision. Missing or inaccessible input references reject before allocating a child. Expertise hints cannot add capabilities, assets or approval.
+
+Keep the current summary, evidence references, uncertainty and next steps. Add only the result distinctions needed to identify newly collected observations, corrections supported by existing evidence, contradictions, blocked capabilities and requested checks. The Host validates references and target identity; the parent assesses what the result actually resolves. Child claims of novelty or confidence are not authoritative. Keep raw bytes, collection parameters, environment identity and completion state with existing evidence records, and record model-visible context in the Session log.
+
+Evaluate progress by a resolved question, a supported or refuted hypothesis, newly covered scope, or a concrete capability blocker that prevents repeated futile work. Evidence count and tool-call count are not quality scores. A repeated observation can strengthen a predefined repeatability test; otherwise merge equivalent results while retaining their original records. A new interpretation may justify correcting a conclusion without pretending new bytes were collected.
+
+### Dependencies, budgets and stopping
+
+Use existing checks, jobs and subagents to admit ready work whose dependencies are satisfied. Start independent ready checks when capacity permits; serialize access to shared devices, debuggers and mutable environments through resource ownership. Prioritize questions that affect the final security decision and can be answered with available resources. Cancellation settles provider cleanup and resource release before reassignment; a blocked branch need not stall independent branches.
+
+Add task-wide accounting across the parent and all children, including tokens, execution time and repeated unsuccessful work. Reserve capacity before admission, settle actual usage afterward and reserve enough capacity for integration and the final answer. Reuse existing concurrency and duration configuration; make any additional deployment-varying limits configurable. Enforce resource and budget admission in the Host rather than only in prompts. Account for in-flight work and document any unavoidable cancellation or token overshoot.
+
+Stop when the question is answered to its requested evidence standard, no feasible observation can resolve the remaining gap, or the task budget is exhausted. Repeated no-progress work reaches a configured limit instead of spawning more children. Changes to the claim, input identity or scope invalidate dependent pending decisions; retain historical observations, cancel incompatible work and recheck admissibility before using completed results. Never reuse a stale review as approval for a changed finding.
+
+### User experience and acceptance
+
+Keep agent selection and internal task graphs out of the required user path. Show outcome-oriented progress such as source inspection complete, checking the failure condition, or device validation unavailable. Present conclusions with evidence, applicable conditions, limitations and remediation; put child activity and tool details behind an optional view. Ask the user only for missing information or authority that prevents the next useful action.
+
+For a Web ownership-check example, first inspect the handler and caller paths. If runtime verification is needed and an authorized local target exists, compare owner and non-owner requests against the same object and retain the request/response records; a failed setup or an unrelated HTTP error is not evidence that access is denied. A reviewer then checks the claim against both responses and source locations. Without the target, retain a static conclusion and leave runtime reachability unverified. For firmware or IoT, substitute the relevant function, parser, capture or device observation while preserving the same decision process.
+
+Acceptance must compare equal-model, equal-input and equal-budget runs: parent only, repeated-summary review, and observation-driven delegation. Include both gains and cases where delegation should be declined. Measure supported conclusions, false positives, resolved questions, duplicate collection, review corrections, latency, total parent/child usage and user interventions. Fix thresholds only after the baseline; this plan makes no numerical improvement claim.
 
 <a id="steps"></a>
 ## Implementation steps
@@ -91,12 +146,14 @@ Deliverable: reusable analytical methods and explicit tool-use guidance. Accepta
 
 Dependency: stage 2 task revisions; stage 3 supplies method and tool guidance. Primary locations: the security entry, role definitions, [controller](../../packages/experimental/security-analysis/src/workbench/controller.ts), [assessment helpers](../../packages/experimental/security-analysis/src/workbench/assessment.ts) and existing subagent services.
 
-- [ ] S4.1 Separate expertise labels from capability admission. Derive child permissions from the parent task and configured capabilities; preserve the meaning of existing role bindings.
-- [ ] S4.2 Resolve each delegation into a question, input evidence, assigned assets, resources, output, budget and stopping condition. Support associated assets explicitly when an investigation needs them.
-- [ ] S4.3 Delegate independent investigations or useful reviews; keep simple tasks with the parent. Track dependencies through existing checks, jobs and subagents rather than a new scheduler.
+- [ ] S4.1 Separate expertise labels from capability admission. Use investigation, verification and review as work purposes while preserving existing role permissions; runtime verification stays on approved execution paths.
+- [ ] S4.2 Extend the resolved delegation with known evidence, expected feedback, dependencies and input/claim revision; validate references and allowed assets/resources before creating a child.
+- [ ] S4.3 Add missing-evidence admission, equivalent-work detection and ready-check selection to existing checks/jobs/subagents. Keep inexpensive work with the parent; admit parallel work only when dependencies and resource ownership permit it.
 - [ ] S4.4 Reuse resource keys and exclusion for shared devices and mutable environments; isolate scratch outputs and handle cancellation, cleanup and restart without repeating side effects.
-- [ ] S4.5 Enforce task-wide limits across children, including cumulative work and repeated failures. Apply scope changes to descendants and explain resource-blocked work in the result.
-- [ ] S4.6 Merge duplicate leads, retain contrary evidence and bind independent reviews to the exact claim. Agreement between agents is not independent verification.
+- [ ] S4.5 Account for parent and child work together; reserve admission capacity and final-answer capacity, settle actual usage, and enforce configurable no-progress and failure limits.
+- [ ] S4.6 Integrate new observations, analytical corrections and contradictions separately; bind reviews to exact claims and inputs. A missing observation schedules a concrete check or remains an explicit limitation.
+- [ ] S4.7 Deliver the smallest authorized Web verification loop with positive and negative controls. Keep static-only and unavailable-target paths explicit, then extend the same workflow to firmware and IoT examples.
+- [ ] S4.8 Add regressions for repeated-summary delegation, false novelty, unavailable capabilities, stale evidence/reviews, resource conflicts, concurrent budget reservation and cancellation. Complete the equal-budget comparison in S6.3 before claiming an improvement.
 
 Deliverable: bounded collaboration with traceable child results. Acceptance: simple tasks avoid unnecessary delegation; independent work can proceed despite a blocked sibling; scope changes, stale reviews and resource conflicts are handled through the real execution entry.
 

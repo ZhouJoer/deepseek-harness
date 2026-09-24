@@ -8,12 +8,16 @@ import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { SecurityCommand, WorkbenchView } from '@deepseek-ai/dsh-experimental-security-analysis/client'
 import type { NS, SecurityKey } from './locales.ts'
 import css from './Workbench.module.css'
+import { MaterialPanel } from './MaterialPanel.tsx'
+import { ProjectManagement, projectLabel } from './ProjectManagement.tsx'
 import { KnowledgePanel } from './KnowledgePanel.tsx'
 
 /** Service actions injected by the Cordis browser plugin. */
 export interface WorkbenchActions {
   /** Re-pull authoritative records after a new connection generation. */
   subscribeReset(this: void, listener: () => void): () => void
+  manageProject(projectId: string, input: string): Promise<string>
+  importMaterials(sessionId: SessionId, input: string): Promise<WorkbenchView>
   observe(sessionId: SessionId, input: string): Promise<WorkbenchView>
   load(sessionId: SessionId): Promise<WorkbenchView>
   refine(sessionId: SessionId): Promise<WorkbenchView>
@@ -32,6 +36,7 @@ export type WorkbenchProps = Pick<PropsRuntime<'conversation.input.dock'>, 'sess
   WorkbenchActions
 type Tab = 'overview' | 'assets' | 'checks' | 'findings' | 'environments' | 'knowledge' | 'evidence' | 'reviews' | 'reports'
 interface Configuration {
+  materialLimits?: { bytes: number; entries: number }
   workspace?: { cwd: string; revision: number; environmentIds: string[]; maxAttempts?: number; configured: boolean } | null
   knowledgeIntervalMs?: number
   projects?: { id: string; title: string }[]
@@ -170,8 +175,8 @@ export function Workbench(props: WorkbenchProps) {
       >
         <option value="">{t('notSelected')}</option>
         {options.map(item => (
-          <option key={item.id} value={item.id}>
-            {item.label}
+          <option key={item.id} value={item.id} title={item.label}>
+            {projectLabel(item.label, item.id)}
           </option>
         ))}
       </select>
@@ -327,6 +332,28 @@ export function Workbench(props: WorkbenchProps) {
               )}
               {busy > 0 && <p role="status">{t('loading')}</p>}
               <div className={css.body}>
+                {(tab === 'overview' || tab === 'assets') && <MaterialPanel key={sessionId + (project?.value.id ?? '')} t={t}
+                  disabled={busy > 0 || Boolean(project?.value.stopped) || (!project && !workspace?.configured)}
+                  limits={configuration.materialLimits}
+                  submit={async (material, title) => {
+                    setBusy(count => count + 1)
+                    const current = ++generation.current
+                    try {
+                      const next = await props.importMaterials(sessionId, JSON.stringify({
+                        operationId: randomUUID(), expectedRevision: view.revision,
+                        material, title, objective: t('materialObjective') }))
+                      if (activeSession.current === sessionId && generation.current === current) { setView(next); await load() }
+                    } finally { setBusy(count => count - 1) }
+                  }} />}
+                {tab === 'overview' && assets.length > 0 && <section className={css.card}><h3>{t('addedMaterials')}</h3>
+                  <ul>{assets.map(item => <li key={item.value.id}>{item.value.label}</li>)}</ul>
+                </section>}
+                {tab === 'overview' && project?.kind === 'engagement' && <ProjectManagement key={project.value.id + project.value.title} t={t}
+                  title={project.value.title} disabled={busy > 0} manage={action => perform(async () => {
+                    await props.manageProject(project.value.id, JSON.stringify({
+                      operationId: randomUUID(), expectedRevision: view.revision, action }))
+                    if (activeSession.current === sessionId) { setDraft({}); await load() }
+                  })} />}
                 {tab === 'overview' && (
                   <>
                     {project?.kind === 'engagement' ? (
@@ -432,21 +459,6 @@ export function Workbench(props: WorkbenchProps) {
                 )}
                 {tab === 'assets' && (
                   <>
-                    <div className={css.form}>
-                      {field('name')}
-                      {field('path')}
-                      <button
-                        disabled={busy > 0 || !project}
-                        onClick={() =>
-                          void perform(() => command({ kind: 'import', label: draft.name ?? '', path: draft.path ?? '' }))
-                        }
-                      >
-                        {t('import')}
-                      </button>
-                      <button disabled={busy > 0 || !project} onClick={() =>
-                        void perform(() => command({ kind: 'import-source', label: draft.name ?? '', path: draft.path ?? '' }))
-                      }>{t('importSource')}</button>
-                    </div>
                     <div className={css.form}>
                       {select('environment', configuration.environments.map(item => ({ id: item.id, label: item.label })))}
                       {field('webLabel')}
