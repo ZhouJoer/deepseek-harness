@@ -1,6 +1,7 @@
 /** Persistent operator project browser, independent of conversation selection. @module */
 import { randomUUID } from '@deepseek-ai/dsh-util-crypto'
 import { ProjectManagement, projectLabel } from './ProjectManagement.tsx'
+import { Toolbox, type ToolboxActions } from './Toolbox.tsx'
 import { useEffect, useRef, useState } from 'react'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import { MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
@@ -10,7 +11,7 @@ import type { NS, SecurityKey } from './locales.ts'
 import css from './Workbench.module.css'
 
 /** Authenticated project reads and explicit laboratory gestures. */
-export interface ProjectActions {
+export interface ProjectActions extends ToolboxActions {
   manageProject(projectId: string, input: string): Promise<string>
   projects(): Promise<string>
   project(id: string): Promise<WorkbenchView>
@@ -77,7 +78,8 @@ export function Projects(props: ProjectActions & PropsLocale<typeof NS>) {
           else { setProjects(items); setSelected(''); setView({ revision: 0, records: [] }); setReport('') }
         })} />}
       {error && <p role="alert">{error}</p>}
-      <nav className={css.tabs}>{(['overview', 'assets', 'checks', 'findings', 'reviews', 'reports', 'laboratories'] as const).map(key => <button key={key} aria-pressed={tab === key} onClick={() =>{  setTab(key) }}>{t(key)}</button>)}</nav>
+      <nav className={css.tabs}>{(['overview', 'toolbox', 'assets', 'checks', 'findings', 'reviews', 'reports', 'laboratories'] as const).map(key => <button key={key} aria-pressed={tab === key} onClick={() =>{  setTab(key) }}>{t(key)}</button>)}</nav>
+      {tab === 'toolbox' && <Toolbox toolboxInventory={props.toolboxInventory} t={t} />}
       {tab === 'overview' && project?.kind === 'engagement' && <article className={css.card}><h2>{project.value.title}</h2><p>{project.value.objective}</p><p>{t('revision')} {view.revision}</p></article>}
       {tab === 'overview' && <>{view.records.filter(item => item.kind === 'binding' && item.value.report).map(item => item.kind === 'binding' && item.value.report && (
         <article className={css.card} key={item.value.sessionId}>
@@ -102,7 +104,7 @@ export function Projects(props: ProjectActions & PropsLocale<typeof NS>) {
           <strong>{item.value.recipe} · {t(labState[item.value.state])}</strong>
           <p>{item.value.detail}</p><code>{item.value.imageId}</code>
           <p>{item.value.targetImage}</p>
-          <pre>{JSON.stringify(item.value.tools, null, 2)}</pre>
+          <details><summary>{t('toolHistoricalInventory')}</summary><pre>{JSON.stringify(item.value.tools, null, 2)}</pre></details>
           {item.value.browserUrl && <a href={item.value.browserUrl} target="_blank" rel="noreferrer">{t('openLab')}</a>}
           {(['start', 'inspect', 'stop', 'reset'] as const).map(action => <button disabled={busy} key={action} onClick={() => void lifecycle(action, item.value.id)}>{t(({ start: 'labStart', inspect: 'labInspect', stop: 'labStop', reset: 'labReset' } as const)[action])}</button>)}
         </article>)}

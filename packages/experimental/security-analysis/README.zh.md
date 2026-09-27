@@ -66,18 +66,18 @@ JADX 接受 APK/DEX，并明确标记不完整反编译。adb 只操作指定设
 <a id="roles-tasks-and-tool-management"></a>
 ### 角色、任务和工具管理
 
-Host 操作者在[示例 overlay](../../../apps/cli/config/examples/security-analysis/cordis.yml) 的 `environments[].tools` 中增加或移除安装项，然后重启安全 profile。同一环境拒绝重复工具 ID。命令、版本参数和安装来源保留在 Host 配置中；agent 不能安装工具或选择任意可执行文件。移除安装项后，对应 provider 明确失败。`security_capabilities` 返回角色权限、provider 参数说明和安装声明，`security_environment` 检查版本和就绪状态，不安装或创建环境。工作台环境页提供操作者健康检查与生命周期操作。
+Host 操作者在[示例 overlay](../../../apps/cli/config/examples/security-analysis/cordis.yml) 的 `environments[].tools` 中配置显式安装项，然后重启安全 profile。同一环境拒绝重复工具 ID。专用 provider 要求已配置的安装项；原生分析脚本使用已有 DSH 权限。工具箱也会从 PATH 探测未配置的可执行文件，并保留自定义条目。`security_capabilities` 返回角色权限、provider 参数说明和执行位置；`security_environment` 实测工具状态，不进行配置安装。软件安装保持手动进行。
 
 | 角色 | 任务 | 可用分析能力 |
 |---|---|---|
-| `coordinator` | 规划、汇总与验证 | 全部领域工具、网页资料、jobs/goal/todo；执行已批准的验证计划 |
-| `reconnaissance` | `inventory` | 二进制身份/十六进制/字符串，Ghidra 身份/函数/导入/导出/字符串，固定 adb 查询，环境检查，证据检索 |
-| `reverse-analyst` | `surface`、`assessment` | 二进制检查、全部只读 Ghidra 查询、JADX 和固定 adb 查询、环境检查、证据检索 |
-| `web-analyst` | `surface`、`assessment` | 已分配的 HTTP 证据与不可变源码读取、搜索；不得执行未审批操作 |
+| `coordinator` | 规划、汇总与验证 | 领域工具、原生脚本、网页资料、jobs/goal/todo；执行已批准的验证计划 |
+| `reconnaissance` | `inventory` | 原生脚本、二进制身份/十六进制/字符串、Ghidra 清单、固定 adb 查询、环境检查、证据检索 |
+| `reverse-analyst` | `surface`、`assessment` | 原生脚本、二进制检查、只读 Ghidra 查询、JADX 和固定 adb 查询、环境检查、证据检索 |
+| `web-analyst` | `surface`、`assessment` | 原生脚本、已分配的 HTTP 证据、不可变源码读取/搜索及环境检查 |
 | `researcher` | `assessment` | 项目证据、已审核知识、公开网页搜索与读取；不能执行样本或调用静态 provider |
 | `reviewer` | `review` | 指定资产的证据与知识检索；不能采集、访问网页或执行验证 |
 
-结构化报告使用进程内驱动注册到子会话的 `structured_output` 工具。启动白名单包含全局及继承工具，不包含子会话局部注册的报告工具；执行时权限检查仍允许子会话提交结构化报告。
+角色过滤在子 preset 初始化后执行，涵盖继承的原生工具和子会话局部的 `structured_output` 报告工具。Reviewer Session 保留专属 `security_review` 工具。
 
 每个子 agent 使用 fresh Session，接收角色提示词及兼容任务。[提示词与权限定义](src/workbench/roles.ts) 要求明确单一资产、问题、完成条件、时间/输出限额、证据引用、不确定性及下一步。每次工具执行都会检查角色，领域静态采集入口再次检查；仅隐藏 schema 不构成授权。子 agent 不能继续委派、执行计划、批准或共享。协调者依据报告提交候选记录。研究提示词禁止将私有样本内容发送到公共查询；尚未实现网络数据防泄漏机制。
 
@@ -86,6 +86,12 @@ Host 操作者在[示例 overlay](../../../apps/cli/config/examples/security-ana
 内置 `binary` provider 不需要外部安装。调用 `security_static`，设置 `provider: "binary"`、指定资产/环境及 `operation: "identity"`、`"hex"` 或 `"strings"`。身份查询返回实测 SHA-256 和部分 PE/ELF 头字段。十六进制与字符串参数接受字节 `offset` 和 `length`；字符串还接受 `minLength` 与 `encoding`（`ascii` 或 `utf16le`，仅提取可打印 ASCII 字符）。省略长度时取输出预算的八分之一。分页结果保留偏移和不完整标记；跨页字符串需重叠查询。这些观察不能证明文件完全有效、入口可达或存在漏洞。
 
 ### 证据与恢复
+
+`security_capture_analysis(assetId, callIds)` 将调用者自身 Session 中已提交的原生 `bash`、`pwsh` 和 `job_output` 事件保存为不可变的脚本分析日志。后台采集包含已记录的 Shell 启动及截至所选调用的已收集输出。重复选择返回同一证据。失败、裁剪、外溢或未完成状态保持明确；不会读取外溢路径。资产关联由分析者声明，日志属于辅助证据：可供发现、子报告、检索和独立复核引用，但不能单独满足完整实现证据或已批准运行时验证的要求。
+
+协调者、侦察、逆向分析和 Web 分析角色使用原生工作区工具及继承的 DSH 权限运行脚本。研究和复核角色不能执行脚本。项目停止和归档会取消跟踪的原生前台进程及所属后台任务，并等待清理。原生 Shell 取消涵盖 DSH 管理的进程树；外部服务或脱离的容器工作负载需要通过对应环境的生命周期操作清理。专用验证 provider 仍要求已批准计划。
+
+只读 `toolboxInventory` Remote 无需项目或 Session。它与 `security_environment` 共用探测逻辑，区分运行环境就绪状态和可选工具状态，并返回命令、版本、位置、诊断与检查时间。显式可执行文件配置优先于 PATH，失败时不回退。r2ghidra 通过选定的 radare2 检测；r2pipe 和 Frida 使用选定的 Python。Python 导入会验证解释器可用性，不信任 Windows 启动器占位程序。检测不会安装软件、启动容器或修改镜像。安装链接用于手动操作；工具可用不授予额外权限。`security_capabilities` 区分 provider 操作与原生 Shell 调用，并标明执行环境。
 
 provider 原始输出先保存，再提交证据引用。证据记录保留样本、工具版本、参数、来源 Session/call、完整性和批准计划。`security_evidence` 按字节分页，或按行号选取已保存的源码读取结果；分页读取原始字节。检索根据项目记录及原始证据重建 SQLite FTS，支持中文分词和标识符。共享经验必须经过用户审核，始终是参考材料，不是本项目证据。
 
@@ -134,7 +140,7 @@ Host 运行期间，配置成对的 `knowledgeProvider` 和 `knowledgeModel` 后
 
 ## Web 靶场支持
 
-./web 和 ./laboratory 插件提供批准后的 HTTP 证据采集与操作者显式管理的靶场生命周期。配置见 [Web 靶场指南](../../../docs/user/guide/security-analysis.zh.md#local-web-laboratory)，未验收或延后项见 [交付范围](../../../docs/roadmaps/security-analysis.zh.md#web-delivery-scope-2026-09-22)。版本化配方使用官方 Kali，记录已安装软件包，并以已知 yescrypt 向量检测作为构建条件。操作者可从本地 Docker 镜像库复用 `existingImage`（默认 `vxcontrol/kali-linux:latest`），不拉取或构建工具箱。复用会固定镜像 ID，在自有断网容器内检测工具，记录 yescrypt 失败而不阻塞 HTTP；缺少 Python 运行时则拒绝登记。每次复用或构建产生独立版本，升级时保留已有靶场。Nuclei 和 Metasploit 安装不会开放执行能力。
+./web 和 ./laboratory 插件提供批准后的 HTTP 证据采集与操作者显式管理的靶场生命周期。配置见 [Web 靶场指南](../../../docs/user/guide/security-analysis.zh.md#local-web-laboratory)，未验收或延后项见 [交付范围](../../../docs/roadmaps/security-analysis.zh.md#web-delivery-scope-2026-09-22)。版本化配方使用官方 Kali，记录已安装软件包，并以已知 yescrypt 向量检测作为构建条件。操作者可从本地 Docker 镜像库复用 `existingImage`（默认 `vxcontrol/kali-linux:latest`），不拉取或构建工具箱。复用会固定镜像 ID，在自有断网容器内检测工具，记录 yescrypt 失败而不阻塞 HTTP；缺少 Python 运行时则拒绝登记。每次复用或构建产生独立版本，升级时保留已有靶场。安装 Nuclei 和 Metasploit 不会增加专用 provider 接口；原生 Shell 调用遵循 DSH 权限。
 
 独立复核绑定发现内容、同目标证据和复核子 Session。完整的静态实现材料可支持独立复核后的确认或反驳；身份、版本及字符串线索不能单独确认。运行验证结论仍须具备已完成的批准计划。报告生成通过一次禁用工具的模型调用整理安全判断与覆盖，并核对每条发现的去向。报告输入区分用户请求与已保存的发现状态、已接受的复核裁决；完成静态复核不代表完成运行验证。输出可以是独立 JSON 对象，或包在单个 JSON 或未标注语言的 Markdown 代码围栏中；夹杂说明文字、多个代码块及无效报告字段均会被拒绝。Markdown 正文是简短安全报告，多余的目标发现进入可选附表；JSON 保留项目记录。`reportMaxChars` 默认以 1,200 字为写作目标，不作为硬性截断上限，`reportInputBytes` 默认 131,072，`reportOutputTokens` 默认 4,096，`reportMaxFindings` 默认五条，`reportMaxLessons` 默认三条。未配置专用模型时，报告沿用发起会话的模型。生成失败或超限时不发布报告。
 

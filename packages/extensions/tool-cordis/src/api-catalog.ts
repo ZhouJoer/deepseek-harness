@@ -1694,6 +1694,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'project identities and objectives.',
       },
       {
+        signature: '@Remote(\'toolboxInventory\') async toolboxInventory(environmentId?: string): Promise<ToolboxDirectory>',
+        description: 'Inspect installed tools without selecting a project or starting an environment.',
+        parameters: [{ name: 'environmentId', description: 'configured environment; omission selects the first local environment.' }],
+        returns: 'environment choices and current optional-tool observations.',
+      },
+      {
         signature: '@Remote(\'project\') async project(projectId: string): Promise<WorkbenchView>',
         description: 'Read a project from the authenticated operator panel.',
         parameters: [{ name: 'projectId', description: 'selected project.' }],
@@ -4802,7 +4808,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'EnvironmentManager',
-    declaration: 'export interface EnvironmentManager {\n    inspect(environment: SecurityEnvironment, signal: AbortSignal): Promise<EnvironmentStatus>;\n    start(environment: SecurityEnvironment, signal: AbortSignal): Promise<string>;\n    stop(environment: SecurityEnvironment, signal: AbortSignal): Promise<void>;\n}',
+    declaration: 'export interface EnvironmentManager {\n    inventory(environment: SecurityEnvironment, signal: AbortSignal): Promise<ToolboxInventory>;\n    inspect(environment: SecurityEnvironment, signal: AbortSignal): Promise<EnvironmentStatus>;\n    start(environment: SecurityEnvironment, signal: AbortSignal): Promise<string>;\n    stop(environment: SecurityEnvironment, signal: AbortSignal): Promise<void>;\n}',
   },
   {
     name: 'EnvironmentStatus',
@@ -5821,12 +5827,8 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type SearchResultView = SearchMatchesResultView | SearchPathsResultView;',
   },
   {
-    name: 'SecurityCommand',
-    declaration: 'export type SecurityCommand = z.infer<typeof commandSchema>;',
-  },
-  {
     name: 'SecurityController',
-    declaration: 'export class SecurityController {\n    readonly providers: ProviderRegistry<AnalysisProvider>;\n    readonly environments: ProviderRegistry<{\n        id: string;\n        manager: EnvironmentManager;\n    }>;\n    readonly laboratories: ProviderRegistry<{\n        id: string;\n        action(projectId: string, action: string, laboratoryId?: string): Promise<WorkbenchView>;\n    }>;\n    laboratoriesView(): Laboratory[];\n    async saveLaboratory(input: Laboratory): Promise<Laboratory>;\n    constructor(private readonly journal: SecurityJournal, readonly artifacts: ArtifactStore, readonly options: WorkbenchOptions, private readonly generateReport?: (prompt: string, signal: AbortSignal, sessionId: string) => Promise<string>);\n    trackDelegation(project: string, controller: AbortController, done: Promise<unknown>): () => void;\n    async manageEnvironment<T>(environmentId: string, run: (signal: AbortSignal) => Promise<T>, project: string = \'\'): Promise<T>;\n    binding(sessionId: string): SessionBinding | undefined;\n    async saveChildReport(sessionId: string, input: unknown): Promise<void>;\n    projects(includeArchived: boolean = false): Engagement[];\n    async manageProject(projectId: string, input: unknown): Promise<Engagement[]>;\n    async importMaterials(sessionId: string, input: unknown): Promise<WorkbenchView>;\n    view(sessionId: string): WorkbenchView;\n    async admitTask(sessionId: string, operationId: string, action: Extract<SecurityCommand[\'action\'], {\n        kind: \'create\';\n   /* …truncated — full shape in source */',
+    declaration: 'export class SecurityController {\n    readonly providers: ProviderRegistry<AnalysisProvider>;\n    readonly environments: ProviderRegistry<{\n        id: string;\n        manager: EnvironmentManager;\n    }>;\n    readonly laboratories: ProviderRegistry<{\n        id: string;\n        action(projectId: string, action: string, laboratoryId?: string): Promise<WorkbenchView>;\n    }>;\n    laboratoriesView(): Laboratory[];\n    async saveLaboratory(input: Laboratory): Promise<Laboratory>;\n    constructor(private readonly journal: SecurityJournal, readonly artifacts: ArtifactStore, readonly options: WorkbenchOptions, private readonly generateReport?: (prompt: string, signal: AbortSignal, sessionId: string) => Promise<string>);\n    trackDelegation(project: string, controller: AbortController, done: Promise<unknown>): () => void;\n    async manageEnvironment<T>(environmentId: string, run: (signal: AbortSignal) => Promise<T>, project: string = \'\'): Promise<T>;\n    binding(sessionId: string): SessionBinding | undefined;\n    analysisProject(sessionId: string): string | undefined;\n    async captureAnalysis(sessionId: string, assetId: string, callIds: string[], bytes: Uint8Array, signal: AbortSignal): Promise<SecurityRecord>;\n    async saveChildReport(sessionId: string, input: unknown): Promise<void>;\n    projects(includeArchived: boolean = false): Engagement[];\n    async manageProject(projectId: string, input: unknown): Promise<Engagement[]>;\n    async importMaterials(sessionId: string, input: un /* …truncated — full shape in source */',
   },
   {
     name: 'SecurityEnvironment',
@@ -6879,6 +6881,18 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'TokenUsage',
     declaration: 'export interface TokenUsage {\n    inputTokens: number;\n    outputTokens: number;\n    totalTokens?: number;\n    cacheReadTokens?: number;\n    cacheWriteTokens?: number;\n    reasoningTokens?: number;\n}',
+  },
+  {
+    name: 'ToolboxDirectory',
+    declaration: 'export interface ToolboxDirectory {\n    environments: {\n        id: string;\n        label: string;\n        kind: ToolboxInventory[\'kind\'];\n    }[];\n    inventory: ToolboxInventory;\n}',
+  },
+  {
+    name: 'ToolboxInventory',
+    declaration: 'export interface ToolboxInventory {\n    environmentId: string;\n    kind: \'local\' | \'docker\' | \'android\';\n    runtime: \'ready\' | \'stopped\' | \'unavailable\';\n    detail: string;\n    checkedAt: number;\n    containerId?: string;\n    workdir: string;\n    tools: ToolboxTool[];\n}',
+  },
+  {
+    name: 'ToolboxTool',
+    declaration: 'export interface ToolboxTool {\n    id: string;\n    category: \'runtime\' | \'reverse\' | \'device\' | \'web\' | \'utility\' | \'custom\';\n    status: \'available\' | \'missing\' | \'error\' | \'not-checked\';\n    command: string;\n    version: string;\n    location: string;\n    source: string;\n    dependency?: string;\n    detail: string;\n    installUrl: string;\n    invocation: \'shell\' | \'plugin\' | \'python\' | \'provider\';\n    provider?: string;\n}',
   },
   {
     name: 'ToolCallKind',

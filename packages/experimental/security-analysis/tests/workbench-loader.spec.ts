@@ -1,5 +1,5 @@
 /** Real Loader composition for scoped evidence, workflow, and tool enforcement. */
-import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, rm, writeFile, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -44,6 +44,22 @@ import * as Web from '../src/web-provider.ts'
 import * as Offline from '../src/offline-provider.ts'
 import * as Laboratory from '../src/laboratory.ts'
 import * as Environments from '../src/environment-local.ts'
+import LocalSubprocess from '@deepseek-ai/dsh-subprocess-local'
+import LocalFs from '@deepseek-ai/dsh-fs-local'
+import LocalBash from '@deepseek-ai/dsh-bash-local'
+import LocalPwsh from '@deepseek-ai/dsh-pwsh-local'
+import * as ShellEnv from '@deepseek-ai/dsh-shell-env'
+import * as NativeFs from '@deepseek-ai/dsh-tool-fs'
+import * as NativeBash from '@deepseek-ai/dsh-tool-bash'
+import * as NativePwsh from '@deepseek-ai/dsh-tool-pwsh'
+import SessionQuery from '@deepseek-ai/dsh-session-query'
+import AgentPresets from '@deepseek-ai/dsh-agent-presets'
+import * as NativeJobs from '@deepseek-ai/dsh-tool-jobs'
+
+class ExactQuery extends SessionQuery {
+  searchSessions(): Promise<never> { return Promise.reject(new Error('Search is outside this fixture')) }
+  searchEvents(): Promise<never> { return Promise.reject(new Error('Search is outside this fixture')) }
+}
 
 const contexts: Context[] = []
 const roots: string[] = []
@@ -54,6 +70,7 @@ afterEach(async () => {
 })
 
 class ScopeModel extends LlmAdapter {
+  nativeCalls: { name: string; args: Record<string, unknown> }[] = []
   readonly requests: GenerateOptions[] = []
   firstSkill: string | undefined
   scopeCalls = 1
@@ -70,6 +87,15 @@ class ScopeModel extends LlmAdapter {
   }
   async *stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
     this.requests.push(options)
+    const native = this.nativeCalls[this.requests.length - 1]
+    if (native) {
+      const call = { type: 'tool-call' as const, id: ToolCallId('native-' + String(this.requests.length)), name: native.name, arguments: JSON.stringify(native.args) }
+      yield { type: 'block-start', index: 0, blockType: 'tool-call' }
+      yield { type: 'tool-call-delta', index: 0, id: call.id, name: call.name, argumentsDelta: call.arguments }
+      yield { type: 'block-end', index: 0, block: call }
+      yield { type: 'finish', reason: { kind: 'tool-calls' } }
+      return
+    }
     const refinement = options.messages.flatMap(message => message.content).filter(block => block.type === 'text').map(block => block.text).find(text => text.includes('\nNotes: '))
     const report = options.messages.flatMap(message => message.content).filter(block => block.type === 'text').map(block => block.text).find(text => text.includes('Write a concise Chinese security brief'))
     if (this.usageTokens) yield { type: 'usage', usage: { inputTokens: this.usageTokens, outputTokens: 0 } }
@@ -141,7 +167,7 @@ function independentTool(ctx: Context, name: string, execute = vi.fn(async () =>
 }
 
 async function load(inheritJobTool = false, knowledgeIntervalMs = 0,
-  options: { dedicatedModel?: boolean; analysisTurnTokens?: number; skills?: boolean; taskIntake?: 'current' | 'other' } = {}) {
+  options: { dedicatedModel?: boolean; analysisTurnTokens?: number; skills?: boolean; native?: boolean; taskIntake?: 'current' | 'other' } = {}) {
   const root = await mkdtemp(join(tmpdir(), 'dsh-workbench-loader-'))
   roots.push(root)
   const model = new ScopeModel()
@@ -192,6 +218,13 @@ async function load(inheritJobTool = false, knowledgeIntervalMs = 0,
     modules.set('skills', Skills)
     modules.set('tool-skill', ToolSkill)
   }
+  if (options.native) {
+    modules.set('subprocess', LocalSubprocess)
+    modules.set('native-shell', process.platform === 'win32' ? LocalPwsh : LocalBash)
+    modules.set('native-fs', LocalFs)
+    modules.set('shell-env', ShellEnv)
+    modules.set('query', ExactQuery)
+  }
   const configPath = join(root, 'cordis.yml')
   await writeFile(
     configPath,
@@ -236,13 +269,24 @@ async function load(inheritJobTool = false, knowledgeIntervalMs = 0,
   await ctx.loader.await()
   const controller = await ctx.securityWorkbench.ready
   const presetKey = {}
-  if (inheritJobTool) {
+  if (options.native) {
+    const presets = join(root, 'presets')
+    await mkdir(join(presets, 'native'), { recursive: true })
+    await writeFile(join(presets, 'native', 'preset.yml'), 'name: Native fixture\ndescription: Native analysis tools\n')
+    ctx.loader.builtins['native-fs-tools'] = NativeFs
+    ctx.loader.builtins['native-shell-tools'] = process.platform === 'win32' ? NativePwsh : NativeBash
+    ctx.loader.builtins['native-jobs'] = NativeJobs
+    await writeFile(join(presets, 'native', 'agent.cordis.yml'), JSON.stringify(['native-fs-tools', 'native-shell-tools', 'native-jobs'].map(name => ({ id: name, name: 'cordis:' + name,
+      ...(name === 'native-jobs' ? { config: { completionDelivery: 'quiet' } } : {}) }))))
+    await ctx.plugin(AgentPresets, { default: 'native', roots: [{ path: presets, trust: 'system' }], includeShippedRoot: false, includeUserRoot: false })
+  } else if (inheritJobTool) {
     const preset = createScope(ctx.plugin(() => {}).ctx, presetKey).ctx
     await preset.plugin({ inject: ['tools'], apply(scoped: Context) { independentTool(scoped, 'job_output') } })
   }
   const { agent } = await ctx.agents.create({
     sessionId: SessionId('coordinator'),
-    ...(inheritJobTool ? { setup(agentCtx: Context) { bindScopeParent(scopeOf(agentCtx)!, presetKey) } } : {}),
+    ...(options.native ? { setup: async (agentCtx: Context) => { await ctx.agentPresets.mount(agentCtx) } }
+      : inheritJobTool ? { setup(agentCtx: Context) { bindScopeParent(scopeOf(agentCtx)!, presetKey) } } : {}),
     meta: { cwd: root },
     agentOptions: { provider: 'fixture', model: 'fixture' },
   })
@@ -270,8 +314,38 @@ function operator(controller: Awaited<Security['ready']>, agent: Agent) {
 }
 
 describe('security workbench Loader composition', () => {
+  it('writes and edits a script through native preset tools and captures the real execution log', async () => {
+    const { ctx, agent, model, controller } = await load(false, 0, { native: true })
+    const root = roots[roots.length - 1]!
+    const send = operator(controller, agent)
+    await send({ kind: 'create', title: 'Scripts', objective: 'Analyze an owned sample', environmentIds: ['local'], maxAttempts: 2 })
+    await writeFile(join(root, 'sample.bin'), 'owned fixture')
+    await send({ kind: 'import', path: join(root, 'sample.bin'), label: 'sample' })
+    const asset = controller.view(agent.id).records.find(item => item.kind === 'asset')!
+    if (asset.kind !== 'asset') throw new Error('Missing asset')
+    const python = process.env.DSH_SECURITY_NATIVE_PYTHON
+    const script = join(root, python ? 'analysis.py' : 'analysis.cjs')
+    const executable = python ?? process.execPath
+    const quote = (value: string) => "'" + value.replaceAll("'", process.platform === 'win32' ? "''" : "'\\''") + "'"
+    model.nativeCalls = [
+      { name: 'write', args: { file_path: script, content: python ? 'print(6 * 6)\n' : 'console.log(6 * 6)\n' } },
+      { name: 'edit', args: { file_path: script, old_string: '6 * 6', new_string: '6 * 7' } },
+      { name: process.platform === 'win32' ? 'pwsh' : 'bash', args: { command: (process.platform === 'win32' ? '& ' : '') + quote(executable) + ' ' + quote(script), description: 'Run the owned analysis script' } },
+      { name: 'security_capture_analysis', args: { assetId: asset.value.id, callIds: ['native-3'] } },
+    ]
+    agent.followup(webPrompt('Write and run an analysis script, then save its evidence.'))
+    await agent.whenIdle()
+    const evidence = controller.view(agent.id).records.find(item => item.kind === 'evidence' && item.value.provider === 'session-tool')
+    expect(evidence?.kind).toBe('evidence')
+    if (evidence?.kind !== 'evidence') throw new Error('Missing script evidence')
+    expect((await controller.artifacts.read(evidence.value.artifact)).toString()).toContain('42')
+    expect(ctx.tools.schemas().some(tool => tool.name === 'write')).toBe(false)
+    expect(ctx.tools.schemas(agent).some(tool => tool.name === 'write')).toBe(true)
+    await send({ kind: 'stop' })
+    expect((await execute(ctx, agent, process.platform === 'win32' ? 'pwsh' : 'bash', { command: 'echo blocked', description: 'Attempt stopped analysis' })).isError).toBe(true)
+  })
   it('persists scoped child evidence reports without requiring or creating a finding review', async () => {
-    const { ctx, agent, controller, model } = await load(true)
+    const { ctx, agent, controller, model } = await load(true, 0, { native: true })
     expect(ctx.tools.schemas().some(tool => tool.name === 'job_output')).toBe(false)
     expect(ctx.tools.get('job_output', agent)).toBeDefined()
     ctx.jobs.attachController('security-test')
@@ -309,10 +383,41 @@ describe('security workbench Loader composition', () => {
       const child = model.requests.at(-1)!
       const names = child.tools?.map(tool => tool.name)
       expect(names).toContain('structured_output')
+      expect(names?.includes('write')).toBe(role === 'reconnaissance')
+      expect(names?.includes(process.platform === 'win32' ? 'pwsh' : 'bash')).toBe(role === 'reconnaissance')
+      expect(names?.includes('security_review')).toBe(role === 'reviewer')
       expect(names).not.toContain('shell')
       expect(names).not.toContain('security_execute')
       expect(names).not.toContain('security_delegate')
     }
+  })
+
+  it.each([false, true])('cancels native processes on project stop or archive (background=%s)', async (background) => {
+    const { ctx, agent, controller } = await load(false, 0, { native: true })
+    ctx.jobs.attachController('native-test')
+    const root = roots[roots.length - 1]!
+    const send = operator(controller, agent)
+    await send({ kind: 'create', title: 'Cancellation', objective: 'Own a process', environmentIds: ['local'], maxAttempts: 1 })
+    const script = join(root, 'wait.cjs')
+    const ready = join(root, 'ready.txt')
+    await writeFile(script, `require('node:fs').writeFileSync(${JSON.stringify(ready)}, 'ready'); setInterval(() => {}, 1000);`)
+    const quote = (value: string) => "'" + value.replaceAll("'", process.platform === 'win32' ? "''" : "'\\''") + "'"
+    const name = process.platform === 'win32' ? 'pwsh' : 'bash'
+    const running = execute(ctx, agent, name, { command: (process.platform === 'win32' ? '& ' : '') + quote(process.execPath) + ' ' + quote(script),
+      description: 'Wait in the owned fixture', run_in_background: background })
+    await vi.waitFor(async () => { expect(await readFile(ready, 'utf8')).toBe('ready') }, { timeout: 10_000 })
+    if (background) {
+      expect((await running).isError).toBe(false)
+      const project = controller.binding(agent.id)!.engagementId
+      await controller.manageProject(project, { operationId: 'archive-native', expectedRevision: controller.view(agent.id).revision, action: { kind: 'archive' } })
+      expect(ctx.jobs.list(agent).every(job => job.status !== 'running' && job.status !== 'stopping')).toBe(true)
+    } else await send({ kind: 'stop' })
+    await running
+    if (background) {
+      const job = ctx.jobs.list(agent)[0]!
+      expect((await execute(ctx, agent, 'job_output', { job_id: job.id })).isError).toBe(false)
+    }
+    expect((await execute(ctx, agent, name, { command: 'echo blocked', description: 'Try stopped execution' })).isError).toBe(true)
   })
 
   it('returns one requested command envelope while preserving full help and rejecting unknown actions', async () => {

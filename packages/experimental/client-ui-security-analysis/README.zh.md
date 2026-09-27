@@ -56,6 +56,8 @@ kind: "package-reference"
 
 ## 持久安全项目
 
+工具箱无需选择项目或聊天即可加载实时分类安装清单。可选择环境、刷新清单，并通过手动安装链接补齐缺失工具。运行环境可用性与可选工具状态分别显示；靶场镜像记录标注为历史检测结果。脚本证据卡片标明辅助分析日志。参见[采集指南](../../../docs/user/guide/security-analysis.zh.md)。
+
 侧栏安全分析面板无需选择聊天即可列出项目、目标、检查、发现、复核、报告和靶场实例。工具箱页提供显式复用本地镜像和构建新镜像操作，两者都保留已有靶场的镜像标识。聊天工作台可登记已启动 Web 目标、应用独立复核和生成修订报告。两个项目视图均直接排版展示已保存的 Markdown 简报及可选发现附表。[Web 指南](../../../docs/user/guide/security-analysis.zh.md#local-web-laboratory) 说明操作流程与当前 provider 限制。
 
 <a id="model-experience"></a>

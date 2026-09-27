@@ -57,6 +57,7 @@ export function reportPrompt(records: SecurityRecord[], limits: ReportLimits): s
         item.value.provider === 'source' && item.value.operation === 'read' &&
           typeof item.value.request.path === 'string' ? [item.value.request.path] : []))
       return { assetLabel: asset.value.label, sourceFilesRead: sourceFilesRead.size,
+        auxiliaryAnalysisLogs: observed.filter(item => item.value.provider === 'session-tool').length,
         completeImplementationObservations: observed.filter(item =>
           item.value.observationKind === 'implementation' && !item.value.incomplete).length,
         inventoryObservations: observed.filter(item => item.value.observationKind === 'inventory').length,

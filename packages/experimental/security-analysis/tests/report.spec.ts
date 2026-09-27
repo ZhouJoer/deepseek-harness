@@ -72,7 +72,7 @@ it('reports imported source coverage without evidence identities or raw observat
     observationKind: 'implementation', createdAt: 1 }) })
   const prompt = reportPrompt(records, limits)
   const data = JSON.parse(prompt.split('\nData: ')[1]!) as { coverage: unknown[] }
-  expect(data.coverage).toContainEqual({ assetLabel: 'Tufty source', sourceFilesRead: 1,
+  expect(data.coverage).toContainEqual({ assetLabel: 'Tufty source', sourceFilesRead: 1, auxiliaryAnalysisLogs: 0,
     completeImplementationObservations: 1, inventoryObservations: 0, incompleteObservations: 0 })
   expect(prompt).toContain('never claim an imported asset was not provided')
   expect(prompt).not.toContain('private-observation')

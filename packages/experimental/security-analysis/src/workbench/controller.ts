@@ -28,7 +28,7 @@ import {
   type WorkbenchView,
 } from './model.ts'
 import type { SecurityJournal } from './journal.ts'
-import { canObserve, type DelegatedRole } from './roles.ts'
+import { canObserve, toolsForRole, type DelegatedRole } from './roles.ts'
 import { findingHash } from './assessment.ts'
 import { reportPrompt, renderReport, type ReportLimits } from './report.ts'
 import { importSource } from './source.ts'
@@ -208,6 +208,57 @@ export class SecurityController {
       .view()
       .records.find(item => item.kind === 'binding' && item.value.sessionId === sessionId)
     return record?.kind === 'binding' && record.value.active !== false ? record.value : undefined
+  }
+  /** Resolve native execution against the saved binding, including inactive projects.
+   * @param sessionId - executing Session.
+   * @returns active project identity, or undefined before project selection.
+   */
+  analysisProject(sessionId: string): string | undefined {
+    const view = this.journal.view()
+    const record = view.records.find(item => item.kind === 'binding' && item.value.sessionId === sessionId)
+    if (record?.kind !== 'binding') return undefined
+    const project = this.project(view, record.value.engagementId)
+    if (record.value.active === false || project.stopped || project.archived) throw new Error('Security project is inactive or stopped')
+    return project.id
+  }
+
+  /** Save caller-owned committed analysis logs as auxiliary evidence.
+   * @param sessionId - collecting Session.
+   * @param assetId - assigned target association, not an assertion that the script measured it.
+   * @param callIds - selected logged interactions.
+   * @param bytes - original Session event JSON read by the Host.
+   * @param signal - cancellation before commit.
+   * @returns immutable auxiliary evidence; no validation or implementation classification is granted.
+   */
+  async captureAnalysis(sessionId: string, assetId: string, callIds: string[], bytes: Uint8Array,
+    signal: AbortSignal): Promise<SecurityRecord> {
+    const authorize = () => {
+      const project = this.analysisProject(sessionId)
+      const binding = this.binding(sessionId)
+      if (!project || !binding || !toolsForRole(binding.role).includes('security_capture_analysis')) throw new Error('Analysis collection role required')
+      if (!this.view(sessionId).records.some(item => item.kind === 'asset' && item.value.id === assetId)) throw new Error('Asset is outside the session scope')
+      return project
+    }
+    authorize()
+    signal.throwIfAborted()
+    const requestHash = createHash('sha256').update(JSON.stringify({ assetId, callIds })).digest('hex')
+    const operationId = 'analysis:' + sessionId + ':' + requestHash
+    const artifact = await this.artifacts.put(bytes, 'application/json')
+    const input = { sessionId, assetId, callIds, artifact }
+    const committed = await this.journal.commit(operationId, undefined, input, () => {
+      signal.throwIfAborted()
+      const engagementId = authorize()
+      return [{ kind: 'evidence', value: evidenceSchema.parse({
+        id: randomUUID(), engagementId, assetId, title: 'Script analysis log',
+        summary: 'Recorded native tool interaction. Target association is analyst-declared; complete process output and runtime validation are not established.',
+        artifact, provider: 'session-tool', operation: 'analysis-log', toolVersion: 'recorded-session',
+        request: { callIds }, requestHash, source: { sessionId, callId: callIds[0], channel: 'tool' },
+        incomplete: true, createdAt: Date.now(),
+      }) }]
+    })
+    const result = committed.records.find(item => item.kind === 'evidence' && item.value.source.sessionId === sessionId && item.value.requestHash === requestHash)
+    if (!result) throw new Error('Analysis evidence was not committed')
+    return result
   }
   /** Save a validated child summary without treating it as original evidence.
    * @param sessionId - child Session bound by the Host.

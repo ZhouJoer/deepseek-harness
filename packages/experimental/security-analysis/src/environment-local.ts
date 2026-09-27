@@ -5,6 +5,8 @@ import { randomUUID } from 'node:crypto'
 import { runProcess, requireProcessSuccess } from './workbench/process.ts'
 import type { EnvironmentStatus, SecurityEnvironment } from './workbench/providers.ts'
 import type {} from './workbench/index.ts'
+import { inspectToolbox } from './toolbox.ts'
+import type { ToolboxInventory } from './toolbox-types.ts'
 
 /** Environment manager configuration. */
 export interface Config {
@@ -39,6 +41,15 @@ export class LocalEnvironmentManager {
     private readonly ctx: Context,
     private readonly config: Config,
   ) {}
+  /** Inspect optional installations separately from environment readiness.
+   * @param environment - configured world.
+   * @param signal - cancellation.
+   * @returns bounded current observations without provisioning.
+   */
+  inventory(environment: SecurityEnvironment, signal: AbortSignal): Promise<ToolboxInventory> {
+    return inspectToolbox(this.ctx, environment, { durationMs: this.config.timeoutMs,
+      maxOutputBytes: this.config.maxOutputBytes, graceMs: this.config.graceMs }, signal)
+  }
   /**
    * Inspect installed tools without provisioning them.
    * @param environment - operator configuration.
@@ -46,28 +57,10 @@ export class LocalEnvironmentManager {
    * @returns independent installation and readiness facts.
    */
   async inspect(environment: SecurityEnvironment, signal: AbortSignal): Promise<EnvironmentStatus> {
-    const tools: EnvironmentStatus['tools'] = []
+    const inventory = await this.inventory(environment, signal)
+    const tools = inventory.tools.map(tool => ({ id: tool.id, available: tool.status === 'available', version: tool.version, source: tool.source }))
     const diagnostics: string[] = []
-    for (const tool of environment.tools) {
-      try {
-        const result = await runProcess(this.ctx, environment, tool.id, tool.versionArgs, {
-          signal,
-          durationMs: this.config.timeoutMs,
-          maxOutputBytes: this.config.maxOutputBytes,
-          graceMs: this.config.graceMs,
-        })
-        requireProcessSuccess(result)
-        tools.push({
-          id: tool.id,
-          available: true,
-          version: (result.stdout || result.stderr).trim(),
-          source: tool.source,
-        })
-      } catch (error) {
-        tools.push({ id: tool.id, available: false, version: '', source: tool.source })
-        diagnostics.push(tool.id + ': ' + (error instanceof Error ? error.message : String(error)))
-      }
-    }
+    if (inventory.runtime !== 'ready') diagnostics.push(inventory.detail || 'Docker environment is stopped')
     if (environment.kind === 'android') {
       if (!environment.deviceId) diagnostics.push('Android device identity is not configured')
       else {
@@ -85,7 +78,9 @@ export class LocalEnvironmentManager {
         }
       }
     }
-    return { id: environment.id, ready: diagnostics.length === 0, diagnostics, tools }
+    const ready = diagnostics.length === 0
+    diagnostics.push(...inventory.tools.filter(tool => tool.status !== 'available').map(tool => tool.id + ': ' + (tool.detail || tool.status)))
+    return { id: environment.id, ready, diagnostics, tools }
   }
   /**
    * Start one container from the exact configured image.

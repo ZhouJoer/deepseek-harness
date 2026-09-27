@@ -6,6 +6,8 @@ The experimental [security domain](../../packages/experimental/security-analysis
 
 ## Durable records
 
+`ToolboxDirectory` contains configured environment choices and one measured `ToolboxInventory`. Its `ToolboxTool` entries separate availability, invocation method and optional provider integration. These read-only observations are not project evidence or execution authority; fields are defined in [toolbox types](../../packages/experimental/security-analysis/src/toolbox-types.ts).
+
 [Record schemas](../../packages/experimental/security-analysis/src/workbench/model.ts) define project, asset, check, evidence, finding, plan, execution and reviewed knowledge values. Each command appends one revision to the storage-domain journal. Artifact bytes are published before references. Session logs retain model-visible tool results; the domain journal owns check recovery.
 
 ## Cordis API reference
@@ -49,6 +51,12 @@ Optional security profile service; default application compositions remain indep
 /** List persistent projects, including removed projects available for restoration.
  * @returns project identities and objectives. */
 @Remote('projects') async projects(): Promise<string>
+
+/** Inspect installed tools without selecting a project or starting an environment.
+ * @param environmentId - configured environment; omission selects the first local environment.
+ * @returns environment choices and current optional-tool observations.
+ */
+@Remote('toolboxInventory') async toolboxInventory(environmentId?: string): Promise<ToolboxDirectory>
 
 /** Read a project from the authenticated operator panel.
  * @param projectId - selected project.

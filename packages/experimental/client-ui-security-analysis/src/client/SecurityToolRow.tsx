@@ -7,9 +7,10 @@ import css from './SecurityToolRow.module.css'
 /** Registered workbench tool names and their localized actions. */
 export const securityToolNames = ['security_scope', 'security_capabilities', 'security_help', 'security_search',
   'security_static', 'security_evidence', 'security_command', 'security_execute', 'security_delegate',
-  'security_review', 'security_environment'] as const
+  'security_review', 'security_environment', 'security_capture_analysis'] as const
 
 const labels: Record<string, SecurityKey> = {
+  security_capture_analysis: 'toolCaptureAnalysis',
   security_scope: 'toolScope', security_capabilities: 'toolCapabilities', security_help: 'toolHelp',
   security_search: 'toolSearch', security_static: 'toolStatic', security_evidence: 'toolEvidence',
   security_command: 'toolCommand', security_execute: 'toolExecute', security_delegate: 'toolDelegate',

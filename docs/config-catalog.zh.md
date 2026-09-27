@@ -836,6 +836,8 @@ export interface Config {
 ```ts config-catalog
 /** Explicit host locations and operational limits. */
 export interface WorkbenchConfig {
+  /** Explicit workspace resource mappings for automatic intake of Web user tasks. */
+  taskIntake?: TaskIntakeConfig | undefined
   /** Absolute Host directory for ownership, immutable artifacts and the derived search index. */
   root: string
   /** Absolute directories whose real paths may contain imported samples. */
@@ -850,7 +852,7 @@ export interface WorkbenchConfig {
   maxOutputBytes: number
   /** Maximum complete JSON bytes in one model-facing tool response. */
   modelResultBytes: number
-  /** Maximum Unicode characters in the reader-facing report body. */
+  /** Target Unicode characters for the reader-facing report body. */
   reportMaxChars: number
   /** Maximum bytes supplied to the report model. */
   reportInputBytes: number
@@ -880,6 +882,14 @@ export interface WorkbenchConfig {
   knowledgeProvider?: string
   /** Optional dedicated refinement model; on-demand calls inherit the initiating Agent model when omitted. */
   knowledgeModel?: string
+}
+
+/** Presence enables intake only for the listed workspace directories. */
+export interface TaskIntakeConfig {
+  /** Exact workspace directories and their allowed analysis environments. */
+  workspaces: TaskIntakeWorkspace[]
+  /** Maximum validation attempts assigned to a newly created task. */
+  maxAttempts: number
 }
 
 /** An explicit local execution world; container images never silently change. */
@@ -934,6 +944,14 @@ export interface SecurityEnvironment {
   }
 }
 
+/** Host-owned resource selection for one exact workspace directory. */
+export interface TaskIntakeWorkspace {
+  /** Absolute workspace directory eligible for automatic security task creation. */
+  cwd: string
+  /** Configured analysis environments available to tasks in this workspace. */
+  environmentIds: string[]
+}
+
 /** Operator-configured tool location. */
 export interface ToolInstallation {
   /** Provider-facing tool identity within one environment. */
@@ -947,7 +965,7 @@ export interface ToolInstallation {
 }
 ```
 
-来源： [`packages/experimental/security-analysis/src/index.ts:35`](../packages/experimental/security-analysis/src/index.ts)
+来源： [`packages/experimental/security-analysis/src/index.ts:41`](../packages/experimental/security-analysis/src/index.ts)
 
 <a id="deepseek-aidsh-experimental-tool-agent-team"></a>
 

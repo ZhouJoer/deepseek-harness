@@ -3,6 +3,14 @@ import { describe, expect, it } from 'vitest'
 import { canObserve, delegationPrompt, resolveTask, toolsForRole } from '../src/workbench/roles.ts'
 
 describe('security role assignments', () => {
+  it('exposes native coding and job collection only to collecting roles', () => {
+    for (const role of ['coordinator', 'reconnaissance', 'reverse-analyst', 'web-analyst'] as const)
+      for (const tool of ['bash', 'pwsh', 'write', 'edit', 'read', 'glob', 'grep', 'job_output', 'job_kill', 'security_capture_analysis'])
+        expect(toolsForRole(role)).toContain(tool)
+    for (const role of ['researcher', 'reviewer'] as const)
+      for (const tool of ['bash', 'pwsh', 'write', 'security_capture_analysis']) expect(toolsForRole(role)).not.toContain(tool)
+    expect(toolsForRole('reviewer')).toContain('security_review')
+  })
   it('gives research network lookup and confines reviewers to existing evidence', () => {
     expect(toolsForRole('researcher')).toContain('web_search')
     expect(toolsForRole('reviewer')).not.toContain('web_fetch')

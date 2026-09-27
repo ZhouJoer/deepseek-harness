@@ -52,7 +52,7 @@ export function environmentPath(environment: SecurityEnvironment, path: string):
  * @param environment - selected working directory and tool paths.
  * @param toolId - operator-registered executable.
  * @param args - provider-resolved argv, not a shell program.
- * @param limits - cancellation, timeout and output limits.
+ * @param limits - cancellation, timeout and output limits; read-only inventory disables container shutdown on abort.
  * @param input - optional protocol input on stdin.
  * @returns output and independent termination facts.
  */
@@ -61,7 +61,7 @@ export async function runProcess(
   environment: SecurityEnvironment,
   toolId: string,
   args: string[],
-  limits: { signal: AbortSignal; durationMs: number; maxOutputBytes: number; graceMs: number },
+  limits: { signal: AbortSignal; durationMs: number; maxOutputBytes: number; graceMs: number; stopContainerOnAbort?: boolean },
   input?: string,
 ): Promise<ProcessResult> {
   const tool = installation(environment, toolId)
@@ -124,7 +124,7 @@ export async function runProcess(
       handle.terminate()
       await handle.done
       if (!(await handle.waitForExit())) throw new Error('Tool process did not reach quiescence')
-      if (signal.aborted && environment.kind === 'docker' && toolId !== 'docker' && environment.containerId) {
+      if (signal.aborted && limits.stopContainerOnAbort !== false && environment.kind === 'docker' && toolId !== 'docker' && environment.containerId) {
         const cleanup = await runProcess(ctx, environment, 'docker', ['kill', environment.containerId], {
           ...limits,
           signal: new AbortController().signal,

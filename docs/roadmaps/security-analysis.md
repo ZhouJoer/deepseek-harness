@@ -66,7 +66,7 @@ Real Windows Frida completion/cancellation and local Docker lifecycle have been 
 | P0 | Android static and dynamic closure | Authorized device/emulator, adb, JADX and Frida prerequisites | Link Manifest components, Java/Kotlin methods and JNI modules; exercise device loss, module mismatch and incomplete decompilation; complete four stages for an owned APK |
 | P0 | Durable independent review and delegation acceptance | Existing role bindings and evidence records | Persist review decisions linked to evidence/version; execute fresh children through the real preset; reject foreign evidence, role escalation and incompatible tasks; retain reviewer Session links |
 | P0 | Complete evidence and recovery lifecycle | Provider lifecycle hooks and artifact storage | Preserve raw observations during helper failure/output floods; reconcile persisted process/container ownership; never replay spawn/injection after restart; prove cancellation leaves external processes running |
-| P1 | Rich tool management in the workbench | Host inventory and capability/health results | Display install declarations, measured versions, role permissions, readiness failures and lease ownership separately; add reviewed installation recipes and compatibility checks without arbitrary model shell |
+| P1 | Rich tool management in the workbench | Live environment inventory, manual installation links and native script tools under DSH permissions | Add compatibility checks and environment lease visibility |
 | P1 | Workbench completion and usability | Authoritative domain state and generated Remote | Show delegation summaries, evidence offsets, reference links, review status and live progress; test stop/reconnect/reconcile; record GIF from real service and model |
 | P1 | Knowledge quality and retrieval | Project evidence and reviewed shared experience | Add structured relation filters, multilingual identifier/address cases, scoped rebuild tests and source-version review; shared experience cannot become project evidence implicitly |
 | P2 | Web security project extension | Reusable provider/role/task registration and isolated environment | Deliver allowlisted target import, entry-point mapping and approved bounded verification in an owned test application; reuse evidence and approval lifecycle |
@@ -94,7 +94,7 @@ Tool additions must include a consumer-visible capability, bounded execution, en
 ## Release acceptance
 
 1. Complete the four stages for owned Android APK/DEX/JNI, Windows PE and Linux ELF samples, including confirmed, refuted and inconclusive findings. Record exact tool/runtime versions and raw evidence.
-2. Reject program switching, PID reuse, stale approval, changed scripts, foreign assets, child escalation and raw shell/PTC/MCP bypass through actual execution entry points.
+2. Reject program switching, PID reuse, stale approval, changed validation scripts, foreign evidence and child escalation through actual execution entry points; verify native scripts obey inherited DSH permissions.
 3. Exercise disconnects, target exit, script errors, cancellation, floods, cleanup failure and Host restart. Verify no side-effect replay and visible uncertainty after failed cleanup.
 4. Run real Loader/profile tests, keyless Session snapshots, persistence-type checks, build/type/document checks, and browser workflows. Report external-tool simulation separately from real-environment results.
 5. Publish only environment combinations actually exercised; list outstanding limitations and attach a real-service, real-model Web GIF to any GUI PR.

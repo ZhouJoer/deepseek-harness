@@ -2,6 +2,16 @@
 export const NS = 'security-workbench'
 /** Chinese operator-facing security copy. */
 export const zh = {
+  toolbox: '逆向工具箱',
+  toolDiagnostics: '完整版本与诊断',
+  toolDedicatedInterface: '已有专用分析接口（配置与审批另行检查）：',
+  toolboxHelp: '查看所选环境的常用工具。工具需手动安装；检测不会安装软件或启动容器。Shell 调用遵循当前 DSH 权限，专用分析接口另有执行规则。',
+  toolAvailable: '可用', toolMissing: '未找到', toolProbeError: '检测失败', toolUnchecked: '未检查',
+  toolRuntime: '脚本运行时', toolReverse: '逆向与静态分析', toolDevice: '设备工具', toolWeb: 'Web 工具', toolUtility: '辅助工具', toolCustom: '自定义工具',
+  toolViaShell: '通过原生 Shell 调用', toolViaPlugin: '通过 radare2 插件调用', toolViaPython: '通过选定 Python 导入', toolViaProvider: '通过专用分析接口调用',
+  toolInspecting: '正在检测工具…', toolRuntimeReady: '运行环境可用', toolRuntimeStopped: '容器未启动，尚未检测其中的工具', toolRuntimeUnavailable: '运行环境无法访问',
+  toolCheckedAt: '检测时间：', toolDependency: '依赖：', toolDependencyMissing: '依赖不可用，尚未检查', toolConfigurationRequired: '需要配置安装路径或专用接口',
+  toolInstallGuide: '手动安装说明', toolHistoricalInventory: '镜像登记时的工具记录（非当前检测）', toolCaptureAnalysis: '保存脚本分析证据',
   addMaterials: '添加材料',
   materialsHint: '选择文件或文件夹，也可以直接粘贴需要分析的文字。添加后，在对话中说明分析目标。',
   chooseFiles: '选择文件',
@@ -66,6 +76,7 @@ export const zh = {
   readSource: '按行读取',
   searchSource: '搜索源码',
   staticObservation: '静态观察',
+  scriptAnalysisLog: '脚本分析日志（辅助证据）',
   offlineSimulation: '离线模拟',
   deviceObservation: '设备验证',
   webLabel: 'Web 目标名称',
@@ -240,6 +251,16 @@ export const zh = {
 export type SecurityKey = keyof typeof zh
 /** English operator-facing security copy. */
 export const en: Record<SecurityKey, string> = {
+  toolbox: 'Reverse engineering toolbox',
+  toolDiagnostics: 'Full version and diagnostics',
+  toolDedicatedInterface: 'Dedicated analysis interface (configuration and approval checked separately):',
+  toolboxHelp: 'Inspect common tools in the selected environment. Install tools manually; inspection does not install software or start containers. Shell calls use current DSH permissions; dedicated analysis providers have separate execution rules.',
+  toolAvailable: 'Available', toolMissing: 'Not found', toolProbeError: 'Inspection failed', toolUnchecked: 'Not checked',
+  toolRuntime: 'Script runtimes', toolReverse: 'Reverse and static analysis', toolDevice: 'Device tools', toolWeb: 'Web tools', toolUtility: 'Utilities', toolCustom: 'Custom tools',
+  toolViaShell: 'Call through native Shell', toolViaPlugin: 'Call through the radare2 plugin', toolViaPython: 'Import through the selected Python', toolViaProvider: 'Call through the dedicated provider',
+  toolInspecting: 'Inspecting tools…', toolRuntimeReady: 'Runtime available', toolRuntimeStopped: 'Container stopped; its tools have not been checked', toolRuntimeUnavailable: 'Runtime unavailable',
+  toolCheckedAt: 'Checked at:', toolDependency: 'Dependency:', toolDependencyMissing: 'Dependency unavailable; not checked', toolConfigurationRequired: 'Configure the installation or dedicated provider',
+  toolInstallGuide: 'Manual installation guide', toolHistoricalInventory: 'Tools recorded when the image was registered (not a current inspection)', toolCaptureAnalysis: 'Save script analysis evidence',
   addMaterials: 'Add materials',
   materialsHint: 'Choose files or a folder, or paste text to analyze. Then describe your analysis goal in the conversation.',
   chooseFiles: 'Choose files',
@@ -304,6 +325,7 @@ export const en: Record<SecurityKey, string> = {
   readSource: 'Read lines',
   searchSource: 'Search source',
   staticObservation: 'Static observation',
+  scriptAnalysisLog: 'Script analysis log (auxiliary evidence)',
   offlineSimulation: 'Offline simulation',
   deviceObservation: 'Device validation',
   webLabel: 'Web target name',

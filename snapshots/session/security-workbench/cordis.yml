@@ -1,3 +1,9 @@
+- id: tool-bash
+  disabled: false
+
+- id: tool-pwsh
+  disabled: true
+
 - id: agent-default-model
   name: '@deepseek-ai/dsh-agent-default-model'
   config:

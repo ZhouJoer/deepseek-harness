@@ -1,6 +1,7 @@
 /** Environment and analysis providers used by the security service. @module */
 import type { ArtifactStore } from './artifacts.ts'
 import type { AnalysisOperation, Asset } from './model.ts'
+import type { ToolboxInventory } from '../toolbox-types.ts'
 
 /** Operator-configured tool location. */
 export interface ToolInstallation {
@@ -176,6 +177,8 @@ export class ProviderRegistry<T extends { id: string }> {
 
 /** Operator-facing environment lifecycle implemented outside the domain owner. */
 export interface EnvironmentManager {
+  /** @param environment - configured world. @param signal - cancellation. @returns optional tool inventory and runtime health. */
+  inventory(environment: SecurityEnvironment, signal: AbortSignal): Promise<ToolboxInventory>
   /** @param environment - configured world. @param signal - cancellation. @returns health details. */
   inspect(environment: SecurityEnvironment, signal: AbortSignal): Promise<EnvironmentStatus>
   /** @param environment - configured world. @param signal - cancellation. @returns owned runtime identity. */

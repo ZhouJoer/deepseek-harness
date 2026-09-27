@@ -89,6 +89,11 @@ it('keeps task intake and operator tools in the launched profile and resolves it
       moduleName: '@deepseek-ai/dsh-tool-skill',
       enabled: true,
     })
+    for (const [entryId, moduleName] of [
+      ['tool-fs', '@deepseek-ai/dsh-tool-fs'], ['tool-fs-search', '@deepseek-ai/dsh-tool-fs-search'],
+      ['tool-bash', '@deepseek-ai/dsh-tool-bash'], ['tool-pwsh', '@deepseek-ai/dsh-tool-pwsh'],
+    ]) expect(composition?.rows).toContainEqual(expect.objectContaining({ entryId, moduleName,
+      enabled: entryId === 'tool-bash' ? process.platform !== 'win32' : entryId === 'tool-pwsh' ? process.platform === 'win32' : true }))
   } finally {
     await ctx.fiber.dispose()
     await rm(cwd, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 })

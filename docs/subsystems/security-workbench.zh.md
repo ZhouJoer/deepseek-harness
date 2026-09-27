@@ -6,6 +6,8 @@
 
 ## 持久化记录
 
+`ToolboxDirectory` 包含已配置的环境选项和一份实测 `ToolboxInventory`。其中的 `ToolboxTool` 条目分别描述可用性、调用方式和可选 provider 集成。这些只读观察不属于项目证据或执行权限；字段定义见[工具箱类型](../../packages/experimental/security-analysis/src/toolbox-types.ts)。
+
 [记录 schema](../../packages/experimental/security-analysis/src/workbench/model.ts)定义项目、资产、检查、证据、发现、计划、执行和已审核经验。每个命令向 storage-domain 日志追加一个修订，制品字节先于引用发布。Session 日志保留模型可见的工具结果；领域日志负责检查恢复。
 
 ## Cordis API 参考
@@ -49,6 +51,12 @@ Optional security profile service; default application compositions remain indep
 /** List persistent projects, including removed projects available for restoration.
  * @returns project identities and objectives. */
 @Remote('projects') async projects(): Promise<string>
+
+/** Inspect installed tools without selecting a project or starting an environment.
+ * @param environmentId - configured environment; omission selects the first local environment.
+ * @returns environment choices and current optional-tool observations.
+ */
+@Remote('toolboxInventory') async toolboxInventory(environmentId?: string): Promise<ToolboxDirectory>
 
 /** Read a project from the authenticated operator panel.
  * @param projectId - selected project.

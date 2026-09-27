@@ -841,6 +841,7 @@ export function Workbench(props: WorkbenchProps) {
                           {item.kind === 'evidence' ? (
                             <>
                               <p>{item.value.summary}</p>
+                              {item.value.operation === 'analysis-log' && <p>{t('scriptAnalysisLog')}</p>}
                               {item.value.method && <p>{t(item.value.method === 'static' ? 'staticObservation' : item.value.method === 'simulation' ? 'offlineSimulation' : 'deviceObservation')}</p>}
                               {item.value.provider === 'source' && <code>{JSON.stringify(item.value.request)}</code>}
                               {item.value.failure && <p className={css.error}>{item.value.failure}</p>}

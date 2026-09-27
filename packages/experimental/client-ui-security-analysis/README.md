@@ -56,6 +56,8 @@ This package composes capabilities through a profile patch or input dock slot. I
 
 ## Persistent security projects
 
+The toolbox loads live categorized installations without a selected project or conversation. Select an environment, refresh its inventory and follow manual installation links for missing tools. Runtime availability and optional tool status are separate; laboratory image records are labeled historical observations. Script evidence cards identify auxiliary analysis logs. See the [collection guide](../../../docs/user/guide/security-analysis.md).
+
 The sidebar Security analysis panel lists projects, targets, checks, findings, reviews, reports and laboratory generations without requiring a selected conversation. The toolbox page offers explicit local-image reuse and new-image builds; both preserve existing laboratory image identities. The conversation workbench registers running Web targets, applies independent reviews and generates revision reports. Both project views render saved Markdown briefs and optional findings appendices directly. The [Web guide](../../../docs/user/guide/security-analysis.md#local-web-laboratory) describes the workflow and current provider limits.
 
 <a id="model-experience"></a>

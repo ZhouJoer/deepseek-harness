@@ -2,12 +2,6 @@
   config:
     mode: native
 
-- id: tool-bash
-  disabled: true
-
-- id: tool-pwsh
-  disabled: true
-
 - id: tool-subagent
   disabled: true
 

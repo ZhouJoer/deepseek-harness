@@ -34,7 +34,7 @@ This bundle ships disabled and must be selected explicitly. Compose `@deepseek-a
 <details>
 <summary>Implementation details</summary>
 
-The Host patch mounts domain services and dedicated providers. The exported plugin supplies the Web profile with a security-only preset roster: jobs, goal, todo, on-demand security methods, web lookup and compaction accompany domain tools, while shell, filesystem mutation, PTC and arbitrary MCP tools are absent. Role permissions remain in the domain service. Default profiles and agent-loop are unchanged. No invariant companion is published because this package owns disposable composition registrations; the domain owns business state.
+The Host patch mounts domain services and dedicated providers. The security preset includes native file reading, writing, editing and search, PowerShell on Windows or Bash on POSIX, jobs, goal, todo, security methods, web lookup and compaction. The coordinator and collecting roles can run workspace scripts under inherited DSH permissions; research and reviewer roles retain evidence-only access. Delegation composes the parent's preset before applying the child's role filter. Default profiles and agent-loop are unchanged. No invariant companion is published because this package owns disposable composition registrations; the domain owns business state.
 
 </details>
 

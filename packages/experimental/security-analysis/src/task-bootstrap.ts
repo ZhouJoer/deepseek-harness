@@ -5,13 +5,17 @@ import type { SecurityCommand } from './workbench/controller.ts'
 
 /** Host-owned resource selection for one exact workspace directory. */
 export interface TaskIntakeWorkspace {
+  /** Absolute workspace directory eligible for automatic security task creation. */
   cwd: string
+  /** Configured analysis environments available to tasks in this workspace. */
   environmentIds: string[]
 }
 
 /** Presence enables intake only for the listed workspace directories. */
 export interface TaskIntakeConfig {
+  /** Exact workspace directories and their allowed analysis environments. */
   workspaces: TaskIntakeWorkspace[]
+  /** Maximum validation attempts assigned to a newly created task. */
   maxAttempts: number
 }
 

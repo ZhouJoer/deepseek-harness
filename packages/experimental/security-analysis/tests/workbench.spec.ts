@@ -72,6 +72,42 @@ async function harness(generateReport?: (prompt: string, signal: AbortSignal) =>
 }
 
 describe('security workbench', () => {
+  it('stores auxiliary script evidence idempotently and rejects foreign assets and stopped projects', async () => {
+    const { controller, assetId, send, artifacts } = await harness()
+    const bytes = Buffer.from('[{"call":"python analysis.py","result":"observed"}]')
+    const signal = new AbortController().signal
+    const first = await controller.captureAnalysis('parent', assetId, ['script-call'], bytes, signal)
+    expect(await controller.captureAnalysis('parent', assetId, ['script-call'], bytes, signal)).toEqual(first)
+    if (first.kind !== 'evidence') throw new Error('Evidence required')
+    expect(first.value).toMatchObject({ provider: 'session-tool', incomplete: true, source: { sessionId: 'parent', callId: 'script-call' } })
+    expect(first.value.method).toBeUndefined()
+    expect(first.value.planId).toBeUndefined()
+    expect(await artifacts.read(first.value.artifact)).toEqual(bytes)
+    await expect(controller.captureAnalysis('parent', 'foreign', ['script-call'], bytes, signal)).rejects.toThrow('scope')
+    await controller.bindChild('parent', 'reviewer', [assetId], 'reviewer')
+    await expect(controller.captureAnalysis('reviewer', assetId, ['call'], bytes, signal)).rejects.toThrow('role')
+    await controller.saveChildReport('reviewer', { summary: 'Script log reviewed', evidenceIds: [first.value.id],
+      uncertainty: 'No complete implementation evidence', nextSteps: ['Inspect the implementation'] })
+    await send({ kind: 'finding', finding: { assetId, title: 'Script hypothesis', explanation: 'Script observation requires confirmation',
+      conditions: 'Unverified input conditions', evidenceIds: [first.value.id], status: 'suspected', review: '' } })
+    const finding = controller.view('parent').records.find(item => item.kind === 'finding')!
+    if (finding.kind !== 'finding') throw new Error('Finding required')
+    const review = { findingId: finding.value.id, findingHash: findingHash(finding.value), basis: 'static' as const,
+      supportingEvidenceIds: [first.value.id], opposingEvidenceIds: [], explanation: 'The log alone cannot establish implementation behavior',
+      uncertainty: 'Implementation coverage missing' }
+    const proposed = await controller.review('reviewer', { ...review, verdict: 'confirmed' })
+    const confirmation = proposed.records.find(item => item.kind === 'review')!
+    if (confirmation.kind !== 'review') throw new Error('Review required')
+    await expect(send({ kind: 'conclude', reviewId: confirmation.value.id })).rejects.toThrow()
+    const reviewed = await controller.review('reviewer', { ...review, verdict: 'inconclusive' })
+    const assessment = reviewed.records.findLast(item => item.kind === 'review')!
+    if (assessment.kind !== 'review') throw new Error('Review required')
+    await send({ kind: 'conclude', reviewId: assessment.value.id })
+    await send({ kind: 'report' })
+    expect(controller.view('parent').records.some(item => item.kind === 'report')).toBe(true)
+    await send({ kind: 'stop' }, true)
+    await expect(controller.captureAnalysis('parent', assetId, ['next'], bytes, signal)).rejects.toThrow('stopped')
+  })
   it('removes projects reversibly, detaches their sessions and preserves their assets', async () => {
     const { controller, journal, send } = await harness()
     const id = controller.binding('parent')!.engagementId
