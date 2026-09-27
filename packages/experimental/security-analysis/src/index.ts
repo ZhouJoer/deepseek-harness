@@ -901,14 +901,18 @@ export default class SecurityWorkbench extends TypertRemoteService {
     const controller = await this.ready
     if (agent.session.header.origin === 'subagent') throw new Error('Delegated sessions cannot import operator materials')
     const request = z.object({ operationId: z.string().min(1), expectedRevision: z.number().int().nonnegative(),
-      material: z.unknown(), title: z.string().trim().min(1), objective: z.string().trim().min(1),
+      material: z.unknown().optional(), title: z.string().trim().min(1), objective: z.string().trim().min(1),
+      resources: z.object({ environmentIds: z.array(z.string().min(1)).min(1),
+        maxAttempts: z.number().int().positive() }).strict().optional(),
     }).strict().parse(JSON.parse(input))
     const config = this.intakeConfig(agent.session.header.cwd)
     const workspace = config?.workspaces.find(item => agent.session.header.cwd !== undefined
       && workspaceKey(item.cwd) === workspaceKey(agent.session.header.cwd))
+    const resources = request.resources ?? (workspace && config
+      ? { environmentIds: workspace.environmentIds, maxAttempts: config.maxAttempts } : undefined)
     return controller.importMaterials(agent.id, { operationId: request.operationId, expectedRevision: request.expectedRevision,
-      material: request.material, ...(workspace && config ? { task: { title: request.title, objective: request.objective,
-        environmentIds: workspace.environmentIds, maxAttempts: config.maxAttempts } } : {}) })
+      material: request.material, ...(resources ? { task: { title: request.title, objective: request.objective,
+        ...resources } } : {}) })
   }
 
   /** List persistent projects, including removed projects available for restoration.

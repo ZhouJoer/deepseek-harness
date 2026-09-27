@@ -8,12 +8,14 @@ import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { SecurityCommand, WorkbenchView } from '@deepseek-ai/dsh-experimental-security-analysis/client'
 import type { NS, SecurityKey } from './locales.ts'
 import css from './Workbench.module.css'
+import { AnalysisStart } from './AnalysisStart.tsx'
 import { MaterialPanel } from './MaterialPanel.tsx'
 import { ProjectManagement, projectLabel } from './ProjectManagement.tsx'
 import { KnowledgePanel } from './KnowledgePanel.tsx'
 
 /** Service actions injected by the Cordis browser plugin. */
 export interface WorkbenchActions {
+  sendAnalysis(sessionId: SessionId, objective: string): Promise<void>
   /** Re-pull authoritative records after a new connection generation. */
   subscribeReset(this: void, listener: () => void): () => void
   manageProject(projectId: string, input: string): Promise<string>
@@ -332,8 +334,8 @@ export function Workbench(props: WorkbenchProps) {
               )}
               {busy > 0 && <p role="status">{t('loading')}</p>}
               <div className={css.body}>
-                {(tab === 'overview' || tab === 'assets') && <MaterialPanel key={sessionId + (project?.value.id ?? '')} t={t}
-                  disabled={busy > 0 || Boolean(project?.value.stopped) || (!project && !workspace?.configured)}
+                {project && (tab === 'overview' || tab === 'assets') && <MaterialPanel key={sessionId + project.value.id} t={t}
+                  disabled={busy > 0 || project.value.stopped}
                   limits={configuration.materialLimits}
                   submit={async (material, title) => {
                     setBusy(count => count + 1)
@@ -412,27 +414,30 @@ export function Workbench(props: WorkbenchProps) {
                         </details>}
                       </>
                     ) : (
-                      <section className={css.taskSummary}>
-                        <span className={css.eyebrow}>{t('taskStart')}</span>
-                        <h2>{t('startInConversation')}</h2>
-                        <p>{t('conversationTaskHint')}</p>
-                        <p className={css.summaryHint}>{t('workspaceSetupHint')}</p>
-                        <p className={css.summaryHint}>{t('leftProjectHint')}</p>
-                        {workspace && (workspace.configured ? (
-                          <div className={css.resourceSummary}>
-                            <strong>{t('workspaceResources')}</strong>
-                            <p>{workspace.environmentIds.length > 0
-                              ? workspace.environmentIds.map(id => configuration.environments.find(item => item.id === id)?.label ?? id).join(', ')
-                              : t('workspaceIntakeDisabled')}</p>
-                            <details><summary>{t('editWorkspaceResources')}</summary>{workspaceControls}</details>
-                          </div>
-                        ) : workspaceControls)}
-                        <button className={css.primaryAction} onClick={() => { setOpen(false) }}>{t('backToConversation')}</button>
-                      </section>
+                      <>
+                        <AnalysisStart key={sessionId} t={t} disabled={busy > 0 || running}
+                          limits={configuration.materialLimits} environments={configuration.environments}
+                          prepare={async (input) => {
+                            await props.importMaterials(sessionId, JSON.stringify({
+                              operationId: input.operationId, expectedRevision: view.revision,
+                              material: input.material, title: input.title, objective: input.objective,
+                              resources: { environmentIds: [input.environmentId], maxAttempts: workspace?.maxAttempts ?? 3 },
+                            }))
+                          }}
+                          send={async (objective) => {
+                            if (activeSession.current !== sessionId) throw new Error(t('analysisSessionChanged'))
+                            await props.sendAnalysis(sessionId, objective)
+                          }}
+                          started={() => { if (activeSession.current === sessionId) setOpen(false) }} />
+                        <button onClick={() => { setOpen(false) }}>{t('backToConversation')}</button>
+                      </>
                     )}
                     <details className={css.secondaryDetails}>
                       <summary>{t('manualSetup')}</summary>
-                      {project && workspaceControls}
+                      <p>{t('leftProjectHint')}</p>
+                      {workspace && <details><summary>{t('editWorkspaceResources')}</summary>
+                        {workspace.configured && workspace.environmentIds.length === 0 && <p>{t('workspaceIntakeDisabled')}</p>}
+                        {workspaceControls}</details>}
                       <div className={css.form}>
                         {select('project', (configuration.projects ?? []).map(item => ({ id: item.id, label: item.title })))}
                         <button disabled={busy > 0 || !draft.project}

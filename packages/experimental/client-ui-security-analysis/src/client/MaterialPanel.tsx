@@ -15,6 +15,7 @@ export type MaterialSelection = { kind: 'text'; name: string; text: string }
 export function MaterialPanel(props: PropsLocale<typeof NS> & {
   disabled: boolean
   limits: { bytes: number; entries: number } | undefined
+  onBusyChange?(busy: boolean): void
   submit(material: MaterialSelection, title: string): Promise<void>
 }) {
   const { t } = props
@@ -27,13 +28,13 @@ export function MaterialPanel(props: PropsLocale<typeof NS> & {
   const disabled = props.disabled || busy
   type Prepared = { material: MaterialSelection; title: string }
   const submit = async (prepare: () => Prepared | Promise<Prepared>) => {
-    setBusy(true); setError('')
+    setBusy(true); props.onBusyChange?.(true); setError('')
     try {
       const selected = await prepare()
       await props.submit(selected.material, selected.title)
       setText(''); setPath(''); setName('')
     } catch (error) { setError(error instanceof Error ? error.message : String(error)) }
-    finally { setBusy(false) }
+    finally { setBusy(false); props.onBusyChange?.(false) }
   }
   const upload = (files: File[], directory: boolean) => submit(async () => {
     const limits = props.limits

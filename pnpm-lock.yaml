@@ -6608,6 +6608,9 @@ importers:
 
   packages/experimental/client-ui-security-analysis:
     devDependencies:
+      '@deepseek-ai/dsh-api-session-controller':
+        specifier: workspace:^
+        version: link:../../api/session-controller
       '@deepseek-ai/cordis':
         specifier: workspace:^
         version: link:../../../vendor/cordis

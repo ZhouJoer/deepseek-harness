@@ -1,6 +1,7 @@
 /** Mount the generated security Remote contribution and localized workbench. @module */
 import securityRemote from '@deepseek-ai/dsh-experimental-security-analysis/remote'
 import type {} from '@deepseek-ai/dsh-client-connection/client'
+import type {} from '@deepseek-ai/dsh-api-session-controller/client'
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
@@ -21,7 +22,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
   }
 }
 /** Services required to mount security RPC and the input dock. */
-export const inject = ['remote', 'slots', 'locale']
+export const inject = ['remote', 'slots', 'locale', 'sessions']
 
 async function unwrap<T>(pending: Promise<RemoteResult<T>>): Promise<T> {
   const result = await pending
@@ -52,6 +53,11 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     scoped.slots.inject('main', () => scoped.slots.register({ name: 'main', key: panel, locale: NS, inject: () => projectActions }, Projects))
     scoped.slots.inject('sidebar.panellist', () => scoped.slots.register({ name: 'sidebar.panellist', id: panel, order: 30, label: () => scoped.locale.bind(NS)('title'), locale: NS }, ProjectIcon))
     const actions: WorkbenchActions = {
+      sendAnalysis: async (id, objective) => {
+        const session = scoped.sessions.binding(id)?.session
+        if (!session) throw new Error(scoped.locale.bind(NS)('analysisSessionChanged'))
+        await unwrap(session.prompt([{ type: 'text', text: objective }], 'queue'))
+      },
       manageProject: (id, input) => unwrap(remote.manageProject(id, input)),
       importMaterials: (id, input) => unwrap(remote.importMaterials(id, input)),
       subscribeReset: listener => scoped.on('connection/reset', listener),

@@ -318,7 +318,7 @@ export class SecurityController {
    */
   async importMaterials(sessionId: string, input: unknown): Promise<WorkbenchView> {
     const request = z.object({ operationId: text, expectedRevision: z.number().int().nonnegative(),
-      material: materialInputSchema,
+      material: materialInputSchema.optional(),
       task: actions.options[0].omit({ kind: true }).optional(),
     }).strict().parse(input)
     await this.journal.commit(request.operationId, request.expectedRevision, { sessionId, material: request }, async (view) => {
@@ -329,8 +329,9 @@ export class SecurityController {
       if (!project || !('stopped' in project))
         throw new Error('Select a workspace and configure its resources before adding materials')
       if (project.stopped || project.archived) throw new Error('Project is stopped')
-      const materials = await prepareMaterials(this.artifacts, request.material,
-        { bytes: this.options.maxArtifactBytes, entries: this.options.maxDerivedAssets })
+      if (!request.material && created.length === 0) throw new Error('Select materials to add to the existing task')
+      const materials = request.material ? await prepareMaterials(this.artifacts, request.material,
+        { bytes: this.options.maxArtifactBytes, entries: this.options.maxDerivedAssets }) : []
       const assets = materials.map(material => assetSchema.parse({ ...material, id: randomUUID(), engagementId: project.id }))
       const records: SecurityRecord[] = [...created]
       for (const asset of assets) records.push(...await this.importedRecords(asset))

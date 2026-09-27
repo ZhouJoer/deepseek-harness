@@ -501,6 +501,36 @@ describe('security workbench Loader composition', () => {
     expect(controller.projects()).toEqual([project])
   })
 
+  it.each([false, true])('prepares an explicit analysis without workspace setup (material: %s)', async (withMaterial) => {
+    const { ctx, agent, controller } = await load(false, 1)
+    const objective = 'Explain the supplied code without executing it.'
+    const input = JSON.stringify({ operationId: 'explicit-analysis', expectedRevision: controller.view(agent.id).revision,
+      title: 'Sample analysis', objective, resources: { environmentIds: ['local'], maxAttempts: 3 },
+      ...(withMaterial ? { material: { kind: 'text', name: 'sample.py', text: 'print(42)' } } : {}) })
+    const prepared = await ctx.securityWorkbench.importMaterials(agent, input)
+    expect(await ctx.securityWorkbench.importMaterials(agent, input)).toEqual(prepared)
+    expect(controller.projects()).toHaveLength(1)
+    expect(prepared.records.filter(item => item.kind === 'asset')).toHaveLength(withMaterial ? 1 : 0)
+    agent.followup(webPrompt(objective))
+    await agent.whenIdle()
+    expect(controller.projects()).toHaveLength(1)
+    const result = agent.session.snapshotEvents().find(event => event.type === 'tool/result')
+    expect(JSON.stringify(result)).toContain('Sample analysis')
+    expect(agent.session.snapshotEvents().filter(event => event.type === 'user/message')
+      .some(event => JSON.stringify(event).includes(objective))).toBe(true)
+    expect(controller.projects()[0]).toMatchObject({ title: 'Sample analysis', objective, environmentIds: ['local'] })
+    expect(JSON.parse(await ctx.securityWorkbench.configuration(agent))).toMatchObject({ workspace: { configured: false } })
+  })
+
+  it('rejects an unknown environment before creating an explicit task', async () => {
+    const { ctx, agent, controller } = await load(false, 0)
+    await expect(ctx.securityWorkbench.importMaterials(agent, JSON.stringify({ operationId: 'invalid-environment',
+      expectedRevision: controller.view(agent.id).revision, title: 'Sample', objective: 'Inspect sample',
+      resources: { environmentIds: ['unknown'], maxAttempts: 3 },
+    }))).rejects.toThrow('Unknown environment')
+    expect(controller.projects()).toEqual([])
+  })
+
   it.each(['disabled', 'unmapped'] as const)('starts a task after saving resources for a %s workspace', async (mapping) => {
     const { ctx, agent, controller, model } = await load(false, 0, mapping === 'unmapped' ? { taskIntake: 'other' } : {})
     expect(JSON.parse(await ctx.securityWorkbench.configuration(agent))).toMatchObject({

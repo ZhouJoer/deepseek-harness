@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Describe a security task in chat and review its findings, evidence and reports. Configure resources once per workspace. The optional panel retains ordinary conversation and tool cards; detailed assets, checks, environments and review controls are available when needed. The security domain checks authority for every action. External tools require separate configuration.
+Choose material, describe an objective and start an analysis with the local environment selected. Tasks, findings, evidence and reports are saved automatically. The optional panel retains ordinary conversation and tool cards; detailed assets, checks, environments and review controls are available when needed. The security domain checks authority for every action. External tools require separate configuration.
 
 ## Table of Contents
 
@@ -19,7 +19,7 @@ Describe a security task in chat and review its findings, evidence and reports. 
 - [Model Experience](#model-experience)
 - [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
 
-Choose **Add materials** in the task overview to upload files or a folder, paste text, or import a Host path. Types are detected automatically. The first import can create a project from the saved workspace resources; imported names appear in the overview. **Manage project** renames or removes a project. Removal stops work and hides the project while retaining evidence and reports; the sidebar’s **Removed projects** list offers restoration. Restored projects remain paused until explicitly resumed. Long selection labels are shortened, with full names retained in tooltips.
+Choose **Add materials** in the task overview to upload files or a folder, paste text, or import a Host path. Types are detected automatically. New analysis stages the selection until Start analysis creates the task and saves its materials; imported names appear in the overview. **Manage task** renames or removes a project. Removal stops work and hides the project while retaining evidence and reports; the sidebar’s **Removed tasks** list offers restoration. Restored projects remain paused until explicitly resumed. Long selection labels are shortened, with full names retained in tooltips.
 
 -----
 
@@ -28,7 +28,7 @@ Choose **Add materials** in the task overview to upload files or a folder, paste
 
 Compose `@deepseek-ai/dsh-base`, an application bundle, and `@deepseek-ai/dsh-experimental-security-profile` in a dedicated profile. For Web, append `@deepseek-ai/dsh-experimental-security-web-profile`. Launch through `dsh --profile <name>`. See [security analysis](../security-analysis/README.md).
 
-Open Security analysis above the message composer, including in a new empty Session. Select the workspace resources and save them, then describe the task in chat. The default tabs show the task overview, findings, evidence and reports. The overview distinguishes confirmed findings, pending review and blocked work. Expand detailed controls for manual project selection, assets, checks, environments, reviews and knowledge. Leaving a project preserves its records and disables automatic intake for that Session. Project stop waits for cleanup; refresh after a disconnect to reload authoritative state.
+Open Security analysis above the message composer, including in a new empty Session. Choose optional material, enter an objective and select Start analysis. No task name or workspace resource setup is required. More options selects a different environment; without a local environment, choose one explicitly. The objective enters the native conversation after the task and materials are saved. A failed send can be retried without another import. The default tabs show the task overview, findings, evidence and reports. The overview distinguishes confirmed findings, pending review and blocked work. Advanced settings retain manual task selection and workspace resources; detailed tabs retain assets, checks, environments, reviews and knowledge. Leaving a project preserves its records and disables automatic intake for that Session. Project stop waits for cleanup; refresh after a disconnect to reload authoritative state.
 
 -----
 
@@ -58,7 +58,7 @@ This package composes capabilities through a profile patch or input dock slot. I
 
 The toolbox loads live categorized installations without a selected project or conversation. Select an environment, refresh its inventory and follow manual installation links for missing tools. Runtime availability and optional tool status are separate; laboratory image records are labeled historical observations. Script evidence cards identify auxiliary analysis logs. See the [collection guide](../../../docs/user/guide/security-analysis.md).
 
-The sidebar Security analysis panel lists projects, targets, checks, findings, reviews, reports and laboratory generations without requiring a selected conversation. The toolbox page offers explicit local-image reuse and new-image builds; both preserve existing laboratory image identities. The conversation workbench registers running Web targets, applies independent reviews and generates revision reports. Both project views render saved Markdown briefs and optional findings appendices directly. The [Web guide](../../../docs/user/guide/security-analysis.md#local-web-laboratory) describes the workflow and current provider limits.
+The sidebar Security analysis panel lists projects, targets, checks, findings, reviews, reports and laboratory generations without requiring a selected conversation. Advanced details in the history page offer explicit local-image reuse and new-image builds; both preserve existing laboratory image identities. The conversation workbench registers running Web targets, applies independent reviews and generates revision reports. Both project views render saved Markdown briefs and optional findings appendices directly. The [Web guide](../../../docs/user/guide/security-analysis.md#local-web-laboratory) describes the workflow and current provider limits.
 
 <a id="model-experience"></a>
 
@@ -68,7 +68,7 @@ The sidebar Security analysis panel lists projects, targets, checks, findings, r
 
 #### What the model sees
 
-This package supplies no direct model input; `security_scope` belongs to the domain service. Domain tools record model-visible results in the Session.
+Start analysis submits the user’s objective as a native conversation message; `security_scope` belongs to the domain service. Domain tools record model-visible results in the Session.
 
 #### Token effect
 
