@@ -45,7 +45,12 @@ import { refineKnowledge, refinementPrompt } from './workbench/knowledge.ts'
 /** Explicit host locations and operational limits. */
 export interface WorkbenchConfig {
   /** Shared UI/CLI installation file for one local environment. */
-  toolConfiguration?: { path: string; environmentId: string } | undefined
+  toolConfiguration?: {
+    /** Absolute JSON path for local executable overrides. */
+    path: string
+    /** Local environment receiving these executable overrides. */
+    environmentId: string
+  } | undefined
   /** Host-selected default and per-workspace resources for automatic Web task intake. */
   taskIntake?: TaskIntakeConfig | undefined
   /** Absolute Host directory for ownership, immutable artifacts and the derived search index. */
@@ -1231,7 +1236,25 @@ export default class SecurityWorkbench extends TypertRemoteService {
   @Remote('artifact')
   async artifact(agent: Agent, sha256: string): Promise<string> {
     const controller = await this.ready
-    const records = controller.view(agent.id).records
+    return this.readArtifact(controller.view(agent.id).records, sha256)
+  }
+  /** Read coordinator references without changing project or Session state.
+   * @param projectId - existing project identifier.
+   * @returns active coordinator IDs, subject to the client's accessible Session directory. */
+  @Remote('projectSessions')
+  async projectSessions(projectId: string): Promise<SessionId[]> {
+    return (await this.ready).projectSessions(projectId).map(id => brandString<SessionId>(id))
+  }
+  /** Read project-owned artifact content for the authenticated operator.
+   * @param projectId - project whose records establish artifact ownership.
+   * @param sha256 - digest of a referenced artifact.
+   * @returns digest-verified text with the configured output limit. */
+  @Remote('projectArtifact')
+  async projectArtifact(projectId: string, sha256: string): Promise<string> {
+    return this.readArtifact((await this.ready).projectView(projectId).records, sha256)
+  }
+  private async readArtifact(records: WorkbenchView['records'], sha256: string): Promise<string> {
+    const controller = await this.ready
     const entry = records.find(
       item =>
         ((item.kind === 'asset' || item.kind === 'evidence' || item.kind === 'legacy') && 'artifact' in item.value &&

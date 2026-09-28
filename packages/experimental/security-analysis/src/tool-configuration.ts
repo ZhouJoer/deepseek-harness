@@ -25,7 +25,8 @@ export class LocalToolConfiguration {
     this.defaults = structuredClone(environment.tools)
     this.refresh()
   }
-  /** Reload edits without retaining removed overrides. @returns the applied installation map. */
+  /** Reload edits without retaining removed overrides.
+   * @returns the applied installation map. */
   refresh(): Record<string, SecurityToolPin> {
     const pins = readSecurityTools(this.path)
     const tools = new Map(this.defaults.map(tool => [tool.id, tool]))
@@ -33,7 +34,8 @@ export class LocalToolConfiguration {
     this.environment.tools = [...tools.values()]
     return pins
   }
-  /** @returns configured values and a revision for operator edits. */
+  /** Read the current editable installation configuration.
+   * @returns configured values and a revision for operator edits. */
   read(): ToolboxConfiguration {
     const pins = this.refresh()
     const ids = new Set([...toolboxCatalog.filter(tool => tool.commands.length).map(tool => tool.id),

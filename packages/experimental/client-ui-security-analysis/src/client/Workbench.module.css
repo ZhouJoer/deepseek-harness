@@ -269,3 +269,5 @@
 .toolFilePicker code { overflow-wrap: anywhere; }
 .toolFileList { display: grid; gap: 4px; max-height: 300px; overflow: auto; }
 .toolFileList button { text-align: left; overflow-wrap: anywhere; padding: 7px 10px; }
+
+.taskSummary .taskActions .primaryAction { background: var(--dsw-alias-link); border-color: transparent; color: var(--dsw-alias-label-primary-inverted); }

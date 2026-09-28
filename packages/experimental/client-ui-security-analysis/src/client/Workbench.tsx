@@ -35,7 +35,7 @@ export interface WorkbenchActions {
 /** Framework-derived input dock props. */
 export type WorkbenchProps = Pick<PropsRuntime<'conversation.input.dock'>, 'sessionId' | 'useSession'> &
   PropsLocale<typeof NS> &
-  WorkbenchActions
+  WorkbenchActions & { autoOpen?: boolean }
 type Tab = 'overview' | 'assets' | 'checks' | 'findings' | 'environments' | 'knowledge' | 'evidence' | 'reviews' | 'reports'
 interface Configuration {
   materialLimits?: { bytes: number; entries: number }
@@ -57,7 +57,7 @@ const ids = (text: string): string[] =>
 export function Workbench(props: WorkbenchProps) {
   const { sessionId, t } = props
   const running = props.useSession(snapshot => snapshot.running)
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useState(props.autoOpen ?? false)
   const [tab, setTab] = useState<Tab>('overview')
   const [view, setView] = useState<WorkbenchView>({ revision: 0, records: [] })
   const [configuration, setConfiguration] = useState<Configuration>({ environments: [], providers: [] })
@@ -76,7 +76,7 @@ export function Workbench(props: WorkbenchProps) {
   activeSession.current = sessionId
   useEffect(() => {
     generation.current++
-    setOpen(false)
+    setOpen(props.autoOpen ?? false)
     setView({ revision: 0, records: [] })
     setConfiguration({ environments: [], providers: [] })
     setDraft({})
@@ -106,6 +106,7 @@ export function Workbench(props: WorkbenchProps) {
       setConfiguration(JSON.parse(config) as Configuration)
     }
   }
+  useEffect(() => { if (props.autoOpen) void perform(load) }, [sessionId, props.autoOpen])
   useEffect(() => {
     const previous = priorActivity.current
     priorActivity.current = { sessionId, running, open }
@@ -261,7 +262,7 @@ export function Workbench(props: WorkbenchProps) {
   ])
   return (
     <>
-      <div className={css.launcher}>
+      {!props.autoOpen && <div className={css.launcher}>
         <button
           className={css.launchButton}
           aria-haspopup="dialog"
@@ -277,7 +278,7 @@ export function Workbench(props: WorkbenchProps) {
           setTab('overview'); setOpen(true); void perform(load)
         }}>{t('startWithMaterials')}</button>
         <span className={css.launchHint}>{t('workflowHint')}</span>
-      </div>
+      </div>}
       {open && (
         <section className={css.panel} role="dialog" aria-label={t('title')}>
           <header className={css.header}>

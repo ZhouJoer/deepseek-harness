@@ -883,6 +883,15 @@ export class SecurityController {
     return { revision: view.revision, records: view.records.filter(item => item.kind !== 'binding' &&
       (item.kind === 'engagement' ? item.value.id : item.value.engagementId) === projectId) }
   }
+  /** Read active coordinator bindings without opening or rebinding a Session.
+   * @param projectId - existing project identifier.
+   * @returns coordinator IDs; clients intersect their accessible Session directory. */
+  projectSessions(projectId: string): string[] {
+    const view = this.journal.view()
+    this.project(view, projectId)
+    return view.records.flatMap(item => item.kind === 'binding' && item.value.engagementId === projectId &&
+      item.value.role === 'coordinator' && item.value.active !== false ? [item.value.sessionId] : [])
+  }
   private requireBinding(view: WorkbenchView, sessionId: string): SessionBinding {
     const record = view.records.find(item => item.kind === 'binding' && item.value.sessionId === sessionId)
     if (record?.kind !== 'binding' || record.value.active === false) throw new Error('Select a security project first')

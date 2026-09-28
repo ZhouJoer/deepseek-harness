@@ -1700,6 +1700,24 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'environment choices and current optional-tool observations.',
       },
       {
+        signature: '@Remote(\'toolboxConfiguration\') toolboxConfiguration(environmentId: string): ToolboxConfiguration',
+        description: 'Read editable tool settings independently of a project or conversation.',
+        parameters: [{ name: 'environmentId', description: 'selected environment.' }],
+        returns: 'saved values and the revision required for edits.',
+      },
+      {
+        signature: '@Remote(\'configureTool\') async configureTool(environmentId: string, input: string): Promise<ToolboxConfigurationResult>',
+        description: 'Probe or save a tool selected by the authenticated operator.',
+        parameters: [{ name: 'environmentId', description: 'configured local environment.' }, { name: 'input', description: 'JSON action, tool ID, executable, argv and observed revision.' }],
+        returns: 'measured status and committed settings; failed probes never save.',
+      },
+      {
+        signature: '@Remote(\'toolboxFiles\') async toolboxFiles(environmentId: string, directory?: string): Promise<ToolboxFiles>',
+        description: 'Browse files on the Host for an explicit tool-selection gesture.',
+        parameters: [{ name: 'environmentId', description: 'editable local environment.' }, { name: 'directory', description: 'absolute directory; omission opens the environment working directory.' }],
+        returns: 'bounded file choices; choosing a file does not execute or upload it.',
+      },
+      {
         signature: '@Remote(\'project\') async project(projectId: string): Promise<WorkbenchView>',
         description: 'Read a project from the authenticated operator panel.',
         parameters: [{ name: 'projectId', description: 'selected project.' }],
@@ -1770,6 +1788,18 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Preview an artifact belonging to the selected project.',
         parameters: [{ name: 'agent', description: 'authenticated session.' }, { name: 'sha256', description: 'content digest.' }],
         returns: 'bounded bytes rendered as text.',
+      },
+      {
+        signature: '@Remote(\'projectSessions\') async projectSessions(projectId: string): Promise<SessionId[]>',
+        description: 'Read coordinator references without changing project or Session state.',
+        parameters: [{ name: 'projectId', description: 'existing project identifier.' }],
+        returns: 'active coordinator IDs, subject to the client\'s accessible Session directory.',
+      },
+      {
+        signature: '@Remote(\'projectArtifact\') async projectArtifact(projectId: string, sha256: string): Promise<string>',
+        description: 'Read project-owned artifact content for the authenticated operator.',
+        parameters: [{ name: 'projectId', description: 'project whose records establish artifact ownership.' }, { name: 'sha256', description: 'digest of a referenced artifact.' }],
+        returns: 'digest-verified text with the configured output limit.',
       },
     ],
   },
@@ -4808,7 +4838,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'EnvironmentManager',
-    declaration: 'export interface EnvironmentManager {\n    inventory(environment: SecurityEnvironment, signal: AbortSignal): Promise<ToolboxInventory>;\n    inspect(environment: SecurityEnvironment, signal: AbortSignal): Promise<EnvironmentStatus>;\n    start(environment: SecurityEnvironment, signal: AbortSignal): Promise<string>;\n    stop(environment: SecurityEnvironment, signal: AbortSignal): Promise<void>;\n}',
+    declaration: 'export interface EnvironmentManager {\n    inventory(environment: SecurityEnvironment, signal: AbortSignal, toolIds?: readonly string[]): Promise<ToolboxInventory>;\n    inspect(environment: SecurityEnvironment, signal: AbortSignal): Promise<EnvironmentStatus>;\n    start(environment: SecurityEnvironment, signal: AbortSignal): Promise<string>;\n    stop(environment: SecurityEnvironment, signal: AbortSignal): Promise<void>;\n}',
   },
   {
     name: 'EnvironmentStatus',
@@ -6883,8 +6913,24 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface TokenUsage {\n    inputTokens: number;\n    outputTokens: number;\n    totalTokens?: number;\n    cacheReadTokens?: number;\n    cacheWriteTokens?: number;\n    reasoningTokens?: number;\n}',
   },
   {
+    name: 'ToolboxConfiguration',
+    declaration: 'export interface ToolboxConfiguration {\n    editable: boolean;\n    revision: string;\n    tools: ToolboxInstallation[];\n}',
+  },
+  {
+    name: 'ToolboxConfigurationResult',
+    declaration: 'export interface ToolboxConfigurationResult {\n    saved: boolean;\n    tool: ToolboxTool | null;\n    configuration: ToolboxConfiguration;\n}',
+  },
+  {
     name: 'ToolboxDirectory',
     declaration: 'export interface ToolboxDirectory {\n    environments: {\n        id: string;\n        label: string;\n        kind: ToolboxInventory[\'kind\'];\n    }[];\n    inventory: ToolboxInventory;\n}',
+  },
+  {
+    name: 'ToolboxFiles',
+    declaration: 'export interface ToolboxFiles {\n    directory: string;\n    parent: string;\n    roots: string[];\n    entries: {\n        name: string;\n        path: string;\n        directory: boolean;\n    }[];\n    truncated: boolean;\n}',
+  },
+  {
+    name: 'ToolboxInstallation',
+    declaration: 'export interface ToolboxInstallation {\n    id: string;\n    command: string;\n    prefixArgs: string[];\n    versionArgs: string[];\n    saved: boolean;\n}',
   },
   {
     name: 'ToolboxInventory',
@@ -6892,7 +6938,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ToolboxTool',
-    declaration: 'export interface ToolboxTool {\n    id: string;\n    category: \'runtime\' | \'reverse\' | \'device\' | \'web\' | \'utility\' | \'custom\';\n    status: \'available\' | \'missing\' | \'error\' | \'not-checked\';\n    command: string;\n    version: string;\n    location: string;\n    source: string;\n    dependency?: string;\n    detail: string;\n    installUrl: string;\n    invocation: \'shell\' | \'plugin\' | \'python\' | \'provider\';\n    provider?: string;\n}',
+    declaration: 'export interface ToolboxTool {\n    id: string;\n    category: \'runtime\' | \'reverse\' | \'device\' | \'web\' | \'utility\' | \'custom\';\n    status: \'available\' | \'missing\' | \'error\' | \'not-checked\';\n    command: string;\n    prefixArgs?: string[];\n    version: string;\n    location: string;\n    source: string;\n    dependency?: string;\n    detail: string;\n    installUrl: string;\n    invocation: \'shell\' | \'plugin\' | \'python\' | \'provider\';\n    provider?: string;\n}',
   },
   {
     name: 'ToolCallKind',
@@ -6952,7 +6998,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ToolInstallation',
-    declaration: 'export interface ToolInstallation {\n    id: string;\n    command: string;\n    versionArgs: string[];\n    source: string;\n}',
+    declaration: 'export interface ToolInstallation {\n    id: string;\n    command: string;\n    prefixArgs?: string[];\n    versionArgs: string[];\n    source: string;\n}',
   },
   {
     name: 'ToolMessageSource',

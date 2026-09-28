@@ -58,6 +58,26 @@ Optional security profile service; default application compositions remain indep
  */
 @Remote('toolboxInventory') async toolboxInventory(environmentId?: string): Promise<ToolboxDirectory>
 
+/** Read editable tool settings independently of a project or conversation.
+ * @param environmentId - selected environment.
+ * @returns saved values and the revision required for edits.
+ */
+@Remote('toolboxConfiguration') toolboxConfiguration(environmentId: string): ToolboxConfiguration
+
+/** Probe or save a tool selected by the authenticated operator.
+ * @param environmentId - configured local environment.
+ * @param input - JSON action, tool ID, executable, argv and observed revision.
+ * @returns measured status and committed settings; failed probes never save.
+ */
+@Remote('configureTool') async configureTool(environmentId: string, input: string): Promise<ToolboxConfigurationResult>
+
+/** Browse files on the Host for an explicit tool-selection gesture.
+ * @param environmentId - editable local environment.
+ * @param directory - absolute directory; omission opens the environment working directory.
+ * @returns bounded file choices; choosing a file does not execute or upload it.
+ */
+@Remote('toolboxFiles') async toolboxFiles(environmentId: string, directory?: string): Promise<ToolboxFiles>
+
 /** Read a project from the authenticated operator panel.
  * @param projectId - selected project.
  * @returns project records without Session authority. */
@@ -148,9 +168,20 @@ Optional security profile service; default application compositions remain indep
  * @returns bounded bytes rendered as text.
  */
 @Remote('artifact') async artifact(agent: Agent, sha256: string): Promise<string>
+
+/** Read coordinator references without changing project or Session state.
+ * @param projectId - existing project identifier.
+ * @returns active coordinator IDs, subject to the client's accessible Session directory. */
+@Remote('projectSessions') async projectSessions(projectId: string): Promise<SessionId[]>
+
+/** Read project-owned artifact content for the authenticated operator.
+ * @param projectId - project whose records establish artifact ownership.
+ * @param sha256 - digest of a referenced artifact.
+ * @returns digest-verified text with the configured output limit. */
+@Remote('projectArtifact') async projectArtifact(projectId: string, sha256: string): Promise<string>
 ```
 
-Types: [Agent](core.md)
+Types: [Agent](core.md) · [SessionId](core.md)
 
 Source: [`packages/experimental/security-analysis/src/index.ts`](../../packages/experimental/security-analysis/src/index.ts)
 <!-- END GENERATED cordis-surface -->

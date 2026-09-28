@@ -1318,3 +1318,28 @@ it.each(['guard', 'outer-pre-execute'] as const)(
     expect(controller.binding(agent.id)).toBeUndefined()
   },
 )
+
+it('reads project artifacts and coordinator IDs without writes, rejecting foreign artifacts and inactive bindings', async () => {
+  const { ctx, agent, controller } = await load()
+  const send = operator(controller, agent)
+  await send({ kind: 'create', title: 'First', objective: 'Inspect owned material', environmentIds: ['local'], maxAttempts: 3 })
+  const first = controller.binding(agent.id)!.engagementId
+  await controller.importMaterials(agent.id, { operationId: 'first-material', expectedRevision: controller.view(agent.id).revision,
+    material: { kind: 'text', name: 'owned.txt', text: 'owned' } })
+  const asset = controller.projectView(first).records.find(item => item.kind === 'asset')!
+  if (asset.kind !== 'asset' || !('artifact' in asset.value)) throw new Error('Expected artifact')
+  await controller.bindChild(agent.id, 'reviewer', [asset.value.id], 'reviewer')
+  const before = controller.projectView(first)
+  const events = agent.session.snapshotEvents()
+  expect(await ctx.securityWorkbench.projectSessions(first)).toEqual([agent.id])
+  expect(JSON.parse(await ctx.securityWorkbench.projectArtifact(first, asset.value.artifact.sha256))).toMatchObject({ truncated: false })
+  expect(controller.projectView(first)).toEqual(before)
+  expect(agent.session.snapshotEvents()).toEqual(events)
+  await expect(ctx.securityWorkbench.projectSessions('unknown')).rejects.toThrow('Unknown')
+  await send({ kind: 'create', title: 'Second', objective: 'Separate material', environmentIds: ['local'], maxAttempts: 3 })
+  const second = controller.binding(agent.id)!.engagementId
+  await expect(ctx.securityWorkbench.projectArtifact(second, asset.value.artifact.sha256)).rejects.toThrow('outside')
+  expect(await ctx.securityWorkbench.projectSessions(first)).toEqual([])
+  await send({ kind: 'leave' })
+  expect(await ctx.securityWorkbench.projectSessions(second)).toEqual([])
+})

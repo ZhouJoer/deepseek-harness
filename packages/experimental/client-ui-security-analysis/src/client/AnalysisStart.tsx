@@ -56,12 +56,13 @@ export function AnalysisStart(props: AnalysisStartProps) {
   return <section className={css.taskSummary}>
     <h2>{t('newAnalysis')}</h2><p>{t('simpleStartHint')}</p>
     <p className={css.summaryHint}>{t('analysisRecordHint')}</p>
+    <label className={css.field}>{t('analysisRequest')}<textarea rows={3} value={objective} disabled={locked}
+      placeholder={t('analysisRequestHint')} onChange={(event) => { setObjective(event.target.value) }} /></label>
     {selection ? <p role="status">{t('selectedMaterial')} {selection.title}
       <button disabled={locked} onClick={() => { setSelection(undefined) }}>{t('removeSelection')}</button></p>
       : <MaterialPanel t={t} disabled={locked} limits={props.limits} onBusyChange={setSelecting}
         submit={(material, title) => { setSelection({ material, title }); return Promise.resolve() }} />}
-    <label className={css.field}>{t('analysisRequest')}<textarea rows={3} value={objective} disabled={locked}
-      placeholder={t('analysisRequestHint')} onChange={(event) => { setObjective(event.target.value) }} /></label>
+
     {props.environments.length === 0 ? !props.disabled && <p role="alert" className={css.error}>{t('noAnalysisEnvironment')}</p> : <>
       <p className={css.summaryHint}>{environmentId
         ? `${t('runOn')} ${props.environments.find(item => item.id === environmentId)?.label ?? environmentId}` : t('chooseAnalysisEnvironment')}</p>

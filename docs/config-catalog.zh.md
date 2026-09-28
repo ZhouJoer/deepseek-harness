@@ -836,6 +836,13 @@ export interface Config {
 ```ts config-catalog
 /** Explicit host locations and operational limits. */
 export interface WorkbenchConfig {
+  /** Shared UI/CLI installation file for one local environment. */
+  toolConfiguration?: {
+    /** Absolute JSON path for local executable overrides. */
+    path: string
+    /** Local environment receiving these executable overrides. */
+    environmentId: string
+  } | undefined
   /** Host-selected default and per-workspace resources for automatic Web task intake. */
   taskIntake?: TaskIntakeConfig | undefined
   /** Absolute Host directory for ownership, immutable artifacts and the derived search index. */
@@ -962,6 +969,8 @@ export interface ToolInstallation {
   id: string
   /** Host executable or executable path inside the selected container. */
   command: string
+  /** Interpreter or launcher arguments prepended to every invocation, including version queries. */
+  prefixArgs?: string[]
   /** Fixed arguments for reporting the installed version, without a shell. */
   versionArgs: string[]
   /** Operator-recorded origin of the installation. */
@@ -969,7 +978,7 @@ export interface ToolInstallation {
 }
 ```
 
-来源： [`packages/experimental/security-analysis/src/index.ts:43`](../packages/experimental/security-analysis/src/index.ts)
+来源： [`packages/experimental/security-analysis/src/index.ts:46`](../packages/experimental/security-analysis/src/index.ts)
 
 <a id="deepseek-aidsh-experimental-tool-agent-team"></a>
 

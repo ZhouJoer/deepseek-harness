@@ -10,19 +10,31 @@ import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import type { MainPanelId } from '@deepseek-ai/dsh-client-ui-layout/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
-import { Projects, ProjectIcon, type ProjectActions } from './Projects.tsx'
+import { ProjectIcon, type ProjectActions } from './Projects.tsx'
 import { SecurityToolRow, securityToolNames } from './SecurityToolRow.tsx'
-import { Workbench, type WorkbenchActions } from './Workbench.tsx'
+import type { WorkbenchActions } from './Workbench.tsx'
+import { selectCoordinator } from './session-selection.ts'
+import { Dashboard, DashboardLauncher, type DashboardActions } from './Dashboard.tsx'
+import { DashboardSession, type DashboardSessionInput } from './DashboardSession.tsx'
+import { randomUUID } from '@deepseek-ai/dsh-util-crypto'
+import type {} from '@deepseek-ai/dsh-client-ui-workspace/client'
 import { NS, zh, en, type SecurityKey } from './locales.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
+  interface SlotMap {
+    /** Retained coordinator Session hosted within the security task detail. */
+    'security.workbench.session': { kind: 'single'; scope: 'session'; owner: DashboardSessionInput }
+  }
   interface LocaleNamespaceMap {
     /** Security workbench operator-facing copy. */
     'security-workbench': SecurityKey
   }
 }
+declare module '@deepseek-ai/dsh-api-session-controller/client' {
+  interface SessionReferenceSourceMap { securityWorkbench: unknown }
+}
 /** Services required to mount security RPC and the input dock. */
-export const inject = ['remote', 'slots', 'locale', 'sessions']
+export const inject = ['remote', 'slots', 'locale', 'sessions', 'layout', 'workspaces']
 
 async function unwrap<T>(pending: Promise<RemoteResult<T>>): Promise<T> {
   const result = await pending
@@ -53,7 +65,6 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       subscribeReset: listener => scoped.on('connection/reset', listener),
     }
     const panel = 'security-projects' as MainPanelId
-    scoped.slots.inject('main', () => scoped.slots.register({ name: 'main', key: panel, locale: NS, inject: () => projectActions }, Projects))
     scoped.slots.inject('sidebar.panellist', () => scoped.slots.register({ name: 'sidebar.panellist', id: panel, order: 30, label: () => scoped.locale.bind(NS)('title'), locale: NS }, ProjectIcon))
     const actions: WorkbenchActions = {
       sendAnalysis: async (id, objective) => {
@@ -76,18 +87,50 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       artifact: (id, hash) => unwrap(remote.artifact(id, hash)),
       report: (project, id, format) => unwrap(remote.report(project, id, format)),
     }
-    scoped.slots.inject('conversation.input.dock', () =>
-      scoped.slots.register(
-        {
-          name: 'conversation.input.dock',
-          id: 'security-workbench',
-          order: 30,
-          locale: NS,
-          inject: () => actions,
-        },
-        Workbench,
-      ),
-    )
+    const dashboardActions: DashboardActions = {
+      ...projectActions,
+      projectArtifact: (id, hash) => unwrap(remote.projectArtifact(id, hash)),
+      findSession: async (projectId) => {
+        const [ids] = await Promise.all([unwrap(remote.projectSessions(projectId)), scoped.sessions.refresh()])
+        const directory = scoped.sessions.list.getSnapshot()
+        const archived = scoped.workspaces.list.getSnapshot().archivedSessionIds
+        return selectCoordinator(ids, directory, archived)
+      },
+      createSession: workspaceId => scoped.sessions.create({ workspaceId }),
+      retainSession: id => scoped.sessions.retain(id, { source: 'securityWorkbench' }),
+      associateSession: async (id, projectId) => {
+        await scoped.sessions.using(id, { source: 'securityWorkbench' }, async () => {
+          const view = await unwrap(remote.project(projectId))
+          await unwrap(remote.command(id, JSON.stringify({ operationId: randomUUID(), expectedRevision: view.revision,
+            action: { kind: 'select', engagementId: projectId } })))
+        })
+      },
+      stopProject: async (id) => {
+        await scoped.sessions.using(id, { source: 'securityWorkbench' }, async () => {
+          const view = await unwrap(remote.view(id))
+          await unwrap(remote.command(id, JSON.stringify({ operationId: randomUUID(), expectedRevision: view.revision, action: { kind: 'stop' } })))
+        })
+      },
+      resumeProject: async (id) => {
+        await scoped.sessions.using(id, { source: 'securityWorkbench' }, async () => {
+          const view = await unwrap(remote.view(id))
+          await unwrap(remote.command(id, JSON.stringify({ operationId: randomUUID(), expectedRevision: view.revision, action: { kind: 'resume' } })))
+        })
+      },
+      createWorkspace: async path => (await scoped.workspaces.create({ path })).workspaceId,
+    }
+    scoped.slots.inject('main', () => scoped.slots.register({
+      name: 'main', key: panel, locale: NS,
+      children: { 'security.workbench.session': { kind: 'single', scope: 'session' } },
+      inject: () => dashboardActions,
+    }, Dashboard))
+    scoped.slots.inject('security.workbench.session', () => scoped.slots.register({
+      name: 'security.workbench.session', locale: NS, inject: () => actions,
+    }, DashboardSession))
+    scoped.slots.inject('conversation.input.dock', () => scoped.slots.register({
+      name: 'conversation.input.dock', id: 'security-workbench', order: 30, locale: NS,
+      inject: () => ({ openDashboard: () =>{  scoped.layout.selectPanel(panel) } }),
+    }, DashboardLauncher))
   })
   try {
     await ui
