@@ -836,7 +836,7 @@ export interface Config {
 ```ts config-catalog
 /** Explicit host locations and operational limits. */
 export interface WorkbenchConfig {
-  /** Explicit workspace resource mappings for automatic intake of Web user tasks. */
+  /** Host-selected default and per-workspace resources for automatic Web task intake. */
   taskIntake?: TaskIntakeConfig | undefined
   /** Absolute Host directory for ownership, immutable artifacts and the derived search index. */
   root: string
@@ -858,8 +858,10 @@ export interface WorkbenchConfig {
   reportInputBytes: number
   /** Maximum model tokens allowed for one report response. */
   reportOutputTokens: number
-  /** Maximum provider-reported tokens in one project analysis turn. */
+  /** Exploration token allowance per analysis turn, followed by one summary step under existing model limits. */
   analysisTurnTokens: number
+  /** Include repeated cache reads in the exploration allowance; full usage remains logged either way. */
+  analysisCountCacheReads: boolean
   /** Maximum target findings in the main report body. */
   reportMaxFindings: number
   /** Maximum reusable lessons in the main report body. */
@@ -884,10 +886,12 @@ export interface WorkbenchConfig {
   knowledgeModel?: string
 }
 
-/** Presence enables intake only for the listed workspace directories. */
+/** Host-selected resources for authenticated user tasks. */
 export interface TaskIntakeConfig {
   /** Exact workspace directories and their allowed analysis environments. */
   workspaces: TaskIntakeWorkspace[]
+  /** Environments for workspaces without an exact mapping; omission disables their intake. */
+  defaultEnvironmentIds?: string[]
   /** Maximum validation attempts assigned to a newly created task. */
   maxAttempts: number
 }
@@ -965,7 +969,7 @@ export interface ToolInstallation {
 }
 ```
 
-来源： [`packages/experimental/security-analysis/src/index.ts:41`](../packages/experimental/security-analysis/src/index.ts)
+来源： [`packages/experimental/security-analysis/src/index.ts:43`](../packages/experimental/security-analysis/src/index.ts)
 
 <a id="deepseek-aidsh-experimental-tool-agent-team"></a>
 

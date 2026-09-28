@@ -273,6 +273,9 @@ export function Workbench(props: WorkbenchProps) {
         >
           {t('title')}
         </button>
+        <button className={css.launchButton} aria-haspopup="dialog" onClick={() => {
+          setTab('overview'); setOpen(true); void perform(load)
+        }}>{t('startWithMaterials')}</button>
         <span className={css.launchHint}>{t('workflowHint')}</span>
       </div>
       {open && (

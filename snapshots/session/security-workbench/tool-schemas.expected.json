@@ -253,7 +253,7 @@
     },
     {
       "name": "security_capabilities",
-      "description": "Discover configured analysis tools and role-permitted operations. Installation declarations are not health checks; missing target readiness must be reported.",
+      "description": "Discover the analysis directory, configured tools and role-permitted operations. Installation declarations are not health checks; missing target readiness must be reported.",
       "parameters": {
         "type": "object",
         "properties": {}
@@ -680,5 +680,7 @@
       }
     }
   ],
-  "changes": []
+  "changes": [
+    []
+  ]
 }

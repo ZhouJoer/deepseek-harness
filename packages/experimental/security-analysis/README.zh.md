@@ -36,7 +36,7 @@ kind: "package-reference"
 4. 使用实现材料评估假设。需要运行验证时，准备包含目标、脚本、预期观察、影响、时限及清理方式的计划。
 5. 在工作台检查并批准不可变计划。停止或撤销会阻止新执行，并等待活动 provider 清理。中断的检查必须先核对再重试。
 
-自动 Web 任务入口使用操作者保存的工作区资源选择，或显式的 `taskIntake.workspaces` 条目（`cwd`、`environmentIds`）和 `taskIntake.maxAttempts`。保存的选择在重启后保留，优先于部署默认值；保存空环境列表会禁用该工作区的自动入口。修改只影响新任务，不改变已有项目权限。首个获准执行的安全工具将已记录的用户请求绑定到该精确工作目录选定的资源。内部消息和委派 Session 不能初始化任务；已有绑定和用户主动退出的状态都会保留。安全 profile 将启动目录映射到 `local`。CLI 入口仍需显式创建项目。初始化不会导入工作区、注册网络目标或批准执行。
+自动 Web 任务入口依次使用操作者保存的工作区资源、`taskIntake.workspaces` 精确条目（`cwd`、`environmentIds`），或未匹配工作区的 `taskIntake.defaultEnvironmentIds`。`taskIntake.maxAttempts` 提供尝试上限。保存的选择在重启后保留；空选择会禁用自动入口，即使存在默认环境。修改只影响新任务。首个获准执行的安全工具将已记录的用户请求绑定到选定资源。内部消息和委派 Session 不能初始化任务；已有绑定和用户主动退出的状态都会保留。安全 profile 为未匹配的工作区选择 `local`。CLI 入口仍需显式创建项目。初始化不会导入文件、注册网络目标或批准执行。
 
 用户也可通过 `/security` 查看状态，或通过 `/security <JSON command>` 提交相同的修订检查命令。`security_help` 可通过可选 `action` 仅返回该动作的命令 schema；省略时返回完整 schema。静态采集回执包含可用于后续命令的当前修订号；发生并发修改时仍需刷新。模型不能批准计划或共享经验。普通命令必须携带稳定的操作 ID 和已观察修订号；停止与撤销只减少执行权限，因此接受较旧修订号。
 
@@ -89,7 +89,7 @@ Host 操作者在[示例 overlay](../../../apps/cli/config/examples/security-ana
 
 `security_capture_analysis(assetId, callIds)` 将调用者自身 Session 中已提交的原生 `bash`、`pwsh` 和 `job_output` 事件保存为不可变的脚本分析日志。后台采集包含已记录的 Shell 启动及截至所选调用的已收集输出。重复选择返回同一证据。失败、裁剪、外溢或未完成状态保持明确；不会读取外溢路径。资产关联由分析者声明，日志属于辅助证据：可供发现、子报告、检索和独立复核引用，但不能单独满足完整实现证据或已批准运行时验证的要求。
 
-协调者、侦察、逆向分析和 Web 分析角色使用原生工作区工具及继承的 DSH 权限运行脚本。研究和复核角色不能执行脚本。项目停止和归档会取消跟踪的原生前台进程及所属后台任务，并等待清理。原生 Shell 取消涵盖 DSH 管理的进程树；外部服务或脱离的容器工作负载需要通过对应环境的生命周期操作清理。专用验证 provider 仍要求已批准计划。
+协调者、侦察、逆向分析和 Web 分析角色使用原生工作区工具及继承的 DSH 权限运行脚本。`security_capabilities.analysisDirectory` 返回 Session 工作区下 `.dsh/analysis/<task-session-key>/` 的绝对路径；缺少工作区或活动绑定时返回 null。查询不会创建目录或授予权限。协调者和子任务指令要求把生成脚本放入 `scripts/`、结果及日志放入 `outputs/`、中间文件放入 `tmp/`；Shell 调用以分析目录作为 `workdir`，用绝对路径读取原始输入。任务与 Session 标识决定各自独立且稳定的目录。文件跨轮保留；清理前需保存相关工具结果作为证据。用户要求的项目代码和交付物遵循项目布局。研究和复核角色不能执行脚本。项目停止和归档会取消跟踪的原生前台进程及所属后台任务，并等待清理。原生 Shell 取消涵盖 DSH 管理的进程树；外部服务或脱离的容器工作负载需要通过对应环境的生命周期操作清理。专用验证 provider 仍要求已批准计划。
 
 只读 `toolboxInventory` Remote 无需项目或 Session。它与 `security_environment` 共用探测逻辑，区分运行环境就绪状态和可选工具状态，并返回命令、版本、位置、诊断与检查时间。显式可执行文件配置优先于 PATH，失败时不回退。r2ghidra 通过选定的 radare2 检测；r2pipe 和 Frida 使用选定的 Python。Python 导入会验证解释器可用性，不信任 Windows 启动器占位程序。检测不会安装软件、启动容器或修改镜像。安装链接用于手动操作；工具可用不授予额外权限。`security_capabilities` 区分 provider 操作与原生 Shell 调用，并标明执行环境。
 
@@ -156,7 +156,7 @@ Host 运行期间，配置成对的 `knowledgeProvider` 和 `knowledgeModel` 后
 
 #### Token 影响
 
-skill 摘要占用目录上下文，方法正文在加载时增加上下文。领域工具响应使用 `modelResultBytes`，原始采集使用 `maxOutputBytes`。`analysisTurnTokens` 默认将每个项目分析轮次限制为模型回报的 120,000 token，包含缓存读取。达到限额后拒绝下一次模型请求，已保存证据仍可用于更聚焦的后续提问；此包不改变 token 统计。
+skill 摘要占用目录上下文，方法正文在加载时增加上下文。领域工具响应使用 `modelResultBytes`，原始采集使用 `maxOutputBytes`。`analysisTurnTokens` 默认允许每个 Session 分析轮次使用 120,000 个探索 token，计入未缓存输入、缓存写入和输出。`analysisCountCacheReads: true` 还会计入重复的缓存读取；两种模式均保留完整的模型用量日志。如果再执行一次与上次消耗相当的步骤会达到限额，模型会收到已记录的阶段总结指令，并在既有输出上限内执行一次总结步骤。探索工具从列表中隐藏，执行端也会阻止调用；委派任务仍可使用 `structured_output`。单次请求超出剩余预算时也进入收尾。总结后的额外模型步骤会被拒绝，不会抛出预算异常。阶段总结说明已确认结果、保存的证据、缺口及下一步，不把调查标记为完成。用户后续提问会获得新的轮次预算并恢复正常工具。
 
 #### KV Cache effect
 

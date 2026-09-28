@@ -57,7 +57,8 @@ it('keeps task intake and operator tools in the launched profile and resolves it
     expect(workbench?.config).toMatchObject({
       analysisTurnTokens: 360000,
       taskIntake: {
-        workspaces: [{ cwd: { __jsExpr: 'process.cwd()' }, environmentIds: ['local'] }],
+        workspaces: [],
+        defaultEnvironmentIds: ['local'],
         maxAttempts: 3,
       },
       environments: [{

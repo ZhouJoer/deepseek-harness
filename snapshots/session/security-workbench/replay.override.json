@@ -152,7 +152,7 @@
       {
         "type": "usage",
         "usage": {
-          "inputTokens": 3,
+          "inputTokens": 1200,
           "outputTokens": 3
         }
       },

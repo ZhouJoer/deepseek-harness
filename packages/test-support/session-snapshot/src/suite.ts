@@ -414,10 +414,11 @@ function systemPromptOf(record: Record<string, unknown>): string | undefined {
   return content.length === 0 ? '' : typeof block?.text === 'string' ? block.text : undefined
 }
 
-/** Extract every array-valued tool catalog from a normalized header sequence. */
+/** Extract tool catalogs in header order, preserving an omitted catalog as empty. */
 function toolSchemasFrom(headers: readonly unknown[]): unknown[][] {
   return headers.flatMap((header) => {
-    if (header === null || typeof header !== 'object') return []
+    if (header === null || typeof header !== 'object' || Array.isArray(header)) return []
+    if (!Object.hasOwn(header, 'tools')) return [[]]
     const tools = (header as { tools?: unknown }).tools
     return Array.isArray(tools) ? [tools] : []
   })
@@ -473,8 +474,8 @@ export function systemPromptPrecedesRequests(rawLog: string): boolean {
 
 /**
  * The normalized tool-schema arrays carried by request headers in a session
- * JSONL, in log order. Headers without an array-valued tools field are omitted
- * so callers can assert one schema set per header explicitly.
+ * JSONL, in log order. An omitted tools field contributes an empty catalog;
+ * malformed non-array fields are omitted.
  *
  * @param rawLog The session `.jsonl` content to inspect.
  * @param ctx The volatile values of the run that produced it.
@@ -524,14 +525,15 @@ export function parseToolSchemasSnapshot(snapshot: string): ToolSchemasSnapshot 
 /**
  * Restore one sidecar schema set into a tokenized pinned header.
  *
- * @param header The parsed request header carrying `tools: "{{tools}}"`.
+ * @param header The parsed request header carrying `tools: "{{tools}}"`, or no tools field for an empty catalog.
  * @param schemas The complete schemas for this full header snapshot.
- * @returns A copy of the header with its complete schemas restored.
+ * @returns A copy with complete schemas restored, preserving an omitted empty catalog.
  */
 export function restorePinnedToolSchemas(header: unknown, schemas: readonly unknown[]): unknown {
   if (header === null || typeof header !== 'object' || Array.isArray(header)) {
     throw new Error('acp-snapshot: pinned request header must be an object')
   }
+  if (!Object.hasOwn(header, 'tools') && schemas.length === 0) return { ...header }
   if ((header as { tools?: unknown }).tools !== TOOLS_TOKEN) {
     throw new Error(`acp-snapshot: pinned request header tools must equal ${TOOLS_TOKEN}`)
   }

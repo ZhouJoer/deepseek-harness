@@ -26,6 +26,7 @@ export async function apply(ctx) {
     importRoots: [process.cwd()],
     environments: [],
     knowledgeIntervalMs: 0,
+    analysisTurnTokens: 1000,
   })
   ctx.inject(['securityWorkbench'], (securityCtx) => {
     securityCtx.on('tools/execute', async (exec, next) => {

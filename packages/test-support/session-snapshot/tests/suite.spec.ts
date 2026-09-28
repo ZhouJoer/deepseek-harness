@@ -781,7 +781,7 @@ describe('systemPromptPrecedesRequests', () => {
 })
 
 describe('normalizedToolSchemas', () => {
-  it('extracts normalized schema arrays and omits absent or non-array fields', () => {
+  it('preserves omitted tool catalogs as empty and skips malformed fields', () => {
     const log = [
       '{"type":"session","id":"a","createdAt":5,"cwd":"/w"}',
       '{"type":"request/header","seq":0,"time":9,"data":{"header":{"tools":[{"name":"read","description":"work in /w"}]}}}',
@@ -793,6 +793,7 @@ describe('normalizedToolSchemas', () => {
     ].join('\n')
     expect(normalizedToolSchemas(log, { sessionIds: [], cwd: '/w' })).toEqual([
       [{ name: 'read', description: 'work in {{cwd}}' }],
+      [],
     ])
   })
 })
@@ -896,6 +897,12 @@ describe('tool-schema snapshots', () => {
   it('restores initial schemas into the pinned header token', () => {
     expect(restorePinnedToolSchemas({ system: '{{system}}', tools: '{{tools}}' }, snapshot.initial))
       .toEqual({ system: '{{system}}', tools: snapshot.initial })
+  })
+
+  it('preserves an omitted catalog only when its pinned schema set is empty', () => {
+    expect(restorePinnedToolSchemas({ config: { model: 'fixture' } }, []))
+      .toEqual({ config: { model: 'fixture' } })
+    expect(() => restorePinnedToolSchemas({ config: {} }, snapshot.initial)).toThrow(/must equal/)
   })
 
   it('rejects invalid headers and a missing tool token', () => {

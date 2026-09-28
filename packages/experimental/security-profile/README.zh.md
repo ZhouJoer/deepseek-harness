@@ -24,7 +24,7 @@ kind: "package-bundle"
 <a id="use-this-package"></a>
 ## 使用
 
-此 bundle 随安装提供，默认关闭，需要显式选择。在专用 profile 中按顺序组合 `@deepseek-ai/dsh-base`、应用 bundle、`@deepseek-ai/dsh-experimental-security-profile`。Web 还需在最后加入 `@deepseek-ai/dsh-experimental-security-web-profile`。使用 `dsh --profile <name>` 启动。Web 对话会为启动目录自动初始化任务，并使用已配置的 `local` 环境；其他工作区映射通过 `taskIntake` 配置。详见[安全分析](../security-analysis/README.zh.md)。
+此 bundle 随安装提供，默认关闭，需要显式选择。在专用 profile 中按顺序组合 `@deepseek-ai/dsh-base`、应用 bundle、`@deepseek-ai/dsh-experimental-security-profile`。Web 还需在最后加入 `@deepseek-ai/dsh-experimental-security-web-profile`。使用 `dsh --profile <name>` 启动。Web 对话会使用已配置的 `local` 环境自动初始化任务，包括启动目录以外的工作区。精确的 `taskIntake.workspaces` 映射和已保存的工作区选择优先于此默认值。详见[安全分析](../security-analysis/README.zh.md)。
 
 -----
 
@@ -59,7 +59,7 @@ preset 提供通用 `skill` 加载工具。安全方法摘要进入已记录的�
 
 #### Token 影响
 
-方法摘要、加载的正文、领域工具定义和检索到的证据按各自配置的限额占用上下文。此 profile 将 `analysisTurnTokens` 设置为每个分析轮次累计 360,000 个模型回报 token，包含重复的缓存读取；它不是输出 token 或上下文窗口上限。服务默认值仍为 120,000。应按模型与任务调整 profile 限额；此包不改变 token 统计。
+方法摘要、加载的正文、领域工具定义和检索到的证据按各自配置的限额占用上下文。此 profile 将 `analysisTurnTokens` 设置为每个 Session 分析轮次 360,000 个探索 token；服务默认值为 120,000。默认计入未缓存输入、缓存写入和输出。设置 `analysisCountCacheReads: true` 可同时计入重复的缓存读取。完整模型用量仍会记录，因此这一限额不等于计费用量或上下文窗口上限。[分析服务](../security-analysis/README.zh.md#model-experience) 会在探索达到预算时提供阶段总结。
 
 #### KV Cache effect
 

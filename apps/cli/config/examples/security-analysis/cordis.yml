@@ -5,9 +5,8 @@
     root: !!js dshHomePath('security')
     importRoots: !!js '[process.cwd()]'
     taskIntake:
-      workspaces:
-        - cwd: !!js process.cwd()
-          environmentIds: [local]
+      workspaces: []
+      defaultEnvironmentIds: [local]
       maxAttempts: 3
     environments:
       - id: local

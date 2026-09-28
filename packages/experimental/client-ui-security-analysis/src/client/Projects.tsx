@@ -71,6 +71,7 @@ export function Projects(props: ProjectActions & PropsLocale<typeof NS>) {
         <label className={css.field}>{t('project')}<select disabled={busy} value={selected} onChange={(event) => { generation.current++; setView({ revision: 0, records: [] }); setSelected(event.target.value) }}>
           <option value="">{t('notSelected')}</option>{projects.filter(item => Boolean(item.archived) === removed).map(item => <option key={item.id} value={item.id} title={item.title}>{projectLabel(item.title, item.id)}</option>)}
         </select></label>
+        <p>{t('analysisRecordHint')}</p>
         <p>{t('projectEntryHelp')}</p>
         {project?.kind === 'engagement' && <ProjectManagement key={project.value.id + project.value.title} t={t} title={project.value.title} archived={project.value.archived} disabled={busy}
           manage={action => perform(async () => {

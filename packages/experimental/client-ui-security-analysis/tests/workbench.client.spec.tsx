@@ -523,3 +523,24 @@ it('adds pasted material from the task overview and exposes reversible project r
   await waitFor(() =>{  expect(api.manageProject).toHaveBeenCalledTimes(1) })
   expect((JSON.parse(vi.mocked(api.manageProject).mock.calls[0]![1]) as { action: unknown }).action).toEqual({ kind: 'rename', title: 'New name' })
 })
+
+it('opens material intake directly from the composer and sends only after saving the task', async () => {
+  const api = actions({ load: vi.fn(async () => ({ revision: 4, records: [] })) })
+  render(<Workbench {...props(api)} />)
+  expect(screen.queryByRole('dialog')).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: zh.startWithMaterials }))
+  await screen.findByRole('heading', { name: zh.newAnalysis })
+  fireEvent.click(screen.getByRole('button', { name: zh.hostPath }))
+  fireEvent.change(screen.getByLabelText(zh.materialPath), { target: { value: 'E:/samples/ctk-1.4.3.apk' } })
+  fireEvent.click(screen.getByRole('button', { name: zh.addMaterials }))
+  await screen.findByText(/ctk-1.4.3.apk/u)
+  fireEvent.change(screen.getByLabelText(zh.analysisRequest), { target: { value: '检查这个 APK 的静态安全问题' } })
+  fireEvent.click(screen.getByRole('button', { name: zh.startAnalysis }))
+  await waitFor(() => { expect(api.sendAnalysis).toHaveBeenCalledWith('parent', '检查这个 APK 的静态安全问题') })
+  expect(JSON.parse(vi.mocked(api.importMaterials).mock.calls[0]![1])).toMatchObject({
+    expectedRevision: 4, material: { kind: 'path', path: 'E:/samples/ctk-1.4.3.apk' },
+    title: 'ctk-1.4.3.apk', resources: { environmentIds: ['local'] },
+  })
+  expect(vi.mocked(api.importMaterials).mock.invocationCallOrder[0]).toBeLessThan(vi.mocked(api.sendAnalysis).mock.invocationCallOrder[0]!)
+  expect(screen.queryByRole('dialog')).toBeNull()
+})

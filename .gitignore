@@ -12,7 +12,6 @@ pnpm-debug.log
 examples/*/*.jsonl
 .storages/
 .sessions/
-examples/*/.sessions/
 coverage/
 .coverage-times.json
 .doc-typecheck-*/
@@ -34,9 +33,6 @@ dist-exe/
 apps/desktop/.desktop-build/
 python/sdk-runtime/src/deepseek_harness_runtime/runtime/deepseek-harness-sdk-runtime-*
 python/sdk-runtime/src/deepseek_harness_runtime/runtime/node/
-python/**/__pycache__/
-python/**/.pytest_cache/
-packages/**/__pycache__/
 apps/web/dist/
 .artifacts/
 .dsh-build/
@@ -54,6 +50,8 @@ native/system/test/bin/
 !/.env.*.example
 /.credentials.yaml
 /.dsh/
+# Nested workspaces generate analysis files; their .dsh/skills/ stays trackable.
+**/.dsh/analysis/
 /dsh-home/
 # Browser acceptance output and Python helper caches.
 /playwright-report/

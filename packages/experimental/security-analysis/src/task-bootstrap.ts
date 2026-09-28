@@ -11,10 +11,12 @@ export interface TaskIntakeWorkspace {
   environmentIds: string[]
 }
 
-/** Presence enables intake only for the listed workspace directories. */
+/** Host-selected resources for authenticated user tasks. */
 export interface TaskIntakeConfig {
   /** Exact workspace directories and their allowed analysis environments. */
   workspaces: TaskIntakeWorkspace[]
+  /** Environments for workspaces without an exact mapping; omission disables their intake. */
+  defaultEnvironmentIds?: string[]
   /** Maximum validation attempts assigned to a newly created task. */
   maxAttempts: number
 }
@@ -56,8 +58,10 @@ export function validateTaskIntake(config: TaskIntakeConfig | undefined, environ
     const key = workspaceKey(workspace.cwd)
     if (directories.has(key)) throw new Error('Duplicate security task intake workspace: ' + workspace.cwd)
     directories.add(key)
+  }
+  for (const ids of [config.defaultEnvironmentIds ?? [], ...config.workspaces.map(workspace => workspace.environmentIds)]) {
     const selected = new Set<string>()
-    for (const id of workspace.environmentIds) {
+    for (const id of ids) {
       if (selected.has(id)) throw new Error('Duplicate security task intake environment: ' + id)
       if (!environmentIds.includes(id)) throw new Error('Unknown security task intake environment: ' + id)
       selected.add(id)
@@ -65,24 +69,36 @@ export function validateTaskIntake(config: TaskIntakeConfig | undefined, environ
   }
 }
 
+/** Resolve Host-selected resources without granting access to workspace files.
+ * @param config - validated Host intake settings.
+ * @param cwd - authenticated Session workspace directory.
+ * @returns selected resources, or absence when intake is disabled for this workspace.
+ */
+export function resolveTaskIntakeResources(config: TaskIntakeConfig | undefined, cwd: string | undefined):
+  { environmentIds: string[]; maxAttempts: number } | undefined {
+  if (!config || !cwd) return undefined
+  const environmentIds = config.workspaces.find(item => workspaceKey(item.cwd) === workspaceKey(cwd))?.environmentIds
+    ?? config.defaultEnvironmentIds
+  if (!environmentIds?.length) return undefined
+  return { environmentIds: [...environmentIds], maxAttempts: config.maxAttempts }
+}
+
 /**
  * Propose the first project for an authenticated user message without executing it.
  * @param input - trusted carrier input, complete binding history, and validated workspace mappings.
- * @returns A create action limited to the matching mapping, or no action for an ineligible message or workspace.
+ * @returns A create action limited to selected resources, or no action for an ineligible message or workspace.
  */
 export function resolveWorkspaceTaskAdmission(input: WorkspaceTaskAdmission):
   Extract<SecurityCommand['action'], { kind: 'create' }> | undefined {
-  const { config, cwd } = input
-  if (config === undefined || cwd === undefined || input.child || input.hasBindingHistory) return undefined
-  const workspace = config.workspaces.find(item => workspaceKey(item.cwd) === workspaceKey(cwd))
-  if (workspace === undefined) return undefined
+  if (input.child || input.hasBindingHistory) return undefined
+  const resources = resolveTaskIntakeResources(input.config, input.cwd)
+  if (!resources) return undefined
   const objective = input.message.content.filter(part => part.type === 'text').map(part => part.text).join('\n').trim()
   if (objective === '') return undefined
   return {
     kind: 'create',
     title: objective.replace(/\r?\n.*$/su, ''),
     objective,
-    environmentIds: [...workspace.environmentIds],
-    maxAttempts: config.maxAttempts,
+    ...resources,
   }
 }

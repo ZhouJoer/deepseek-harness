@@ -38,6 +38,13 @@ describe('workspace task intake configuration', () => {
       .toThrow('Duplicate security task intake environment: lab')
   })
 
+  it('validates default environments as strictly as workspace selections', () => {
+    expect(() => { validateTaskIntake({ ...config, defaultEnvironmentIds: ['missing'] }, ['workspace-lab']) })
+      .toThrow('Unknown security task intake environment: missing')
+    expect(() => { validateTaskIntake({ ...config, defaultEnvironmentIds: ['workspace-lab', 'workspace-lab'] }, ['workspace-lab']) })
+      .toThrow('Duplicate security task intake environment: workspace-lab')
+  })
+
   it.each([0, -1, 1.5, Infinity, Number.MAX_SAFE_INTEGER + 1])('rejects an invalid attempt budget: %s', (maxAttempts) => {
     expect(() => { validateTaskIntake({ ...config, maxAttempts }, ['workspace-lab']) }).toThrow('positive safe integer')
   })
@@ -64,6 +71,17 @@ describe('workspace task admission', () => {
   it('matches a normalized directory without authorizing its subdirectories', () => {
     expect(resolveWorkspaceTaskAdmission(admission({ cwd: join(cwd, 'child', '..') }))?.environmentIds)
       .toEqual(['workspace-lab'])
+  })
+
+  it('uses configured defaults in another workspace while exact mappings override them', () => {
+    const defaults = { ...config, defaultEnvironmentIds: ['host'] }
+    expect(resolveWorkspaceTaskAdmission(admission({ config: defaults, cwd: cwd + '-other' }))?.environmentIds).toEqual(['host'])
+    expect(resolveWorkspaceTaskAdmission(admission({ config: defaults }))?.environmentIds).toEqual(['workspace-lab'])
+    expect(resolveWorkspaceTaskAdmission(admission({
+      config: { ...defaults, workspaces: [{ cwd, environmentIds: [] }] },
+    }))).toBeUndefined()
+    for (const override of [{ child: true }, { hasBindingHistory: true }, { cwd: undefined }])
+      expect(resolveWorkspaceTaskAdmission(admission({ config: defaults, ...override }))).toBeUndefined()
   })
 
   it('does not invent an objective for empty text', () => {

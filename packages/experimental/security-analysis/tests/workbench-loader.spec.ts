@@ -1,5 +1,5 @@
 /** Real Loader composition for scoped evidence, workflow, and tool enforcement. */
-import { mkdtemp, mkdir, rm, writeFile, readFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, rm, writeFile, readFile, readdir } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -72,9 +72,12 @@ afterEach(async () => {
 class ScopeModel extends LlmAdapter {
   nativeCalls: { name: string; args: Record<string, unknown> }[] = []
   readonly requests: GenerateOptions[] = []
+  beforeResponse: ((request: number) => void) | undefined
   firstSkill: string | undefined
   scopeCalls = 1
   usageTokens = 0
+  cacheReadTokens = 0
+  exactUsageTotal = true
   reportFailure = false
   childReport: NonNullable<SessionBinding['report']> = {
     summary: 'Assigned evidence review completed.', evidenceIds: [], uncertainty: 'No observations collected.', nextSteps: [],
@@ -87,6 +90,9 @@ class ScopeModel extends LlmAdapter {
   }
   async *stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
     this.requests.push(options)
+    this.beforeResponse?.(this.requests.length)
+    if (this.usageTokens || this.cacheReadTokens) yield { type: 'usage', usage: { inputTokens: this.usageTokens, outputTokens: 0, cacheReadTokens: this.cacheReadTokens,
+      ...(this.exactUsageTotal ? { totalTokens: this.usageTokens + this.cacheReadTokens } : {}) } }
     const native = this.nativeCalls[this.requests.length - 1]
     if (native) {
       const call = { type: 'tool-call' as const, id: ToolCallId('native-' + String(this.requests.length)), name: native.name, arguments: JSON.stringify(native.args) }
@@ -98,7 +104,6 @@ class ScopeModel extends LlmAdapter {
     }
     const refinement = options.messages.flatMap(message => message.content).filter(block => block.type === 'text').map(block => block.text).find(text => text.includes('\nNotes: '))
     const report = options.messages.flatMap(message => message.content).filter(block => block.type === 'text').map(block => block.text).find(text => text.includes('Write a concise Chinese security brief'))
-    if (this.usageTokens) yield { type: 'usage', usage: { inputTokens: this.usageTokens, outputTokens: 0 } }
     if (report && this.reportFailure) {
       yield { type: 'finish', reason: { kind: 'error', failure: { message: 'Fixture model rejected report', code: 'UNKNOWN' } } }
       return
@@ -117,7 +122,7 @@ class ScopeModel extends LlmAdapter {
       yield { type: 'tool-call-delta', index: 0, id: call.id, name: call.name, argumentsDelta: call.arguments }
       yield { type: 'block-end', index: 0, block: call }
       yield { type: 'finish', reason: { kind: 'tool-calls' } }
-    } else if (this.requests.length <= this.scopeCalls) {
+    } else if (this.requests.length <= this.scopeCalls && options.tools?.some(tool => tool.name === 'security_scope')) {
       const call = { type: 'tool-call' as const, id: ToolCallId('scope-call-' + String(this.requests.length)),
         name: this.firstSkill ? 'skill' : 'security_scope',
         arguments: this.firstSkill ? JSON.stringify({ name: this.firstSkill }) : '{}' }
@@ -167,7 +172,7 @@ function independentTool(ctx: Context, name: string, execute = vi.fn(async () =>
 }
 
 async function load(inheritJobTool = false, knowledgeIntervalMs = 0,
-  options: { dedicatedModel?: boolean; analysisTurnTokens?: number; skills?: boolean; native?: boolean; taskIntake?: 'current' | 'other' } = {}) {
+  options: { dedicatedModel?: boolean; analysisTurnTokens?: number; analysisCountCacheReads?: boolean; skills?: boolean; native?: boolean; taskIntake?: 'current' | 'other' | 'default' } = {}) {
   const root = await mkdtemp(join(tmpdir(), 'dsh-workbench-loader-'))
   roots.push(root)
   const model = new ScopeModel()
@@ -244,9 +249,12 @@ async function load(inheritJobTool = false, knowledgeIntervalMs = 0,
                   : name === 'security'
                     ? { knowledgeIntervalMs, ...(options.dedicatedModel === false ? {} : { knowledgeProvider: 'fixture', knowledgeModel: 'fixture' }),
                       ...(options.analysisTurnTokens === undefined ? {} : { analysisTurnTokens: options.analysisTurnTokens }),
-                      ...(options.taskIntake ? { taskIntake: { maxAttempts: 3, workspaces: [
-                        { cwd: options.taskIntake === 'current' ? root : join(root, 'other'), environmentIds: ['local'] },
-                      ] } } : {}),
+                      ...(options.analysisCountCacheReads === undefined ? {}
+                        : { analysisCountCacheReads: options.analysisCountCacheReads }),
+                      ...(options.taskIntake ? { taskIntake: { maxAttempts: 3,
+                        ...(options.taskIntake === 'default' ? { defaultEnvironmentIds: ['local'] } : {}), workspaces: [
+                          { cwd: options.taskIntake === 'current' ? root : join(root, 'other'), environmentIds: ['local'] },
+                        ] } } : {}),
                       root: join(root, 'workbench'), importRoots: [root],
                       environments: [{ id: 'local', kind: 'local', label: 'Host', cwd: root, tools: [] }] }
                     : {},
@@ -314,7 +322,7 @@ function operator(controller: Awaited<Security['ready']>, agent: Agent) {
 }
 
 describe('security workbench Loader composition', () => {
-  it('writes and edits a script through native preset tools and captures the real execution log', async () => {
+  it('runs generated scripts and relative outputs in the analysis directory and captures the execution log', async () => {
     const { ctx, agent, model, controller } = await load(false, 0, { native: true })
     const root = roots[roots.length - 1]!
     const send = operator(controller, agent)
@@ -324,14 +332,25 @@ describe('security workbench Loader composition', () => {
     const asset = controller.view(agent.id).records.find(item => item.kind === 'asset')!
     if (asset.kind !== 'asset') throw new Error('Missing asset')
     const python = process.env.DSH_SECURITY_NATIVE_PYTHON
-    const script = join(root, python ? 'analysis.py' : 'analysis.cjs')
+    const capabilities = await execute(ctx, agent, 'security_capabilities')
+    expect(capabilities.isError).toBe(false)
+    const { analysisDirectory: directory } = JSON.parse(capabilities.content.filter(block => block.type === 'text').map(block => block.text).join('')) as { analysisDirectory: string | null }
+    if (!directory) throw new Error('Missing analysis directory')
+    expect(directory.startsWith(join(root, '.dsh', 'analysis') + (process.platform === 'win32' ? '\\' : '/'))).toBe(true)
+    const before = await readdir(root)
+    const script = join(directory, 'scripts', python ? 'analysis.py' : 'analysis.cjs')
+    const inputPath = JSON.stringify(join(root, 'sample.bin'))
+    const content = python
+      ? 'from pathlib import Path\nassert Path(' + inputPath + ').read_text() == "owned fixture"\nPath("outputs").mkdir()\nPath("tmp").mkdir()\nPath("outputs/result.txt").write_text(str(6 * 6))\nPath("tmp/input.txt").write_text("owned fixture")\nprint(Path("outputs/result.txt").read_text())\n'
+      : 'const fs = require("node:fs")\nif (fs.readFileSync(' + inputPath + ', "utf8") !== "owned fixture") throw new Error("Missing input")\nfs.mkdirSync("outputs")\nfs.mkdirSync("tmp")\nfs.writeFileSync("outputs/result.txt", String(6 * 6))\nfs.writeFileSync("tmp/input.txt", "owned fixture")\nconsole.log(fs.readFileSync("outputs/result.txt", "utf8"))\n'
     const executable = python ?? process.execPath
     const quote = (value: string) => "'" + value.replaceAll("'", process.platform === 'win32' ? "''" : "'\\''") + "'"
     model.nativeCalls = [
-      { name: 'write', args: { file_path: script, content: python ? 'print(6 * 6)\n' : 'console.log(6 * 6)\n' } },
+      { name: 'security_capabilities', args: {} },
+      { name: 'write', args: { file_path: script, content } },
       { name: 'edit', args: { file_path: script, old_string: '6 * 6', new_string: '6 * 7' } },
-      { name: process.platform === 'win32' ? 'pwsh' : 'bash', args: { command: (process.platform === 'win32' ? '& ' : '') + quote(executable) + ' ' + quote(script), description: 'Run the owned analysis script' } },
-      { name: 'security_capture_analysis', args: { assetId: asset.value.id, callIds: ['native-3'] } },
+      { name: process.platform === 'win32' ? 'pwsh' : 'bash', args: { command: (process.platform === 'win32' ? '& ' : '') + quote(executable) + ' ' + quote(script), description: 'Run the owned analysis script', workdir: directory } },
+      { name: 'security_capture_analysis', args: { assetId: asset.value.id, callIds: ['native-4'] } },
     ]
     agent.followup(webPrompt('Write and run an analysis script, then save its evidence.'))
     await agent.whenIdle()
@@ -339,6 +358,10 @@ describe('security workbench Loader composition', () => {
     expect(evidence?.kind).toBe('evidence')
     if (evidence?.kind !== 'evidence') throw new Error('Missing script evidence')
     expect((await controller.artifacts.read(evidence.value.artifact)).toString()).toContain('42')
+    expect(await readFile(join(directory, 'outputs', 'result.txt'), 'utf8')).toBe('42')
+    expect(await readFile(join(directory, 'tmp', 'input.txt'), 'utf8')).toBe('owned fixture')
+    expect((await readdir(root)).filter(name => !before.includes(name))).toEqual(['.dsh'])
+    expect(JSON.stringify(model.requests[1]!.messages)).toContain('analysisDirectory')
     expect(ctx.tools.schemas().some(tool => tool.name === 'write')).toBe(false)
     expect(ctx.tools.schemas(agent).some(tool => tool.name === 'write')).toBe(true)
     await send({ kind: 'stop' })
@@ -558,8 +581,8 @@ describe('security workbench Loader composition', () => {
     expect(JSON.stringify(result)).toContain(objective)
   })
 
-  it('keeps an empty resource selection disabled instead of restoring the static mapping', async () => {
-    const { ctx, agent, controller } = await load(false, 0, { taskIntake: 'current' })
+  it.each(['current', 'default'] as const)('keeps an empty resource selection disabled with %s intake', async (taskIntake) => {
+    const { ctx, agent, controller } = await load(false, 0, { taskIntake })
     expect(JSON.parse(await ctx.securityWorkbench.configuration(agent))).toMatchObject({
       workspace: { configured: true, revision: 0, environmentIds: ['local'] },
     })
@@ -577,6 +600,27 @@ describe('security workbench Loader composition', () => {
     await agent.whenIdle()
     expect(controller.projects()).toEqual([])
     expect(controller.binding(agent.id)).toBeUndefined()
+  })
+
+  it('admits a chat request outside the launch workspace using only the default resources', async () => {
+    const { ctx, agent, controller } = await load(false, 0, { taskIntake: 'default' })
+    expect(JSON.parse(await ctx.securityWorkbench.configuration(agent))).toMatchObject({
+      workspace: { configured: true, environmentIds: ['local'] },
+    })
+    agent.followup(webPrompt('Inspect ctk-1.4.3.apk with static analysis.'))
+    await agent.whenIdle()
+    expect(controller.projects()).toHaveLength(1)
+    expect(controller.projects()[0]).toMatchObject({ objective: 'Inspect ctk-1.4.3.apk with static analysis.', environmentIds: ['local'] })
+    expect(controller.binding(agent.id)?.engagementId).toBe(controller.projects()[0]!.id)
+    expect(controller.view(agent.id).records.filter(record => record.kind === 'asset')).toEqual([])
+    const capabilities = await execute(ctx, agent, 'security_capabilities')
+    expect(JSON.stringify(capabilities)).toContain('local')
+    const denied = await execute(ctx, agent, 'security_command', { command: JSON.stringify({
+      operationId: 'model-create', expectedRevision: controller.view(agent.id).revision,
+      action: { kind: 'create', title: 'Unapproved', objective: 'Unapproved', environmentIds: ['local'], maxAttempts: 3 },
+    }) })
+    expect(denied.isError).toBe(true)
+    expect(controller.projects()).toHaveLength(1)
   })
 
   it('applies saved resources to future tasks without changing an existing project', async () => {
@@ -979,17 +1023,104 @@ it('reports the model failure and does not publish a partial report', async () =
   expect(controller.view(agent.id).records.some(item => item.kind === 'report')).toBe(false)
 })
 
-it('stops project analysis before another model request when the turn token budget is reached', async () => {
+it.each([500, 1200])('summarizes once when another comparable step would reach the budget (usage=%s)', async (usage) => {
   const { agent, controller, model } = await load(false, 0, { analysisTurnTokens: 1000 })
   const send = operator(controller, agent)
   await send({ kind: 'create', title: 'Bounded analysis', objective: 'Inspect source', environmentIds: ['local'], maxAttempts: 1 })
-  model.usageTokens = 1200
-  agent.followup(createUserMessage({ content: [{ type: 'text', text: 'Inspect the project.' }], source: { kind: 'user' } }))
+  model.usageTokens = usage
+  agent.followup(webPrompt('Inspect the project.'))
   await agent.whenIdle()
-  expect(model.requests).toHaveLength(1)
-  const end = agent.session.snapshotEvents().findLast(event => event.type === 'turn/end')
-  expect(end?.type === 'turn/end' && end.data.reason.kind === 'error'
-    ? end.data.reason.error.message : '').toContain('1000-token budget')
+  expect(model.requests).toHaveLength(2)
+  expect(model.requests[1]!.tools ?? []).toEqual([])
+  const events = agent.session.snapshotEvents()
+  const checkpoint = events.filter(event => event.type === 'user/message' && event.data.source.kind === 'plugin'
+    && event.data.source.plugin === 'security-analysis-budget')
+  expect(checkpoint).toHaveLength(1)
+  expect(JSON.stringify(checkpoint)).toContain(String(usage) + ' / 1000 tokens (excluding cache reads)')
+  expect(JSON.stringify(model.requests[1]!.messages)).toContain('saved evidence or file locations')
+  const end = events.findLast(event => event.type === 'turn/end')
+  expect(end?.type === 'turn/end' && end.data.reason.kind).toBe('completed')
+  model.usageTokens = 0
+  agent.followup(webPrompt('Continue from the saved results.'))
+  await agent.whenIdle()
+  expect(model.requests).toHaveLength(3)
+  expect(model.requests[2]!.tools?.some(tool => tool.name === 'security_scope')).toBe(true)
+})
+
+it.each([undefined, false, true])('keeps full logged usage while optionally counting cache reads (include=%s)', async (include) => {
+  const { agent, controller, model } = await load(false, 0, {
+    analysisTurnTokens: 1000, ...(include === undefined ? {} : { analysisCountCacheReads: include }),
+  })
+  await operator(controller, agent)({ kind: 'create', title: 'Cached context', objective: 'Inspect source', environmentIds: ['local'], maxAttempts: 1 })
+  model.usageTokens = 100
+  model.cacheReadTokens = 1200
+  model.exactUsageTotal = include !== false
+  model.scopeCalls = 2
+  agent.followup(webPrompt('Inspect the project.'))
+  await agent.whenIdle()
+  const expectedCalls = include ? 2 : 3
+  expect(model.requests).toHaveLength(expectedCalls)
+  const usage = agent.session.snapshotEvents().find(event => event.type === 'assistant/message')
+  expect(usage?.type === 'assistant/message' && usage.data.usage).toMatchObject({ inputTokens: 100, cacheReadTokens: 1200, ...(include === false ? {} : { totalTokens: 1300 }) })
+  if (include) expect(model.requests[1]!.tools ?? []).toEqual([])
+  else expect(model.requests[1]!.tools?.some(tool => tool.name === 'security_scope')).toBe(true)
+})
+
+it('blocks repeated wrap-up exploration and preserves new user steering for the next turn', async () => {
+  const { agent, controller, model, shell } = await load(false, 0, { analysisTurnTokens: 1000 })
+  await operator(controller, agent)({ kind: 'create', title: 'Stop exploration', objective: 'Inspect source', environmentIds: ['local'], maxAttempts: 1 })
+  model.usageTokens = 1200
+  model.beforeResponse = (request) => {
+    if (request === 2) agent.steer(webPrompt('Continue with the saved results.'))
+  }
+  model.nativeCalls[1] = { name: 'security_command', args: { command: JSON.stringify({
+    operationId: 'ignored-checkpoint', expectedRevision: controller.view(agent.id).revision,
+    action: { kind: 'remember', entry: { category: 'experience', title: 'Unwanted write', summary: 'No evidence',
+      conditions: 'None', actions: [], pitfalls: [], tags: [] } },
+  }) } }
+  agent.followup(webPrompt('Inspect the project.'))
+  await agent.whenIdle()
+  expect(model.requests).toHaveLength(2)
+  agent.followup(webPrompt('Resume the queued instruction.'))
+  await agent.whenIdle()
+  expect(model.requests).toHaveLength(4)
+  expect(model.requests[2]!.tools?.some(tool => tool.name === 'security_scope')).toBe(true)
+  expect(JSON.stringify(model.requests[2]!.messages)).toContain('Continue with the saved results.')
+  expect(controller.view(agent.id).records.some(record => record.kind === 'knowledge')).toBe(false)
+  expect(shell).not.toHaveBeenCalled()
+  const results = agent.session.snapshotEvents().filter(event => event.type === 'tool/result')
+  expect(JSON.stringify(results)).toContain('Analysis budget wrap-up allows only the final response')
+  const endings = agent.session.snapshotEvents().filter(event => event.type === 'turn/end')
+  expect(endings.map(event => event.data.reason.kind)).toEqual(['blocked', 'completed', 'completed'])
+})
+
+it('keeps a delegated structured report available during budget wrap-up', async () => {
+  const { ctx, agent, controller, model } = await load(true, 0, { analysisTurnTokens: 1000 })
+  ctx.jobs.attachController('budget-child')
+  ctx.effect(() => ctx.subagents.registerProvider({
+    name: 'spawn', inheritsParentContext: false,
+    capabilities: { agentOptions: true, outputSchema: true, depthLimit: true, toolFilter: true, persona: true },
+    start: request => startInProcessRun(request, {}),
+  }))
+  const root = roots[roots.length - 1]!
+  await writeFile(join(root, 'budget.bin'), 'owned fixture')
+  const send = operator(controller, agent)
+  await send({ kind: 'create', title: 'Child checkpoint', objective: 'Inspect source', environmentIds: ['local'], maxAttempts: 1 })
+  await send({ kind: 'import', path: join(root, 'budget.bin'), label: 'sample' })
+  const asset = controller.view(agent.id).records.find(item => item.kind === 'asset')!
+  if (asset.kind !== 'asset') throw new Error('Missing asset')
+  model.usageTokens = 600
+  model.nativeCalls = [{ name: 'security_scope', args: {} }]
+  const result = await execute(ctx, agent, 'security_delegate', {
+    assetId: asset.value.id, role: 'reconnaissance', question: 'Inspect the assigned scope.', criterion: 'Return established evidence.',
+  })
+  expect(result.isError, JSON.stringify(result)).toBe(false)
+  const { jobId } = JSON.parse(result.content.filter(block => block.type === 'text').map(block => block.text).join('')) as { jobId: string }
+  expect((await ctx.jobs.wait(JobId(jobId), 10000, agent)).status).toBe('completed')
+  expect(model.requests).toHaveLength(2)
+  expect(model.requests[1]!.tools?.map(tool => tool.name)).toEqual(['structured_output'])
+  expect(JSON.stringify(model.requests[1]!.messages)).toContain('security-analysis-budget')
+  expect(controller.view(agent.id).records.filter(item => item.kind === 'binding').map(item => item.value.report)).toContainEqual(model.childReport)
 })
 
 it('periodically refines changed notes and stops its timer when unloaded', async () => {

@@ -3,10 +3,13 @@ export const NS = 'security-workbench'
 /** Chinese operator-facing security copy. */
 export const zh = {
   newAnalysis: '新建分析', analysisHistory: '历史分析',
-  simpleStartHint: '选择材料，说明想了解什么，然后开始。任务和分析结果会自动保存。',
+  simpleStartHint: '添加文件、文件夹或文字，描述目标后开始分析。也可以先描述目标，稍后添加材料。',
+  startWithMaterials: '添加材料并开始分析',
+  analysisRecordHint: '分析任务用于保存这次分析的材料、证据和报告。系统会自动创建并命名，可在“历史分析”中继续查看。报错中的“安全项目”指的就是这条分析记录。',
+  noAnalysisEnvironment: '当前服务未配置运行环境，暂时无法开始分析。请配置本机环境并重启安全分析服务，再点击“刷新”。',
   selectedMaterial: '已选择：', removeSelection: '取消选择',
   analysisRequest: '你想分析什么？', analysisRequestHint: '例如：解释程序的关键逻辑，检查输入处理是否存在安全问题。',
-  runOn: '运行位置：', chooseAnalysisEnvironment: '没有可用的本机环境，请在更多选项中选择运行环境。',
+  runOn: '运行位置：', chooseAnalysisEnvironment: '请选择下面的运行环境。',
   analysisOptions: '更多选项', startAnalysis: '开始分析', retryAnalysis: '重试发送',
   analysisPrepared: '任务和材料已保存。发送失败时可重试，无需重新添加。',
   analysisSessionChanged: '对话已切换，分析目标未发送。请回到原对话继续。',
@@ -176,7 +179,7 @@ export const zh = {
   propose: '保存待审核经验',
 
   title: '安全分析',
-  workflowHint: '在对话中布置任务，在这里查看发现、证据和报告。',
+  workflowHint: '首次使用可添加材料并开始分析；已有任务可在“安全分析”中查看证据和报告。',
   close: '关闭',
   refresh: '刷新',
   stop: '停止分析任务',
@@ -257,10 +260,13 @@ export type SecurityKey = keyof typeof zh
 /** English operator-facing security copy. */
 export const en: Record<SecurityKey, string> = {
   newAnalysis: 'New analysis', analysisHistory: 'Analysis history',
-  simpleStartHint: 'Choose material, describe what you want to learn, and start. The task and results are saved automatically.',
+  simpleStartHint: 'Add files, a folder or text, describe your objective, and start. You can also describe the objective first and add materials later.',
+  startWithMaterials: 'Add materials and start analysis',
+  analysisRecordHint: 'An analysis task saves your materials, evidence and reports together. It is created and named automatically, and remains available in Analysis history. Errors referring to a security project mean this analysis record.',
+  noAnalysisEnvironment: 'This service has no configured analysis environment. Configure a local environment, restart the security service, then click Refresh.',
   selectedMaterial: 'Selected:', removeSelection: 'Clear selection',
   analysisRequest: 'What would you like to analyze?', analysisRequestHint: 'For example: explain the key logic and check input handling for security issues.',
-  runOn: 'Run on:', chooseAnalysisEnvironment: 'No local environment is available. Select an environment under More options.',
+  runOn: 'Run on:', chooseAnalysisEnvironment: 'Choose a run environment below.',
   analysisOptions: 'More options', startAnalysis: 'Start analysis', retryAnalysis: 'Retry sending',
   analysisPrepared: 'The task and materials are saved. Retry sending without adding them again.',
   analysisSessionChanged: 'The conversation changed. Return to the original conversation to send the objective.',
@@ -429,7 +435,7 @@ export const en: Record<SecurityKey, string> = {
   propose: 'Save knowledge for review',
 
   title: 'Security analysis',
-  workflowHint: 'Describe the task in chat; review findings, evidence and reports here.',
+  workflowHint: 'Start by adding materials. Open Security analysis to review evidence and reports for an existing task.',
   close: 'Close',
   refresh: 'Refresh',
   stop: 'Stop task',

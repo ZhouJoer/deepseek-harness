@@ -55,19 +55,21 @@ export function AnalysisStart(props: AnalysisStartProps) {
   }
   return <section className={css.taskSummary}>
     <h2>{t('newAnalysis')}</h2><p>{t('simpleStartHint')}</p>
+    <p className={css.summaryHint}>{t('analysisRecordHint')}</p>
     {selection ? <p role="status">{t('selectedMaterial')} {selection.title}
       <button disabled={locked} onClick={() => { setSelection(undefined) }}>{t('removeSelection')}</button></p>
       : <MaterialPanel t={t} disabled={locked} limits={props.limits} onBusyChange={setSelecting}
         submit={(material, title) => { setSelection({ material, title }); return Promise.resolve() }} />}
     <label className={css.field}>{t('analysisRequest')}<textarea rows={3} value={objective} disabled={locked}
       placeholder={t('analysisRequestHint')} onChange={(event) => { setObjective(event.target.value) }} /></label>
-    <p className={css.summaryHint}>{environmentId
-      ? `${t('runOn')} ${props.environments.find(item => item.id === environmentId)?.label ?? environmentId}` : t('chooseAnalysisEnvironment')}</p>
-    <details><summary>{t('analysisOptions')}</summary>
-      <label className={css.field}>{t('environment')}<select value={environmentId} disabled={locked}
-        onChange={(event) => { setEnvironment(event.target.value) }}><option value="">{t('notSelected')}</option>
-        {props.environments.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label>
-    </details>
+    {props.environments.length === 0 ? !props.disabled && <p role="alert" className={css.error}>{t('noAnalysisEnvironment')}</p> : <>
+      <p className={css.summaryHint}>{environmentId
+        ? `${t('runOn')} ${props.environments.find(item => item.id === environmentId)?.label ?? environmentId}` : t('chooseAnalysisEnvironment')}</p>
+      <details open={!environmentId}><summary>{t('analysisOptions')}</summary>
+        <label className={css.field}>{t('environment')}<select value={environmentId} disabled={locked}
+          onChange={(event) => { setEnvironment(event.target.value) }}><option value="">{t('notSelected')}</option>
+          {props.environments.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label>
+      </details></>}
     {prepared && <p>{t('analysisPrepared')}</p>}
     {error && <p role="alert" className={css.error}>{error}</p>}
     <div className={css.taskActions}><button className={css.primaryAction}

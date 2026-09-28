@@ -24,7 +24,7 @@ View security projects, checks, environments and evidence inside the conversatio
 <a id="use-this-package"></a>
 ## Use this package
 
-This bundle ships disabled and must be selected explicitly. Compose `@deepseek-ai/dsh-base`, an application bundle, and `@deepseek-ai/dsh-experimental-security-profile` in a dedicated profile. For Web, append `@deepseek-ai/dsh-experimental-security-web-profile`. Launch through `dsh --profile <name>`. The Web conversation automatically starts tasks for the launch directory with the configured `local` environment; customize `taskIntake` for other workspace mappings. See [security analysis](../security-analysis/README.md).
+This bundle ships disabled and must be selected explicitly. Compose `@deepseek-ai/dsh-base`, an application bundle, and `@deepseek-ai/dsh-experimental-security-profile` in a dedicated profile. For Web, append `@deepseek-ai/dsh-experimental-security-web-profile`. Launch through `dsh --profile <name>`. Web conversations automatically start tasks with the configured `local` environment, including workspaces outside the launch directory. Exact `taskIntake.workspaces` mappings and saved workspace selections override this default. See [security analysis](../security-analysis/README.md).
 
 -----
 
@@ -59,7 +59,7 @@ The preset exposes the shared `skill` loader. Security method summaries enter th
 
 #### Token effect
 
-Method summaries, loaded bodies, domain tool schemas and retrieved evidence consume context according to their configured limits. This profile sets `analysisTurnTokens` to 360,000 cumulative provider-reported tokens per analysis turn, including repeated cache reads; it is not an output-token or context-window limit. The service default remains 120,000. Adjust the profile limit to the model and task; this package does not change token accounting.
+Method summaries, loaded bodies, domain tool schemas and retrieved evidence consume context according to their configured limits. This profile sets `analysisTurnTokens` to 360,000 exploration tokens per Session turn; the service default is 120,000. Uncached input, cache writes and output count by default. Set `analysisCountCacheReads: true` to include repeated cache reads. Complete provider usage remains logged, so this allowance is not a billing total or context-window limit. The [analysis service](../security-analysis/README.md#model-experience) provides a final checkpoint when exploration reaches its allowance.
 
 #### KV Cache effect
 
