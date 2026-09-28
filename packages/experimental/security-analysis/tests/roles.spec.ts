@@ -3,6 +3,19 @@ import { describe, expect, it } from 'vitest'
 import { canObserve, delegationPrompt, resolveTask, toolsForRole } from '../src/workbench/roles.ts'
 
 describe('security role assignments', () => {
+  it('directs binary collectors to installed reverse tools before custom parsing', () => {
+    for (const role of ['reconnaissance', 'reverse-analyst'] as const) {
+      const prompt = delegationPrompt({ role, task: resolveTask(role), assetId: 'sample', question: 'Inspect ELF functions',
+        criterion: 'Identify one function', durationMs: 3000, maxOutputBytes: 4096 })
+      expect(prompt).toContain('Prefer available radare2/r2')
+      expect(prompt).toContain('not native .so instructions')
+      expect(prompt).toContain('security_environment before writing an analysis script')
+      expect(prompt).toContain('narrow fallback')
+    }
+    const reviewer = delegationPrompt({ role: 'reviewer', task: 'review', assetId: 'sample', question: 'Review evidence',
+      criterion: 'Assess evidence', durationMs: 3000, maxOutputBytes: 4096 })
+    expect(reviewer).not.toContain('Prefer available radare2/r2')
+  })
   it('exposes native coding and job collection only to collecting roles', () => {
     for (const role of ['coordinator', 'reconnaissance', 'reverse-analyst', 'web-analyst'] as const)
       for (const tool of ['bash', 'pwsh', 'write', 'edit', 'read', 'glob', 'grep', 'job_output', 'job_kill', 'security_capture_analysis'])

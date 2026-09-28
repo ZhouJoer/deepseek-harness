@@ -42,6 +42,9 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       scoped.slots.register({ name: 'tool.call.toolview', key, locale: NS }, SecurityToolRow))
     const remote = scoped.remote.securityWorkbench
     const projectActions: ProjectActions = {
+      toolboxConfiguration: id => unwrap(remote.toolboxConfiguration(id)),
+      configureTool: (id, input) => unwrap(remote.configureTool(id, input)),
+      toolboxFiles: (id, directory) => unwrap(remote.toolboxFiles(id, directory)),
       toolboxInventory: id => unwrap(remote.toolboxInventory(id)),
       manageProject: (id, input) => unwrap(remote.manageProject(id, input)),
       projects: () => unwrap(remote.projects()), project: id => unwrap(remote.project(id)),

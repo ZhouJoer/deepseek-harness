@@ -87,6 +87,7 @@
     "lib/offline.js",
     "lib/model-*.js",
     "lib/process-*.js",
+    "lib/toolbox-*.js",
     "lib/types-*.js",
     "lib/source-*.js",
     "lib/assessment-*.js",

@@ -66,7 +66,7 @@ JADX 接受 APK/DEX，并明确标记不完整反编译。adb 只操作指定设
 <a id="roles-tasks-and-tool-management"></a>
 ### 角色、任务和工具管理
 
-Host 操作者在[示例 overlay](../../../apps/cli/config/examples/security-analysis/cordis.yml) 的 `environments[].tools` 中配置显式安装项，然后重启安全 profile。同一环境拒绝重复工具 ID。专用 provider 要求已配置的安装项；原生分析脚本使用已有 DSH 权限。工具箱也会从 PATH 探测未配置的可执行文件，并保留自定义条目。`security_capabilities` 返回角色权限、provider 参数说明和执行位置；`security_environment` 实测工具状态，不进行配置安装。软件安装保持手动进行。
+Host 操作者按照[准备指南](../../../docs/user/guide/security-analysis.zh.md)，通过工具箱页面或 `pnpm security:tools` 配置本机可执行文件。`toolConfiguration` 指定一个本机 `environmentId` 及其绝对 JSON `path`；源码启动器与 CLI 共用 `.dsh/security-tools.json`。页面保存要求有界检测成功且配置修订未变，通过原子写入持久化，并立即用于后续调用和模型请求，无需重启。环境正在被其他操作使用时拒绝冲突修改。页面中的其他环境保持只读。其他环境通过[示例 overlay](../../../apps/cli/config/examples/security-analysis/cordis.yml) 的 `environments[].tools` 配置。同一环境拒绝重复工具 ID。专用 provider 要求已配置的安装项；原生分析脚本使用已有 DSH 权限。工具箱从 PATH 探测未配置的可执行文件，包含 Nmap、TShark、JADX 和 Metasploit，并保留自定义条目。可选 `prefixArgs` 为每次调用（包括版本查询）添加解释器参数；工具清单也向原生脚本提供这些参数。`security_capabilities` 返回角色权限、provider 参数说明和执行位置；`security_environment` 实测工具状态，不进行配置安装。软件安装保持手动进行。首轮模型请求包含已配置工具的路径、启动参数及可发现的 CLI 名称，并明确这些配置尚未实测。原生二进制分析指引要求先检查环境再编写自定义脚本，对支持的任务优先使用 radare2 或 Ghidra；脚本用于组织工具调用或补足已确认的缺口。JADX 用于 DEX/APK 字节码。Unicorn 指引要求选择实测的 Python 解释器，显式设置内存、寄存器和执行上限进行 CPU 仿真。角色和项目权限仍然适用。
 
 | 角色 | 任务 | 可用分析能力 |
 |---|---|---|
@@ -91,7 +91,7 @@ Host 操作者在[示例 overlay](../../../apps/cli/config/examples/security-ana
 
 协调者、侦察、逆向分析和 Web 分析角色使用原生工作区工具及继承的 DSH 权限运行脚本。`security_capabilities.analysisDirectory` 返回 Session 工作区下 `.dsh/analysis/<task-session-key>/` 的绝对路径；缺少工作区或活动绑定时返回 null。查询不会创建目录或授予权限。协调者和子任务指令要求把生成脚本放入 `scripts/`、结果及日志放入 `outputs/`、中间文件放入 `tmp/`；Shell 调用以分析目录作为 `workdir`，用绝对路径读取原始输入。任务与 Session 标识决定各自独立且稳定的目录。文件跨轮保留；清理前需保存相关工具结果作为证据。用户要求的项目代码和交付物遵循项目布局。研究和复核角色不能执行脚本。项目停止和归档会取消跟踪的原生前台进程及所属后台任务，并等待清理。原生 Shell 取消涵盖 DSH 管理的进程树；外部服务或脱离的容器工作负载需要通过对应环境的生命周期操作清理。专用验证 provider 仍要求已批准计划。
 
-只读 `toolboxInventory` Remote 无需项目或 Session。它与 `security_environment` 共用探测逻辑，区分运行环境就绪状态和可选工具状态，并返回命令、版本、位置、诊断与检查时间。显式可执行文件配置优先于 PATH，失败时不回退。r2ghidra 通过选定的 radare2 检测；r2pipe 和 Frida 使用选定的 Python。Python 导入会验证解释器可用性，不信任 Windows 启动器占位程序。检测不会安装软件、启动容器或修改镜像。安装链接用于手动操作；工具可用不授予额外权限。`security_capabilities` 区分 provider 操作与原生 Shell 调用，并标明执行环境。
+只读 `toolboxInventory` Remote 无需项目或 Session。它与 `security_environment` 共用探测逻辑，区分运行环境就绪状态和可选工具状态，并返回命令、版本、位置、诊断与检查时间。显式可执行文件配置优先于 PATH，失败时不回退。r2ghidra 通过选定的 radare2 检测；Unicorn、r2pipe 和 Frida 使用选定的 Python。CLI doctor 使用相同的 Python 模块探测，并报告虚拟环境和 pip 可用性。Python 导入会验证解释器可用性，不信任 Windows 启动器占位程序。检测不会安装软件、启动容器或修改镜像。安装链接用于手动操作；工具可用不授予额外权限。`security_capabilities` 区分 provider 操作与原生 Shell 调用，并标明执行环境。
 
 provider 原始输出先保存，再提交证据引用。证据记录保留样本、工具版本、参数、来源 Session/call、完整性和批准计划。`security_evidence` 按字节分页，或按行号选取已保存的源码读取结果；分页读取原始字节。检索根据项目记录及原始证据重建 SQLite FTS，支持中文分词和标识符。共享经验必须经过用户审核，始终是参考材料，不是本项目证据。
 

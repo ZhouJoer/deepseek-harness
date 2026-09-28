@@ -80,18 +80,21 @@ export async function runProcess(
       {},
       signal,
     )
+    const toolArgs = [...tool.prefixArgs ?? [], ...args]
     const argv = container
       ? [
         command,
+        ...installation(environment, 'docker').prefixArgs ?? [],
         'exec',
         '-i',
         '--workdir',
         environment.webTarget ? '/tmp' : '/workspace',
         environment.containerId as string,
         tool.command,
+        ...tool.prefixArgs ?? [],
         ...args.map(arg => environmentPath(environment, arg)),
       ]
-      : [command, ...args]
+      : [command, ...toolArgs]
     signal.throwIfAborted()
     handle = ctx.subprocess.spawn({
       argv,

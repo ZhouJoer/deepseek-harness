@@ -10,7 +10,18 @@ description: "启动独立安全工作台，并准备经授权的逆向分析检
 
 ## 1. 准备 profile
 
-在仓库根目录执行 `pnpm run build` 构建。源码启动器仍加载已构建的工作区插件；修改 Host 或 Client 插件后，需要先重新构建再重启，刷新页面不能替代构建。编辑[示例 overlay](../../../apps/cli/config/examples/security-analysis/cordis.yml)，填入实际 Python、JADX 和 Android platform tools 的路径。`python` 必须安装官方 Frida bindings。工具安装情况和目标是否就绪分开检查。示例仅登记 fastboot 与 john 的版本查询。
+在仓库根目录执行 `pnpm run build` 构建。源码启动器仍加载已构建的工作区插件；修改 Host 或 Client 插件后，需要先重新构建再重启，刷新页面不能替代构建。打开**安全分析 → 逆向工具箱**，在工具卡片点击**配置工具**，或用**添加工具**登记自定义安装。**选择工具文件**浏览运行 DSH 的电脑上的文件，不会上传可执行文件。点击**检测**查看版本和诊断，或点击**检测并保存**在检测成功后立即应用。检测失败不会改变已保存配置。高级参数每行填写一个参数，用于解释器和自定义版本查询。**恢复默认配置**移除本机覆盖项。模型从下次请求起收到新路径，无需重启服务。源码安全 profile 为本机环境启用编辑。也可使用下面的命令行入口。使用 Frida 时，`python` 必须安装官方 Frida bindings。工具安装情况和目标是否就绪分开检查。
+
+```sh
+pnpm security:doctor
+pnpm security:doctor python unicorn radare2 tshark jadx --save
+```
+
+`pnpm security:doctor` 检查原生命令工具及 Python 模块（Unicorn、r2pipe 和 Frida），与工具箱使用同一个选定解释器。Python 诊断显示解释器路径、版本、虚拟环境、基础运行时和 pip 可用性，并区分可用安装、缺失的可选工具和失效的已保存路径。添加 `--dir "目录" --save` 可发现便携安装并保存可用路径；已保存路径失效时命令失败且不保存修改。完成后刷新工具箱。`pnpm security:tools list` 显示内置及已保存的自定义工具。工具 ID 可以扩展，使用小写字母、数字、连字符和下划线。Nmap、TShark、JADX 和 Metasploit（`msfconsole`）有内置发现项。`scan` 检查 PATH 和 Windows 常见安装目录，并执行有时限的版本查询；省略工具 ID 时检查全部原生工具及目录中登记的依赖项。添加 `--dir "目录"` 可递归搜索安装目录，包括便携版 JADX。未加 `--save` 时只报告扫描结果。使用 `set 工具ID "可执行文件"` 检查并保存确切路径，或用 `remove 工具ID` 删除已保存的覆盖项。Unicorn、r2pipe 等依赖工具通过所属运行时配置。用 `python -m venv .dsh/runtimes/unicorn` 创建独立环境；Windows 上用 `.dsh/runtimes/unicorn/Scripts/python.exe -m pip install unicorn` 安装（POSIX 使用 `bin/python`），然后在 Python 卡片选择该解释器，或运行 `pnpm security:tools set python "PYTHON绝对路径"`。运行 `pnpm security:doctor python unicorn` 检查两者。Unicorn 通过 Python 脚本提供 CPU 仿真，不提供 Android 或操作系统服务。
+
+自定义工具默认用 `--version` 查询版本；在 `set` 时重复传入 `--version-arg=参数` 可覆盖。解释器可通过重复的 `--arg=参数` 为每次调用添加固定启动参数；`set` 不带 `--arg` 时清除原有启动参数。例如，将 JADX 配置为 Java 可执行文件，并传入 `--arg=-jar --arg="路径/jadx.jar"`。Windows 的 `.cmd`、`.bat` 和 `.ps1` 启动脚本需要改为配置解释器可执行文件。这些选项用于已有安装；登记名称不会安装软件或创建专用 provider。
+
+可执行文件路径和参数保存在当前目录下被 Git 忽略的 `.dsh/security-tools.json`。请在仓库根目录运行这些命令。`pnpm security` 与页面共用该文件，工具检查和后续模型请求会重新读取它。已保存路径失效会报错，不会回退到其他安装。脚本配置已安装软件，不修改系统 PATH。TShark 通过原生分析脚本调用；JADX 还提供专用 Android provider。设备、容器及其他环境仍在[示例 overlay](../../../apps/cli/config/examples/security-analysis/cordis.yml) 中配置。`--config FILE` 用于管理其他 JSON 文件；启动器只读取默认文件。
 
 通过现有 Web 应用加载安全组合：
 
@@ -32,7 +43,7 @@ pnpm security
 
 ## 3. 收集并评估证据
 
-在打开任务前，可从侧栏进入**安全分析**并打开**工具箱**。选择宿主或已配置的容器，再刷新。通过链接中的说明手动安装缺失工具；刷新不会安装软件或启动 Docker。配置可执行文件路径可固定某个安装版本。r2ghidra 跟随选定的 radare2，r2pipe 和 Frida 跟随选定的 Python。停止的容器显示工具尚未检查；缺少可选工具不会令宿主不可用。
+在打开任务前，可从侧栏进入**安全分析**并打开**工具箱**。选择宿主或已配置的容器，再刷新。通过链接中的说明手动安装缺失工具；刷新不会安装软件或启动 Docker。配置可执行文件路径可固定某个安装版本。r2ghidra 跟随选定的 radare2，Unicorn、r2pipe 和 Frida 跟随选定的 Python。停止的容器显示工具尚未检查；缺少可选工具不会令宿主不可用。
 
 可要求协调者或分析子 agent 编写、编辑并执行分析脚本。生成的分析文件统一存放在所选工作区的 `.dsh/analysis/<task-session-key>/` 下：`scripts/` 放脚本，`outputs/` 放结果和日志，`tmp/` 放中间文件。每个任务和会话各有独立目录，可让 agent 告知具体路径。agent 从该目录运行脚本，用绝对路径读取原始材料。原生工具在 Windows 使用 PowerShell，在 Linux/macOS 使用 Bash；通过对应 Shell 调用 Python。使用 `job_output` 收集后台输出，再通过 `security_capture_analysis(assetId, callIds)` 保存已提交的调用标识。所得脚本分析日志可供发现、子报告和独立复核引用。它保留不完整输出，属于辅助证据，不会自动确认结论。原生脚本遵循 DSH 工作区权限、沙箱和审批；专用验证接口仍使用下述计划流程。
 

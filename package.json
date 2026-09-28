@@ -188,6 +188,8 @@
     "release:publish": "tsx scripts/release/publish.ts",
     "dsh": "node --import tsx/esm apps/cli/src/bin.ts",
     "security": "node --import tsx/esm scripts/start-security.ts",
+    "security:doctor": "node --import tsx/esm scripts/security-tools.ts doctor",
+    "security:tools": "node --import tsx/esm scripts/security-tools.ts",
     "demo:ptc": "node scripts/demo-ptc.mjs",
     "demo:inspector": "node --import tsx/esm apps/cli/src/bin.ts web --patch ./packages/experimental/inspector/cordis.source.patch.yml",
     "mock:llm": "node --import tsx packages/test-support/llm-mock-server/src/bin.ts",

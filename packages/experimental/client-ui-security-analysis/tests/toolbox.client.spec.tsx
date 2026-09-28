@@ -18,7 +18,10 @@ it('shows installed tools, missing dependencies and manual installation referenc
     ],
   } }
   const toolboxInventory = vi.fn(async () => data)
-  render(<Toolbox toolboxInventory={toolboxInventory} t={makeTranslate(zh, commonZh)} />)
+  render(<Toolbox toolboxInventory={toolboxInventory}
+    toolboxConfiguration={async () => ({ editable: false, revision: '', tools: [] })}
+    configureTool={async () => { throw new Error('Not configured in this fixture') }}
+    toolboxFiles={async () => { throw new Error('Not configured in this fixture') }} t={makeTranslate(zh, commonZh)} />)
   expect(await screen.findByText('r2ghidra · 可用')).toBeTruthy()
   expect(screen.getByText('r2pipe · 未找到')).toBeTruthy()
   expect(screen.getAllByRole('link', { name: '手动安装说明' })).toHaveLength(2)

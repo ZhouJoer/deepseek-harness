@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Choose material, describe an objective and start an analysis with the local environment selected. Tasks, findings, evidence and reports are saved automatically. The optional panel retains ordinary conversation and tool cards; detailed assets, checks, environments and review controls are available when needed. The security domain checks authority for every action. External tools require separate configuration.
+Choose material, describe an objective and start an analysis with the local environment selected. Tasks, findings, evidence and reports are saved automatically. The optional panel retains ordinary conversation and tool cards; detailed assets, checks, environments and review controls are available when needed. The security domain checks authority for every action. Configure local external tools from the Toolbox page.
 
 ## Table of Contents
 
@@ -56,7 +56,7 @@ This package composes capabilities through a profile patch or input dock slot. I
 
 ## Persistent security projects
 
-The toolbox loads live categorized installations without a selected project or conversation. Select an environment, refresh its inventory and follow manual installation links for missing tools. Runtime availability and optional tool status are separate; laboratory image records are labeled historical observations. Script evidence cards identify auxiliary analysis logs. See the [collection guide](../../../docs/user/guide/security-analysis.md).
+The toolbox loads live categorized installations without a selected project or conversation. Select an environment, refresh its inventory and follow manual installation links for missing tools. Editable local environments offer file browsing, custom tool registration, version checks, argument fields and restoring defaults. A pending operation disables duplicate submissions; successful saves update the tool card immediately, while failed checks retain the prior configuration. Runtime availability and optional tool status are separate; laboratory image records are labeled historical observations. Script evidence cards identify auxiliary analysis logs. See the [collection guide](../../../docs/user/guide/security-analysis.md).
 
 The sidebar Security analysis panel lists projects, targets, checks, findings, reviews, reports and laboratory generations without requiring a selected conversation. Advanced details in the history page offer explicit local-image reuse and new-image builds; both preserve existing laboratory image identities. The conversation workbench registers running Web targets, applies independent reviews and generates revision reports. Both project views render saved Markdown briefs and optional findings appendices directly. The [Web guide](../../../docs/user/guide/security-analysis.md#local-web-laboratory) describes the workflow and current provider limits.
 

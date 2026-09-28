@@ -44,11 +44,12 @@ export class LocalEnvironmentManager {
   /** Inspect optional installations separately from environment readiness.
    * @param environment - configured world.
    * @param signal - cancellation.
+   * @param toolIds - optional tool selection including dependencies.
    * @returns bounded current observations without provisioning.
    */
-  inventory(environment: SecurityEnvironment, signal: AbortSignal): Promise<ToolboxInventory> {
+  inventory(environment: SecurityEnvironment, signal: AbortSignal, toolIds?: readonly string[]): Promise<ToolboxInventory> {
     return inspectToolbox(this.ctx, environment, { durationMs: this.config.timeoutMs,
-      maxOutputBytes: this.config.maxOutputBytes, graceMs: this.config.graceMs }, signal)
+      maxOutputBytes: this.config.maxOutputBytes, graceMs: this.config.graceMs }, signal, toolIds)
   }
   /**
    * Inspect installed tools without provisioning them.

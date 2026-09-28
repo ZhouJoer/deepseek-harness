@@ -2,6 +2,16 @@
 export const NS = 'security-workbench'
 /** Chinese operator-facing security copy. */
 export const zh = {
+  toolConfigure: '配置工具', toolAddInstallation: '添加工具', toolCloseEditor: '关闭配置',
+  toolChooseType: '工具', toolIdentifier: '自定义工具名称', toolExecutable: '可执行文件路径',
+  toolExecutableHint: '点击选择本机工具文件；留空时会在 PATH 中自动查找。', toolBrowseExecutable: '选择工具文件',
+  toolParentDirectory: '上一级', toolClosePicker: '关闭文件选择', toolFilesTruncated: '条目较多，请进入具体安装目录或填写完整文件路径。',
+  toolAdvancedArguments: '高级参数', toolArgumentsHint: '每行一个参数，无需添加引号。JAR 等脚本工具请选择解释器并填写启动参数。',
+  toolPrefixArgs: '启动参数', toolVersionArgs: '版本查询参数', toolCheckSelection: '检测', toolCheckAndSave: '检测并保存',
+  toolRemoveOverride: '恢复默认配置', toolRemoving: '正在恢复默认配置…', toolRemoved: '已恢复默认配置。',
+  toolCheckingSelection: '正在检测所选工具…', toolApplied: '已保存并立即生效，模型将在下次请求中看到新配置。',
+  toolCheckPassed: '检测成功，可以保存。', toolCheckFailed: '检测失败，未保存配置，请检查下面的原因。', toolOperationPending: '正在处理，请稍候…',
+
   newAnalysis: '新建分析', analysisHistory: '历史分析',
   simpleStartHint: '添加文件、文件夹或文字，描述目标后开始分析。也可以先描述目标，稍后添加材料。',
   startWithMaterials: '添加材料并开始分析',
@@ -259,6 +269,16 @@ export const zh = {
 export type SecurityKey = keyof typeof zh
 /** English operator-facing security copy. */
 export const en: Record<SecurityKey, string> = {
+  toolConfigure: 'Configure tool', toolAddInstallation: 'Add tool', toolCloseEditor: 'Close configuration',
+  toolChooseType: 'Tool', toolIdentifier: 'Custom tool name', toolExecutable: 'Executable path',
+  toolExecutableHint: 'Choose a tool file on the Host, or leave empty to search PATH.', toolBrowseExecutable: 'Choose tool file',
+  toolParentDirectory: 'Parent directory', toolClosePicker: 'Close file picker', toolFilesTruncated: 'Too many entries; open the installation folder or enter the full file path.',
+  toolAdvancedArguments: 'Advanced arguments', toolArgumentsHint: 'One argument per line, without quotes. For JARs and scripts, select an interpreter and supply startup arguments.',
+  toolPrefixArgs: 'Startup arguments', toolVersionArgs: 'Version query arguments', toolCheckSelection: 'Check', toolCheckAndSave: 'Check and save',
+  toolRemoveOverride: 'Restore defaults', toolRemoving: 'Restoring defaults…', toolRemoved: 'Defaults restored.',
+  toolCheckingSelection: 'Checking the selected tool…', toolApplied: 'Saved and applied. The model receives these settings on its next request.',
+  toolCheckPassed: 'Check passed. Ready to save.', toolCheckFailed: 'Check failed; settings were not saved. See the reason below.', toolOperationPending: 'Working, please wait…',
+
   newAnalysis: 'New analysis', analysisHistory: 'Analysis history',
   simpleStartHint: 'Add files, a folder or text, describe your objective, and start. You can also describe the objective first and add materials later.',
   startWithMaterials: 'Add materials and start analysis',

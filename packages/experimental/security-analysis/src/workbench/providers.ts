@@ -9,6 +9,8 @@ export interface ToolInstallation {
   id: string
   /** Host executable or executable path inside the selected container. */
   command: string
+  /** Interpreter or launcher arguments prepended to every invocation, including version queries. */
+  prefixArgs?: string[]
   /** Fixed arguments for reporting the installed version, without a shell. */
   versionArgs: string[]
   /** Operator-recorded origin of the installation. */
@@ -177,8 +179,13 @@ export class ProviderRegistry<T extends { id: string }> {
 
 /** Operator-facing environment lifecycle implemented outside the domain owner. */
 export interface EnvironmentManager {
-  /** @param environment - configured world. @param signal - cancellation. @returns optional tool inventory and runtime health. */
-  inventory(environment: SecurityEnvironment, signal: AbortSignal): Promise<ToolboxInventory>
+  /**
+   * @param environment - configured world.
+   * @param signal - cancellation.
+   * @param toolIds - optional tool selection.
+   * @returns optional tool inventory and runtime health.
+   */
+  inventory(environment: SecurityEnvironment, signal: AbortSignal, toolIds?: readonly string[]): Promise<ToolboxInventory>
   /** @param environment - configured world. @param signal - cancellation. @returns health details. */
   inspect(environment: SecurityEnvironment, signal: AbortSignal): Promise<EnvironmentStatus>
   /** @param environment - configured world. @param signal - cancellation. @returns owned runtime identity. */

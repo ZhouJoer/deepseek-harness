@@ -87,7 +87,8 @@ export function Projects(props: ProjectActions & PropsLocale<typeof NS>) {
       {tab !== 'toolbox' && selected && <nav className={css.tabs}>{(['overview', 'findings', 'reports'] as const).map(key => <button key={key} aria-pressed={tab === key} onClick={() =>{  setTab(key) }}>{t(key)}</button>)}<details className={css.advancedNavigation}><summary>{t('advancedDetails')}</summary>
         {(['assets', 'checks', 'reviews', 'laboratories'] as const).map(key => <button key={key} aria-pressed={tab === key}
           onClick={() => { setTab(key) }}>{t(key)}</button>)}</details></nav>}
-      {tab === 'toolbox' && <Toolbox toolboxInventory={props.toolboxInventory} t={t} />}
+      {tab === 'toolbox' && <Toolbox toolboxInventory={props.toolboxInventory} toolboxConfiguration={props.toolboxConfiguration}
+        configureTool={props.configureTool} toolboxFiles={props.toolboxFiles} t={t} />}
       {tab === 'overview' && project?.kind === 'engagement' && <article className={css.card}><h2>{project.value.title}</h2><p>{project.value.objective}</p><p>{t('revision')} {view.revision}</p></article>}
       {tab === 'overview' && <>{view.records.filter(item => item.kind === 'binding' && item.value.report).map(item => item.kind === 'binding' && item.value.report && (
         <article className={css.card} key={item.value.sessionId}>

@@ -35,6 +35,7 @@ import Approval from '@deepseek-ai/dsh-user-approval'
 import Skills from '@deepseek-ai/dsh-skill'
 import * as ToolSkill from '@deepseek-ai/dsh-tool-skill'
 import Security from '../src/workbench/index.ts'
+import type { ToolInstallation } from '../src/workbench/providers.ts'
 import { findingHash } from '../src/workbench/assessment.ts'
 import type { SessionBinding } from '../src/workbench/model.ts'
 import * as Ghidra from '../src/ghidra-provider.ts'
@@ -172,7 +173,7 @@ function independentTool(ctx: Context, name: string, execute = vi.fn(async () =>
 }
 
 async function load(inheritJobTool = false, knowledgeIntervalMs = 0,
-  options: { dedicatedModel?: boolean; analysisTurnTokens?: number; analysisCountCacheReads?: boolean; skills?: boolean; native?: boolean; taskIntake?: 'current' | 'other' | 'default' } = {}) {
+  options: { installations?: ToolInstallation[]; dedicatedModel?: boolean; analysisTurnTokens?: number; analysisCountCacheReads?: boolean; skills?: boolean; native?: boolean; taskIntake?: 'current' | 'other' | 'default' } = {}) {
   const root = await mkdtemp(join(tmpdir(), 'dsh-workbench-loader-'))
   roots.push(root)
   const model = new ScopeModel()
@@ -256,7 +257,7 @@ async function load(inheritJobTool = false, knowledgeIntervalMs = 0,
                           { cwd: options.taskIntake === 'current' ? root : join(root, 'other'), environmentIds: ['local'] },
                         ] } } : {}),
                       root: join(root, 'workbench'), importRoots: [root],
-                      environments: [{ id: 'local', kind: 'local', label: 'Host', cwd: root, tools: [] }] }
+                      environments: [{ id: 'local', kind: 'local', label: 'Host', cwd: root, tools: options.installations ?? [] }] }
                     : {},
       })),
     ),
@@ -322,6 +323,23 @@ function operator(controller: Awaited<Security['ready']>, agent: Agent) {
 }
 
 describe('security workbench Loader composition', () => {
+  it('includes configured reverse tools in the first model request before discovery calls', async () => {
+    const installations = [{ id: 'radare2', command: '/tools/radare2', prefixArgs: ['--fixture'],
+      versionArgs: ['-v'], source: 'Fixture configuration' }]
+    const { ctx, agent, model, controller } = await load(false, 0, { installations })
+    await operator(controller, agent)({ kind: 'create', title: 'Binary analysis', objective: 'Inspect an owned ELF',
+      environmentIds: ['local'], maxAttempts: 2 })
+    agent.followup(webPrompt('Inspect the supplied native binary.'))
+    await agent.whenIdle()
+    const request = JSON.stringify(model.requests[0])
+    expect(request).toContain('Prefer available radare2/r2')
+    expect(request).toContain('/tools/radare2')
+    expect(request).toContain('--fixture')
+    expect(request).toContain('unverified data')
+    const result = await execute(ctx, agent, 'security_capabilities')
+    expect(result.isError).toBe(false)
+    expect(JSON.stringify(result)).toContain('--fixture')
+  })
   it('runs generated scripts and relative outputs in the analysis directory and captures the execution log', async () => {
     const { ctx, agent, model, controller } = await load(false, 0, { native: true })
     const root = roots[roots.length - 1]!
