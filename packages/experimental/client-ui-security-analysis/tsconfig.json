@@ -57,6 +57,9 @@
       "path": "../../client/ui-sidebar"
     },
     {
+      "path": "../../client/ui-sidebar-right"
+    },
+    {
       "path": "../../api/session-controller/tsconfig.client.json"
     },
     {

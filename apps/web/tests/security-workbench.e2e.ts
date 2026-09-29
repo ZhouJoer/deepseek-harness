@@ -70,6 +70,7 @@ describe('web e2e: Security workbench', () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-security-dashboard'))
     const agent = scaffold.ctx.agents.list()[0]!
     const controller = await scaffold.ctx.securityWorkbench.ready
+    await page.getByTitle('Tools & progress', { exact: true }).click()
     const created = await controller.importMaterials(agent.id, {
       operationId: 'dashboard-material', expectedRevision: controller.view(agent.id).revision,
       task: { title: 'Demo task with a deliberately long name to check wrapping on narrow screens',
@@ -78,6 +79,19 @@ describe('web e2e: Security workbench', () => {
     })
     const task = created.records.find(item => item.kind === 'engagement')!.value
     const asset = created.records.find(item => item.kind === 'asset')!.value
+    const chatProgress = page.getByRole('region', { name: 'Tools & progress', exact: true })
+    await chatProgress.getByText(task.title, { exact: true }).waitFor()
+    await controller.command(agent.id, { operationId: 'main-page-checkpoint', expectedRevision: controller.view(agent.id).revision,
+      action: { kind: 'checkpoint', phase: 'recon', title: 'Entry inventory', reason: '',
+        summary: 'Read the owned fixture', next: 'Check input handling', evidenceIds: [], findingIds: [] } }, true)
+    await chatProgress.getByRole('heading', { name: /Entry inventory/ }).waitFor()
+    await controller.observe(agent.id, { provider: 'source', operation: 'read', assetId: asset.id,
+      environmentId: 'local', impact: 'observe', parameters: { path: 'example.js' } }, 'main-page-source', new AbortController().signal)
+    await chatProgress.getByRole('group', { name: 'source ×1' }).waitFor()
+    await expect.poll(async () => page.getByTitle('Tools & progress', { exact: true }).textContent()).toContain('1')
+    const chatInput = page.locator('[contenteditable="true"],textarea').first()
+    await chatInput.fill('Keep this correction draft')
+    expect(await chatInput.evaluate(node => node instanceof HTMLTextAreaElement ? node.value : node.textContent)).toBe('Keep this correction draft')
     const observed = await controller.captureAnalysis(agent.id, asset.id, ['fixture-call'],
       Buffer.from('Demo observation: input handling requires review'), new AbortController().signal)
     if (observed.kind !== 'evidence') throw new Error('Expected evidence')
@@ -93,6 +107,26 @@ describe('web e2e: Security workbench', () => {
     await dashboard.getByRole('heading', { name: task.title, exact: true }).waitFor()
     expect(controller.projectView(task.id)).toEqual(before)
     expect(scaffold.ctx.agents.list()).toHaveLength(sessionsBefore)
+    const activity = dashboard.getByRole('region', { name: 'Analysis progress', exact: true })
+    await activity.getByText('Live updates', { exact: true }).waitFor()
+    const checkpoint = async (operationId: string, phase: string, title: string, id?: string) => {
+      return controller.command(agent.id, { operationId, expectedRevision: controller.view(agent.id).revision,
+        action: { kind: 'checkpoint', phase, title, ...(id ? { id } : {}), reason: 'Inspect the owned fixture',
+          summary: 'Input handling is unverified', next: 'Read the caller', evidenceIds: [observed.value.id], findingIds: [] } }, true)
+    }
+    const initial = await checkpoint('web-recon', 'recon', 'Entry inventory')
+    const direction = initial.records.find(item => item.kind === 'checkpoint')!
+    await checkpoint('web-recon-update', 'recon', 'Entry inventory', direction.value.id)
+    await activity.getByRole('heading', { name: /Entry inventory/ }).waitFor()
+    expect(await activity.getByRole('heading', { level: 4 }).count()).toBe(1)
+    await checkpoint('web-assess', 'assessment', 'Access checks')
+    await checkpoint('web-more-recon', 'recon', 'Supplemental reconnaissance')
+    await controller.observe(agent.id, { provider: 'source', operation: 'read', assetId: asset.id,
+      environmentId: 'local', impact: 'observe', parameters: { path: 'example.js' } }, 'web-live-observation', new AbortController().signal)
+    await activity.getByRole('group', { name: 'source ×1' }).last().waitFor()
+    expect(await activity.getByRole('heading', { level: 4 }).count()).toBe(3)
+    await activity.getByText('Inspect calls and evidence', { exact: true }).last().click()
+    await activity.getByText(/web-live-observation/).waitFor()
     await dashboard.getByRole('button', { name: 'Findings', exact: true }).click()
     await dashboard.getByRole('heading', { name: 'Input requires validation' }).waitFor()
     await dashboard.getByRole('button', { name: 'Evidence', exact: true }).click()
@@ -116,6 +150,9 @@ describe('web e2e: Security workbench', () => {
     await dashboard.getByRole('heading', { name: task.title, exact: true }).waitFor()
     await dashboard.getByRole('button', { name: 'Stop task', exact: true }).click()
     await dashboard.getByText('This task is stopped.', { exact: false }).waitFor()
+    await editor.waitFor({ state: 'visible' })
+    await editor.fill('Keep stopped; inspect the caller before resuming')
+    expect(controller.projects().find(item => item.id === task.id)?.stopped).toBe(true)
     await dashboard.getByRole('button', { name: 'Resume task', exact: true }).click()
     await expect.poll(() => controller.projects().find(item => item.id === task.id)?.stopped).toBe(false)
     await dashboard.getByRole('button', { name: 'Hide assistant', exact: true }).waitFor()

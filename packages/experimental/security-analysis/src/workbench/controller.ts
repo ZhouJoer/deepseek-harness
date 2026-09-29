@@ -3,6 +3,8 @@ import { createHash, randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import {
   engagementSchema,
+  checkpointSchema,
+  phaseSchema,
   assetSchema,
   fileAssetSchema,
   sourceAssetSchema,
@@ -28,6 +30,7 @@ import {
   type WorkbenchView,
 } from './model.ts'
 import type { SecurityJournal } from './journal.ts'
+import type { SecurityActivityStore } from './activity.ts'
 import { canObserve, toolsForRole, type DelegatedRole } from './roles.ts'
 import { findingHash } from './assessment.ts'
 import { reportPrompt, renderReport, type ReportLimits } from './report.ts'
@@ -40,6 +43,8 @@ import {
   type AnalysisProvider,
   type EnvironmentManager,
   type SecurityEnvironment,
+  type AnalysisContext,
+  type AnalysisResult,
 } from './providers.ts'
 
 const text = z.string().trim().min(1)
@@ -63,6 +68,10 @@ const actions = z.discriminatedUnion('kind', [
     .strict(),
   z.object({ kind: z.literal('select'), engagementId: text }).strict(),
   z.object({ kind: z.literal('leave') }).strict(),
+  z.object({ kind: z.literal('checkpoint'), id: text.optional(), phase: phaseSchema,
+    title: text.max(100), reason: z.string().max(300), summary: z.string().max(300), next: z.string().max(300),
+    evidenceIds: z.array(text), findingIds: z.array(text),
+  }).strict(),
   z.object({ kind: z.literal('import'), path: text, label: text }).strict(),
   z.object({ kind: z.literal('import-source'), path: text.describe('Absolute source file or directory inside the configured import roots. A selected file imports only that file.'), label: text }).strict(),
   z.object({ kind: z.literal('import-legacy'), path: text, title: text }).strict(),
@@ -166,7 +175,40 @@ export class SecurityController {
     readonly artifacts: ArtifactStore,
     readonly options: WorkbenchOptions,
     private readonly generateReport?: (prompt: string, signal: AbortSignal, sessionId: string) => Promise<string>,
+    readonly activity?: SecurityActivityStore,
   ) {}
+  /** Resolve the direction captured at delegation, or the coordinator's current direction.
+   * @param sessionId - bound analysis Session.
+   * @returns checkpoint identity; empty identifies work without an explicit direction.
+   */
+  checkpointId(sessionId: string): string {
+    const binding = this.binding(sessionId)
+    if (!binding) return ''
+    if (binding.role !== 'coordinator') return binding.checkpointId ?? ''
+    return this.view(sessionId).records.filter(item => item.kind === 'checkpoint').at(-1)?.value.id ?? ''
+  }
+
+  private async runObserved(sessionId: string, callId: string, provider: AnalysisProvider,
+    operation: AnalysisOperation, context: AnalysisContext): Promise<AnalysisResult> {
+    const binding = this.binding(sessionId)
+    if (!binding) throw new Error('Select a security project first')
+    const tool = operation.provider === 'android' ? (operation.operation.includes('decompile') ? 'jadx' : 'adb') : operation.provider
+    const activity = await this.activity?.start({ projectId: binding.engagementId, sessionId, callId,
+      checkpointId: this.checkpointId(sessionId), tools: [tool], verified: true, parameters: JSON.stringify(operation) })
+    try {
+      const result = await provider.run(operation, context)
+      if (activity) await this.activity?.finish(activity.id, {
+        status: context.signal.aborted ? 'cancelled' : result.failure ? 'failed' : 'completed',
+        incomplete: result.incomplete || !!result.failure || context.signal.aborted,
+        detail: (result.failure ?? result.summary).slice(0, this.options.maxOutputBytes),
+      })
+      return result
+    } catch (error) {
+      if (activity) await this.activity?.finish(activity.id, { status: context.signal.aborted ? 'cancelled' : 'failed',
+        incomplete: true, detail: String(error).slice(0, this.options.maxOutputBytes) })
+      throw error
+    }
+  }
   /**
    * Bind a delegated job to project stop and service teardown.
    * @param project - selected project whose scope the child inherits.
@@ -357,6 +399,7 @@ export class SecurityController {
       .filter(run => run.project === project && (plan === undefined || run.plan === plan))
     for (const run of cancelled) run.controller.abort(new Error('Operator revoked execution'))
     await Promise.allSettled(cancelled.map(run => run.done))
+    await this.activity?.flush()
   }
   /**
    * Read only records in the selected project and assigned assets.
@@ -437,10 +480,11 @@ export class SecurityController {
    * @param input - untrusted command JSON.
    * @param operator - true only for a user gesture, never model-supplied.
    * @param signal - cancellation of a pending model-generated report.
+   * @param onStopped - operator carrier cancellation after durable stop, before awaiting resource cleanup.
    * @returns committed project state.
    */
   async command(sessionId: string, input: unknown, operator: boolean = false,
-    signal: AbortSignal = new AbortController().signal): Promise<WorkbenchView> {
+    signal: AbortSignal = new AbortController().signal, onStopped?: (project: string) => void): Promise<WorkbenchView> {
     const command = commandSchema.parse(input)
     const action = command.action
     const operatorActions = ['create', 'select', 'leave', 'approve', 'publish', 'resume', 'web-target']
@@ -493,6 +537,24 @@ export class SecurityController {
           }
         }
         switch (action.kind) {
+          case 'checkpoint': {
+            evidence(action.evidenceIds)
+            const current = view.records.filter(item => item.kind === 'checkpoint').filter(item => item.value.engagementId === project.id).at(-1)?.value
+            if (action.id && current?.id !== action.id) throw new Error('Only the current research direction can be updated')
+            if (action.id && (current?.phase !== action.phase || current.title !== action.title))
+              throw new Error('Create a new checkpoint when the research phase or subject changes')
+            const sameDirection = current?.phase === action.phase && current.title === action.title ? current : undefined
+            const findings = action.findingIds.map((id) => {
+              const item = scoped('finding', id)
+              if (item.kind !== 'finding') throw new Error('Finding required')
+              return { id: item.value.id, title: item.value.title, status: item.value.status }
+            })
+            const { kind: _kind, findingIds: _findingIds, ...fields } = action
+            return [{ kind: 'checkpoint', value: checkpointSchema.parse({ ...fields,
+              id: action.id ?? sameDirection?.id ?? randomUUID(), engagementId: project.id, findings,
+              createdAt: sameDirection?.createdAt ?? Date.now(), updatedAt: Date.now(),
+            }) }]
+          }
           case 'web-target': {
             const environment = this.environment(project.id, action.environmentId)
             const target = environment.webTarget
@@ -795,7 +857,10 @@ export class SecurityController {
     )
     if (action.kind === 'stop' || action.kind === 'revoke') {
       const project = this.binding(sessionId)?.engagementId
-      if (project) await this.cancelExecutions(project, action.kind === 'revoke' ? action.planId : undefined)
+      if (project) {
+        try { if (action.kind === 'stop') onStopped?.(project) }
+        finally { await this.cancelExecutions(project, action.kind === 'revoke' ? action.planId : undefined) }
+      }
     }
     return this.view(sessionId)
   }
@@ -977,7 +1042,7 @@ export class SecurityController {
     await this.journal.commit(randomUUID(), view.revision, { childId, assetIds, role }, () => [
       {
         kind: 'binding',
-        value: { sessionId: childId, engagementId: parent.engagementId, assetIds, role },
+        value: { sessionId: childId, engagementId: parent.engagementId, assetIds, role, checkpointId: this.checkpointId(parentId) },
       },
     ])
   }
@@ -1084,7 +1149,7 @@ export class SecurityController {
       const resolved = provider.resolve(plan.operation, context)
       if (JSON.stringify(resolved) !== JSON.stringify(plan.operation))
         throw new Error('Provider resolution changed; prepare a new plan')
-      const result = await provider.run(resolved, context)
+      const result = await this.runObserved(sessionId, callId, provider, resolved, context)
       const artifact = await this.artifacts.put(result.bytes, result.mediaType)
       const evidenceId = randomUUID()
       await this.journal.commit(operationId + ':settle', undefined, { operationId, artifact }, (view) => {
@@ -1258,7 +1323,7 @@ export class SecurityController {
       const resolved = provider.resolve(operation, context)
       if (resolved.impact !== 'observe') throw new Error('Static observations cannot modify analysis state or targets')
       let result: import('./providers.ts').AnalysisResult
-      try { result = await provider.run(resolved, context) }
+      try { result = await this.runObserved(sessionId, callId, provider, resolved, context) }
       catch (error) {
         const bytes = Buffer.from(error instanceof Error ? error.message : String(error))
           .subarray(0, Math.min(this.options.maxOutputBytes, this.options.maxArtifactBytes))

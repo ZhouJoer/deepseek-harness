@@ -12,9 +12,10 @@ import { AnalysisStart } from './AnalysisStart.tsx'
 import { MaterialPanel } from './MaterialPanel.tsx'
 import { ProjectManagement, projectLabel } from './ProjectManagement.tsx'
 import { KnowledgePanel } from './KnowledgePanel.tsx'
+import { ActivityPanel, type ActivityActions } from './ActivityPanel.tsx'
 
 /** Service actions injected by the Cordis browser plugin. */
-export interface WorkbenchActions {
+export interface WorkbenchActions extends ActivityActions {
   sendAnalysis(sessionId: SessionId, objective: string): Promise<void>
   /** Re-pull authoritative records after a new connection generation. */
   subscribeReset(this: void, listener: () => void): () => void
@@ -362,6 +363,8 @@ export function Workbench(props: WorkbenchProps) {
                   })} />}
                 {tab === 'overview' && (
                   <>
+                    {project?.kind === 'engagement' && <ActivityPanel key={project.value.id} {...props} project={project.value.id} view={view}
+                      changed={(next) =>{  setView(previous => next.revision >= previous.revision ? next : previous) }} />}
                     {project?.kind === 'engagement' ? (
                       <>
                         <section className={css.taskSummary}>

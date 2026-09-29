@@ -60,6 +60,8 @@ The toolbox loads live categorized installations without a selected project or c
 
 The sidebar Security analysis panel lists projects, targets, checks, findings, reviews, reports and laboratory generations without requiring a selected conversation. Advanced details in the history page offer explicit local-image reuse and new-image builds; both preserve existing laboratory image identities. The conversation workbench registers running Web targets, applies independent reviews and generates revision reports. Both project views render saved Markdown briefs and optional findings appendices directly. The [Web guide](../../../docs/user/guide/security-analysis.md#local-web-laboratory) describes the workflow and current provider limits.
 
+The main chat keeps a compact **Tools** count badge above the composer. Click it to open **Tools & progress** in the native right sidebar; the badge updates even while the sidebar is closed. An unlinked chat shows an explicit empty state in the sidebar. It follows Session selection and project activity through separate disposable streams. Task details also offer a **Tools & progress** tab. Both surfaces show a chronological timeline with three lines per direction: tools, current conclusion, and next action or blocker. Repeated rounds update one direction; returning to reconnaissance creates a distinct direction when the question changes. Expand a direction for bounded invocation pages and evidence references. Reconnection restores a project-scoped baseline. The sidebar is read-only. The native composer keeps its existing stop control; pausing the entire project remains a workbench management action. Enter additions or corrections directly in the native composer; explicitly resume a paused project before continuing its analysis.
+
 <a id="model-experience"></a>
 
 ## Model Experience
@@ -82,7 +84,7 @@ Tool definitions and workflow guidance remain stable. Project state enters conte
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- The panel reloads on open, connection reset, refresh, mutations and the end of the current turn while open; intermediate provider progress requires refresh. Use ordinary jobs and Session navigation for child details. Tool availability and outstanding environment acceptance are documented in [security analysis](../security-analysis/README.md).
+- Invocation details are paginated and require refresh to include later calls. Arbitrary script internals remain unverified; background output whose completeness was not observed stays marked incomplete. See [security analysis](../security-analysis/README.md) for external-tool and environment acceptance limits.
 
 <a id="dev-note"></a>
 ### Dev Note

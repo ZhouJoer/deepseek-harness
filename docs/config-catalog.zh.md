@@ -859,6 +859,8 @@ export interface WorkbenchConfig {
   maxOutputBytes: number
   /** Maximum complete JSON bytes in one model-facing tool response. */
   modelResultBytes: number
+  /** Maximum invocation details returned in one activity page. */
+  activityPageSize: number
   /** Target Unicode characters for the reader-facing report body. */
   reportMaxChars: number
   /** Maximum bytes supplied to the report model. */
@@ -978,7 +980,7 @@ export interface ToolInstallation {
 }
 ```
 
-来源： [`packages/experimental/security-analysis/src/index.ts:46`](../packages/experimental/security-analysis/src/index.ts)
+来源： [`packages/experimental/security-analysis/src/index.ts:49`](../packages/experimental/security-analysis/src/index.ts)
 
 <a id="deepseek-aidsh-experimental-tool-agent-team"></a>
 

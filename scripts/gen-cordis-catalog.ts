@@ -590,6 +590,8 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   SpawnTeammateResult: 'agent-team.md',
   TeamId: 'agent-team.md',
   WorkbenchView: 'security-workbench.md',
+  SecurityActivityFrame: 'security-workbench.md',
+  SecurityActivityPage: 'security-workbench.md',
   ToolboxDirectory: 'security-workbench.md',
   ToolboxConfiguration: 'security-workbench.md',
   ToolboxConfigurationResult: 'security-workbench.md',

@@ -62,6 +62,16 @@ export async function apply(ctx) {
       for (const action of [{ kind: 'select', engagementId: project.value.id }, { kind: 'resume' }]) {
         selected = await service.command(exec.agent, JSON.stringify({ operationId: 'fixture-' + action.kind, expectedRevision: selected.revision, action }))
       }
+      let checkpointId
+      for (const [index, phase, title] of [[1, 'recon', '材料侦察'], [2, 'recon', '材料侦察'],
+        [3, 'assessment', '证据评估'], [4, 'recon', '补充侦察']]) {
+        selected = await service.command(exec.agent, JSON.stringify({ operationId: 'fixture-checkpoint-' + index,
+          expectedRevision: selected.revision, action: { kind: 'checkpoint', phase, title,
+            ...(index === 2 ? { id: checkpointId } : {}), reason: index === 4 ? '实现证据不足' : '',
+            summary: '仅有静态笔记，尚无安全结论。', next: '补充实现材料。', evidenceIds: [], findingIds: [] } }))
+        checkpointId = selected.records.filter(record => record.kind === 'checkpoint').at(-1).value.id
+      }
+      assert.equal(selected.records.filter(record => record.kind === 'checkpoint').length, 3)
       return { ...result, value: { report: result.value, restoredProject: await service.view(exec.agent) } }
     })
   })

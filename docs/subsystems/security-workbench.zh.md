@@ -102,6 +102,13 @@ Optional security profile service; default application compositions remain indep
  * @returns project state. */
 @Remote('view') async view(agent: Agent): Promise<WorkbenchView>
 
+/** Follow the project selected by this Session, including selection during a running turn.
+ * @param agent - carrier-resolved agent.
+ * @param signal - connection lifetime.
+ * @returns initial selection and committed selection changes.
+ */
+@Remote({ mode: 'stream' }) async *followSessionView(agent: Agent, signal: AbortSignal): AsyncIterable<WorkbenchView>
+
 /**
  * Apply a user-authored command including approval gestures.
  * @param agent - carrier-resolved agent.
@@ -109,6 +116,22 @@ Optional security profile service; default application compositions remain indep
  * @returns committed project state.
  */
 @Remote('command') async command(agent: Agent, command: string): Promise<WorkbenchView>
+
+/** Follow committed activity and research directions for an authenticated operator.
+ * @param projectId - selected project.
+ * @param signal - subscription cancellation.
+ * @returns baseline and project-scoped activity increments.
+ */
+@Remote({ mode: 'stream' }) async *followActivity(projectId: string, signal: AbortSignal): AsyncIterable<SecurityActivityFrame>
+
+/** Read invocation details within one research direction.
+ * @param projectId - selected project.
+ * @param checkpointId - direction identity, or empty for unclassified work.
+ * @param offset - page position.
+ * @param through - initial page cutoff, if continuing.
+ * @returns bounded invocation details and continuation.
+ */
+@Remote('activityDetails') async activityDetails(projectId: string, checkpointId: string, offset: number, through?: number): Promise<SecurityActivityPage>
 
 /**
  * Search material visible to this session.

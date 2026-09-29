@@ -72,6 +72,43 @@ async function harness(generateReport?: (prompt: string, signal: AbortSignal) =>
 }
 
 describe('security workbench', () => {
+  it('notifies coordinator cancellation after durable stop and before waiting for delegated cleanup', async () => {
+    const { controller } = await harness()
+    const project = controller.binding('parent')!.engagementId
+    const abort = new AbortController()
+    const cleanup = Promise.withResolvers<undefined>()
+    const release = controller.trackDelegation(project, abort, cleanup.promise)
+    const onStopped = vi.fn(() => {
+      expect(controller.projects().find(item => item.id === project)?.stopped).toBe(true)
+    })
+    const stopping = controller.command('parent', { operationId: 'stop-order', expectedRevision: 0,
+      action: { kind: 'stop' } }, true, new AbortController().signal, onStopped)
+    try {
+      await vi.waitFor(() => { expect(abort.signal.aborted).toBe(true) })
+      expect(onStopped).toHaveBeenCalledExactlyOnceWith(project)
+    } finally { cleanup.resolve(undefined); release(); await stopping }
+  })
+  it('merges a research direction across turns and preserves supplemental reconnaissance and delegated ownership', async () => {
+    const { controller, send, assetId } = await harness()
+    const checkpoint = { kind: 'checkpoint' as const, phase: 'recon' as const, title: 'Entry inventory',
+      reason: 'Establish entry points', summary: 'Inventory is incomplete', next: 'Read another entry', evidenceIds: [], findingIds: [] }
+    await send(checkpoint)
+    const id = controller.checkpointId('parent')
+    await send({ ...checkpoint, summary: 'One entry identified' })
+    expect(controller.checkpointId('parent')).toBe(id)
+    await send({ ...checkpoint, id, summary: 'Two entry points identified' })
+    expect(controller.view('parent').records.filter(item => item.kind === 'checkpoint')).toHaveLength(1)
+    await controller.bindChild('parent', 'child', [assetId], 'reverse-analyst')
+    await send({ ...checkpoint, phase: 'assessment', title: 'Access checks', reason: 'Inspect the discovered entry' })
+    await send({ ...checkpoint, title: 'Supplemental reconnaissance', reason: 'Assessment found another caller' })
+    expect(controller.checkpointId('child')).toBe(id)
+    const steps = controller.view('parent').records.filter(item => item.kind === 'checkpoint')
+    expect(steps.map(item => item.value.phase)).toEqual(['recon', 'assessment', 'recon'])
+    expect(steps[0]?.value.summary).toBe('Two entry points identified')
+    await expect(send({ ...checkpoint, id })).rejects.toThrow('current research direction')
+    await expect(send({ ...checkpoint, evidenceIds: ['foreign'] })).rejects.toThrow('foreign')
+    await expect(send(checkpoint, false, 'child')).rejects.toThrow('role')
+  })
   it('stores auxiliary script evidence idempotently and rejects foreign assets and stopped projects', async () => {
     const { controller, assetId, send, artifacts } = await harness()
     const bytes = Buffer.from('[{"call":"python analysis.py","result":"observed"}]')

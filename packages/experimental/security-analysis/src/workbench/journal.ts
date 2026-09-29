@@ -17,6 +17,10 @@ const commitSchema = z
 export interface SecurityJournal {
   /** @returns the current committed snapshot. */
   view(): WorkbenchView
+  /** Subscribe to successful project commits; the returned disposer removes the listener. */
+  subscribe(project: string, listener: () => void): () => void
+  /** Subscribe to committed selection changes for one Session; disposal removes the listener. */
+  subscribeSelection(session: string, listener: () => void): () => void
   /** Return a completed identical command without invoking its producer. */
   replay(operationId: string, input: unknown): WorkbenchView | undefined
   /**
@@ -52,6 +56,8 @@ export async function openSecurityJournal(ctx: Context): Promise<SecurityJournal
   const table = domain.table('commits')
   const records = new Map<string, SecurityRecord>()
   const operations = new Map<string, string>()
+  const listeners = new Map<string, Set<() => void>>()
+  const selections = new Map<string, Set<() => void>>()
   let revision = 0
   let chain = Promise.resolve()
   let closing: Promise<void> | undefined
@@ -79,6 +85,16 @@ export async function openSecurityJournal(ctx: Context): Promise<SecurityJournal
   const fingerprintOf = (input: unknown) => createHash('sha256').update(JSON.stringify(input)).digest('hex')
   return {
     view,
+    subscribe(project, listener) {
+      const group = listeners.get(project) ?? new Set<() => void>()
+      group.add(listener); listeners.set(project, group)
+      return () => { group.delete(listener); if (!group.size) listeners.delete(project) }
+    },
+    subscribeSelection(session, listener) {
+      const group = selections.get(session) ?? new Set<() => void>()
+      group.add(listener); selections.set(session, group)
+      return () => { group.delete(listener); if (!group.size) selections.delete(session) }
+    },
     replay(operationId, input) {
       const previous = operations.get(operationId)
       if (previous === undefined) return undefined
@@ -106,6 +122,17 @@ export async function openSecurityJournal(ctx: Context): Promise<SecurityJournal
         revision = commit.revision
         operations.set(operationId, fingerprint)
         apply(changed)
+        for (const item of changed) {
+          if (item.kind !== 'binding') continue
+          for (const listener of selections.get(item.value.sessionId) ?? []) {
+            try { listener() } catch (error) { ctx.logger.warn('Security selection subscriber failed: %s', String(error)) }
+          }
+        }
+        for (const project of new Set(changed.map(item => item.kind === 'engagement' ? item.value.id : item.value.engagementId))) {
+          for (const listener of listeners.get(project) ?? []) {
+            try { listener() } catch (error) { ctx.logger.warn('Security project subscriber failed: %s', String(error)) }
+          }
+        }
         return view()
       })
       chain = pending.then(
@@ -115,6 +142,8 @@ export async function openSecurityJournal(ctx: Context): Promise<SecurityJournal
       return pending
     },
     close() {
+      listeners.clear()
+      selections.clear()
       closing ??= chain.then(() => domain.close())
       return closing
     },

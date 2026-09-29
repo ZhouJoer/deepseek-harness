@@ -11,6 +11,8 @@ export type AssetId = Branded<'SecurityAsset'>
 export type EnvironmentId = Branded<'SecurityEnvironment'>
 /** Identifies a dependency-tracked check. */
 export type CheckId = Branded<'SecurityCheck'>
+/** Identifies a chronological research direction across repeated analysis turns. */
+export type SecurityCheckpointId = Branded<'SecurityCheckpoint'>
 /** Identifies an immutable evidence record. */
 export type EvidenceId = Branded<'SecurityEvidence'>
 /** Identifies one immutable validation plan. */
@@ -22,6 +24,18 @@ const json: z.ZodType<JsonValue> = z.json()
 const digest = z.string().regex(/^[a-f0-9]{64}$/u)
 /** Four assessment stages, independent for each check. */
 export const phaseSchema = z.enum(['recon', 'surface', 'assessment', 'validation'])
+/** A research direction may span turns and recur after other phases. */
+export const checkpointSchema = z.object({
+  id: z.string().min(1).transform(brandString<SecurityCheckpointId>), engagementId: z.string().min(1),
+  phase: phaseSchema, title: z.string().trim().min(1).max(100),
+  reason: z.string().max(300), summary: z.string().max(300), next: z.string().max(300),
+  evidenceIds: z.array(z.string()),
+  findings: z.array(z.object({ id: z.string(), title: z.string(),
+    status: z.enum(['suspected', 'confirmed', 'refuted', 'inconclusive']) }).strict()),
+  createdAt: z.number().int().nonnegative(), updatedAt: z.number().int().nonnegative(),
+}).strict()
+/** Saved concise progress at a particular research direction. */
+export type SecurityCheckpoint = z.infer<typeof checkpointSchema>
 /** Session roles are granted by the coordinator, never inferred from ancestry. */
 export const roleSchema = z.enum(['coordinator', 'reconnaissance', 'reverse-analyst', 'web-analyst', 'researcher', 'reviewer'])
 /** Content-addressed immutable file metadata. */
@@ -183,6 +197,7 @@ export const bindingSchema = z
     assetIds: z.array(id),
     active: z.boolean().optional(),
     report: childReportSchema.optional(),
+    checkpointId: z.string().optional(),
   })
   .strict()
 /** Concise conclusions stored independently of analysis transcripts and evidence. */
@@ -223,6 +238,7 @@ export const laboratorySchema = z.object({
 }).strict()
 /** Tagged records form one append-only commit stream. */
 export const recordSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('checkpoint'), value: checkpointSchema }).strict(),
   z
     .object({
       kind: z.literal('legacy'),

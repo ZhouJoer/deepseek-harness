@@ -26,6 +26,11 @@ function harness(extra: object = {}) {
   const api = {
     projects: vi.fn(async () => JSON.stringify([alpha.value, beta.value])),
     project: vi.fn(async (id: string): Promise<WorkbenchView> => ({ revision: 1, records: id === 'Alpha' ? [alpha, evidence] : [beta] })),
+    followActivity: async function* (id: string, signal: AbortSignal) {
+      yield { type: 'snapshot' as const, briefs: [], cursor: 0, view: { revision: 1, records: id === 'Alpha' ? [alpha, evidence] : [beta] }, usage: [] }
+      if (!signal.aborted) await new Promise<void>((resolve) =>{  signal.addEventListener('abort', () =>{  resolve() }, { once: true }) })
+    },
+    activityDetails: vi.fn(async () => ({ items: [], next: null, through: 0 })),
     projectArtifact: vi.fn(async () => JSON.stringify({ text: 'Owned evidence', size: 14, truncated: false })),
     report: vi.fn(async () => '# Report'), findSession: vi.fn(async () => 's1'),
     createSession: vi.fn(async () => 'new'), associateSession: vi.fn(async () => {}), resumeProject: vi.fn(async () => {}),
@@ -97,12 +102,13 @@ it('requires an explicit continue action before creating a missing historical Se
   await waitFor(() =>{  expect(api.associateSession).toHaveBeenCalledWith('new', 'Alpha') })
   expect(api.resumeProject).not.toHaveBeenCalled()
 })
-it('does not allow a stopped task to send before explicit resume', async () => {
+it('opens the stopped assistant without implicitly resuming its task', async () => {
   const { api, props } = harness()
   render(<Dashboard {...props} />)
   fireEvent.click(await screen.findByRole('button', { name: /Beta/ }))
   await screen.findByRole('heading', { name: 'Beta' })
-  expect((screen.getByRole<HTMLButtonElement>('button', { name: 'Analysis assistant' })).disabled).toBe(true)
+  fireEvent.click(screen.getByRole('button', { name: 'Analysis assistant' }))
+  await screen.findByLabelText('Assistant draft')
   expect(api.resumeProject).not.toHaveBeenCalled()
   fireEvent.click(screen.getByRole('button', { name: 'Resume task' }))
   await waitFor(() =>{  expect(api.resumeProject).toHaveBeenCalledWith('s1') })

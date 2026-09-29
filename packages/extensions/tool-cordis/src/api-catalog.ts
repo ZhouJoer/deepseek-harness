@@ -1742,10 +1742,28 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'project state.',
       },
       {
+        signature: '@Remote({ mode: \'stream\' }) async *followSessionView(agent: Agent, signal: AbortSignal): AsyncIterable<WorkbenchView>',
+        description: 'Follow the project selected by this Session, including selection during a running turn.',
+        parameters: [{ name: 'agent', description: 'carrier-resolved agent.' }, { name: 'signal', description: 'connection lifetime.' }],
+        returns: 'initial selection and committed selection changes.',
+      },
+      {
         signature: '@Remote(\'command\') async command(agent: Agent, command: string): Promise<WorkbenchView>',
         description: 'Apply a user-authored command including approval gestures.',
         parameters: [{ name: 'agent', description: 'carrier-resolved agent.' }, { name: 'command', description: 'JSON command prepared by the workbench.' }],
         returns: 'committed project state.',
+      },
+      {
+        signature: '@Remote({ mode: \'stream\' }) async *followActivity(projectId: string, signal: AbortSignal): AsyncIterable<SecurityActivityFrame>',
+        description: 'Follow committed activity and research directions for an authenticated operator.',
+        parameters: [{ name: 'projectId', description: 'selected project.' }, { name: 'signal', description: 'subscription cancellation.' }],
+        returns: 'baseline and project-scoped activity increments.',
+      },
+      {
+        signature: '@Remote(\'activityDetails\') async activityDetails(projectId: string, checkpointId: string, offset: number, through?: number): Promise<SecurityActivityPage>',
+        description: 'Read invocation details within one research direction.',
+        parameters: [{ name: 'projectId', description: 'selected project.' }, { name: 'checkpointId', description: 'direction identity, or empty for unclassified work.' }, { name: 'offset', description: 'page position.' }, { name: 'through', description: 'initial page cutoff, if continuing.' }],
+        returns: 'bounded invocation details and continuation.',
       },
       {
         signature: '@Remote(\'search\') async search(agent: Agent, query: string, shared: boolean): Promise<WorkbenchView>',
@@ -5857,8 +5875,32 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type SearchResultView = SearchMatchesResultView | SearchPathsResultView;',
   },
   {
+    name: 'SecurityActivity',
+    declaration: 'export type SecurityActivity = z.infer<typeof activitySchema>;',
+  },
+  {
+    name: 'SecurityActivityBrief',
+    declaration: 'export type SecurityActivityBrief = z.infer<typeof briefSchema>;',
+  },
+  {
+    name: 'SecurityActivityFrame',
+    declaration: 'export type SecurityActivityFrame = {\n    type: \'snapshot\';\n    cursor: number;\n    view: WorkbenchView;\n    usage: SecurityToolUsage[];\n    briefs: SecurityActivityBrief[];\n} | {\n    type: \'activity\';\n    cursor: number;\n    usage: SecurityToolUsage[];\n    briefs: SecurityActivityBrief[];\n} | {\n    type: \'project\';\n    view: WorkbenchView;\n};',
+  },
+  {
+    name: 'SecurityActivityId',
+    declaration: 'export type SecurityActivityId = Branded<\'SecurityActivity\'>;',
+  },
+  {
+    name: 'SecurityActivityPage',
+    declaration: 'export interface SecurityActivityPage {\n    items: SecurityActivity[];\n    next: number | null;\n    through: number;\n}',
+  },
+  {
+    name: 'SecurityActivityStore',
+    declaration: 'export class SecurityActivityStore {\n    static async open(ctx: Context): Promise<SecurityActivityStore>;\n    updateBrief(input: SecurityActivityBrief): Promise<void>;\n    async flush(): Promise<void>;\n    has(sessionId: string, callId: string): boolean;\n    start(input: Pick<SecurityActivity, \'projectId\' | \'sessionId\' | \'callId\' | \'checkpointId\' | \'tools\' | \'verified\' | \'parameters\'>): Promise<SecurityActivity>;\n    finish(id: SecurityActivityId, result: Pick<SecurityActivity, \'status\' | \'incomplete\' | \'detail\'> & {\n        evidenceIds?: string[];\n    }): Promise<void>;\n    usage(project: string): SecurityToolUsage[];\n    page(project: string, checkpointId: string, offset: number, limit: number, through = this.cursor): SecurityActivityPage;\n    async *follow(project: string, view: () => WorkbenchView, subscribeProject: (listener: () => void) => () => void, signal: AbortSignal): AsyncGenerator<SecurityActivityFrame, void>;\n    async close(): Promise<void>;\n}',
+  },
+  {
     name: 'SecurityController',
-    declaration: 'export class SecurityController {\n    readonly providers: ProviderRegistry<AnalysisProvider>;\n    readonly environments: ProviderRegistry<{\n        id: string;\n        manager: EnvironmentManager;\n    }>;\n    readonly laboratories: ProviderRegistry<{\n        id: string;\n        action(projectId: string, action: string, laboratoryId?: string): Promise<WorkbenchView>;\n    }>;\n    laboratoriesView(): Laboratory[];\n    async saveLaboratory(input: Laboratory): Promise<Laboratory>;\n    constructor(private readonly journal: SecurityJournal, readonly artifacts: ArtifactStore, readonly options: WorkbenchOptions, private readonly generateReport?: (prompt: string, signal: AbortSignal, sessionId: string) => Promise<string>);\n    trackDelegation(project: string, controller: AbortController, done: Promise<unknown>): () => void;\n    async manageEnvironment<T>(environmentId: string, run: (signal: AbortSignal) => Promise<T>, project: string = \'\'): Promise<T>;\n    binding(sessionId: string): SessionBinding | undefined;\n    analysisProject(sessionId: string): string | undefined;\n    async captureAnalysis(sessionId: string, assetId: string, callIds: string[], bytes: Uint8Array, signal: AbortSignal): Promise<SecurityRecord>;\n    async saveChildReport(sessionId: string, input: unknown): Promise<void>;\n    projects(includeArchived: boolean = false): Engagement[];\n    async manageProject(projectId: string, input: unknown): Promise<Engagement[]>;\n    async importMaterials(sessionId: string, input: un /* …truncated — full shape in source */',
+    declaration: 'export class SecurityController {\n    readonly providers: ProviderRegistry<AnalysisProvider>;\n    readonly environments: ProviderRegistry<{\n        id: string;\n        manager: EnvironmentManager;\n    }>;\n    readonly laboratories: ProviderRegistry<{\n        id: string;\n        action(projectId: string, action: string, laboratoryId?: string): Promise<WorkbenchView>;\n    }>;\n    laboratoriesView(): Laboratory[];\n    async saveLaboratory(input: Laboratory): Promise<Laboratory>;\n    constructor(private readonly journal: SecurityJournal, readonly artifacts: ArtifactStore, readonly options: WorkbenchOptions, private readonly generateReport?: (prompt: string, signal: AbortSignal, sessionId: string) => Promise<string>, readonly activity?: SecurityActivityStore);\n    checkpointId(sessionId: string): string;\n    trackDelegation(project: string, controller: AbortController, done: Promise<unknown>): () => void;\n    async manageEnvironment<T>(environmentId: string, run: (signal: AbortSignal) => Promise<T>, project: string = \'\'): Promise<T>;\n    binding(sessionId: string): SessionBinding | undefined;\n    analysisProject(sessionId: string): string | undefined;\n    async captureAnalysis(sessionId: string, assetId: string, callIds: string[], bytes: Uint8Array, signal: AbortSignal): Promise<SecurityRecord>;\n    async saveChildReport(sessionId: string, input: unknown): Promise<void>;\n    projects(includeArchived: boolean = false): Engagement[];\n    async manageProject(projectId: string, input: /* …truncated — full shape in source */',
   },
   {
     name: 'SecurityEnvironment',
@@ -5866,7 +5908,11 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SecurityJournal',
-    declaration: 'export interface SecurityJournal {\n    view(): WorkbenchView;\n    replay(operationId: string, input: unknown): WorkbenchView | undefined;\n    commit(operationId: string, expectedRevision: number | undefined, input: unknown, produce: (view: WorkbenchView) => Promise<SecurityRecord[]> | SecurityRecord[]): Promise<WorkbenchView>;\n    close(): Promise<void>;\n}',
+    declaration: 'export interface SecurityJournal {\n    view(): WorkbenchView;\n    subscribe(project: string, listener: () => void): () => void;\n    subscribeSelection(session: string, listener: () => void): () => void;\n    replay(operationId: string, input: unknown): WorkbenchView | undefined;\n    commit(operationId: string, expectedRevision: number | undefined, input: unknown, produce: (view: WorkbenchView) => Promise<SecurityRecord[]> | SecurityRecord[]): Promise<WorkbenchView>;\n    close(): Promise<void>;\n}',
+  },
+  {
+    name: 'SecurityToolUsage',
+    declaration: 'export interface SecurityToolUsage {\n    checkpointId: string;\n    tool: string;\n    verified: boolean;\n    total: number;\n    running: number;\n    completed: number;\n    failed: number;\n    cancelled: number;\n    unknown: number;\n    incomplete: number;\n}',
   },
   {
     name: 'SendTeamMessageRequest',

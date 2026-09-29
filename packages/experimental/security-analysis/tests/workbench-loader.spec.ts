@@ -30,6 +30,7 @@ import Subagents from '@deepseek-ai/dsh-subagent'
 import Jobs from '@deepseek-ai/dsh-jobs-local'
 import { JobId } from '@deepseek-ai/dsh-jobs'
 import { startInProcessRun } from '@deepseek-ai/dsh-subagent-in-process-driver'
+import type { WorkbenchView } from '../src/workbench/model.ts'
 import { createScope, bindScopeParent, scopeOf } from '@deepseek-ai/dsh-scope'
 import Approval from '@deepseek-ai/dsh-user-approval'
 import Skills from '@deepseek-ai/dsh-skill'
@@ -323,6 +324,18 @@ function operator(controller: Awaited<Security['ready']>, agent: Agent) {
 }
 
 describe('security workbench Loader composition', () => {
+  it('records rejected provider requests as failed and unverified without claiming execution', async () => {
+    const { ctx, agent, controller } = await load()
+    await operator(controller, agent)({ kind: 'create', title: 'Rejected request', objective: 'Inspect fixture',
+      environmentIds: ['local'], maxAttempts: 1 })
+    const project = controller.binding(agent.id)!.engagementId
+    const revision = controller.view(agent.id).revision
+    const args = { provider: 'source', operation: 'read', assetId: 'missing', environmentId: 'local', parameters: '{}' }
+    expect((await execute(ctx, agent, 'security_static', args)).isError).toBe(true)
+    expect((await execute(ctx, agent, 'security_static', args)).isError).toBe(true)
+    expect(controller.activity!.usage(project)).toMatchObject([{ tool: 'source', verified: false, total: 1, failed: 1 }])
+    expect(controller.view(agent.id).revision).toBe(revision)
+  })
   it('includes configured reverse tools in the first model request before discovery calls', async () => {
     const installations = [{ id: 'radare2', command: '/tools/radare2', prefixArgs: ['--fixture'],
       versionArgs: ['-v'], source: 'Fixture configuration' }]
@@ -377,6 +390,10 @@ describe('security workbench Loader composition', () => {
     if (evidence?.kind !== 'evidence') throw new Error('Missing script evidence')
     expect((await controller.artifacts.read(evidence.value.artifact)).toString()).toContain('42')
     expect(await readFile(join(directory, 'outputs', 'result.txt'), 'utf8')).toBe('42')
+    const activityProject = controller.binding(agent.id)!.engagementId
+    expect(controller.activity!.usage(activityProject)).toEqual([
+      expect.objectContaining({ tool: 'script', verified: false, total: 1, completed: 1 }),
+    ])
     expect(await readFile(join(directory, 'tmp', 'input.txt'), 'utf8')).toBe('owned fixture')
     expect((await readdir(root)).filter(name => !before.includes(name))).toEqual(['.dsh'])
     expect(JSON.stringify(model.requests[1]!.messages)).toContain('analysisDirectory')
@@ -447,6 +464,8 @@ describe('security workbench Loader composition', () => {
     const running = execute(ctx, agent, name, { command: (process.platform === 'win32' ? '& ' : '') + quote(process.execPath) + ' ' + quote(script),
       description: 'Wait in the owned fixture', run_in_background: background })
     await vi.waitFor(async () => { expect(await readFile(ready, 'utf8')).toBe('ready') }, { timeout: 10_000 })
+    const projectId = controller.binding(agent.id)!.engagementId
+    expect(controller.activity!.usage(projectId)).toMatchObject([{ total: 1, running: 1, completed: 0 }])
     if (background) {
       expect((await running).isError).toBe(false)
       const project = controller.binding(agent.id)!.engagementId
@@ -454,9 +473,11 @@ describe('security workbench Loader composition', () => {
       expect(ctx.jobs.list(agent).every(job => job.status !== 'running' && job.status !== 'stopping')).toBe(true)
     } else await send({ kind: 'stop' })
     await running
+    expect(controller.activity!.usage(projectId)).toMatchObject([{ total: 1, running: 0, cancelled: 1 }])
     if (background) {
       const job = ctx.jobs.list(agent)[0]!
       expect((await execute(ctx, agent, 'job_output', { job_id: job.id })).isError).toBe(false)
+      expect(controller.activity!.usage(projectId)).toMatchObject([{ total: 1, cancelled: 1 }])
     }
     expect((await execute(ctx, agent, name, { command: 'echo blocked', description: 'Try stopped execution' })).isError).toBe(true)
   })
@@ -1058,6 +1079,16 @@ it.each([500, 1200])('summarizes once when another comparable step would reach t
   expect(JSON.stringify(model.requests[1]!.messages)).toContain('saved evidence or file locations')
   const end = events.findLast(event => event.type === 'turn/end')
   expect(end?.type === 'turn/end' && end.data.reason.kind).toBe('completed')
+  const projectId = controller.binding(agent.id)!.engagementId
+  const subscription = new AbortController()
+  const stream = controller.activity!.follow(projectId, () => controller.view(agent.id), () => () => {}, subscription.signal)
+  try {
+    await vi.waitFor(async () => {
+      const frame = (await stream.next()).value
+      expect(frame?.type === 'snapshot' || frame?.type === 'activity' ? frame.briefs : []).toMatchObject([{ checkpointId: '' }])
+    })
+  } finally { subscription.abort(); await stream.return?.() }
+  expect(controller.view(agent.id).records.some(item => item.kind === 'checkpoint')).toBe(false)
   model.usageTokens = 0
   agent.followup(webPrompt('Continue from the saved results.'))
   await agent.whenIdle()
@@ -1342,4 +1373,27 @@ it('reads project artifacts and coordinator IDs without writes, rejecting foreig
   expect(await ctx.securityWorkbench.projectSessions(first)).toEqual([])
   await send({ kind: 'leave' })
   expect(await ctx.securityWorkbench.projectSessions(second)).toEqual([])
+})
+
+it('streams Session selection from unbound through create, switch and leave, and cancels idle reads', async () => {
+  const { ctx, agent, controller } = await load()
+  const abort = new AbortController()
+  // Remote's AsyncIterable signature erases this generator's void return type.
+  const stream = ctx.securityWorkbench.followSessionView(agent, abort.signal)[Symbol.asyncIterator]() as AsyncIterator<WorkbenchView, void>
+  try {
+    expect((await stream.next()).value?.records).toEqual([])
+    const send = operator(controller, agent)
+    const first = stream.next()
+    await send({ kind: 'create', title: 'First', objective: 'Inspect owned material', environmentIds: ['local'], maxAttempts: 3 })
+    expect((await first).value?.records.find(item => item.kind === 'engagement')?.value.title).toBe('First')
+    const second = stream.next()
+    await send({ kind: 'create', title: 'Second', objective: 'Separate material', environmentIds: ['local'], maxAttempts: 3 })
+    expect((await second).value?.records.find(item => item.kind === 'engagement')?.value.title).toBe('Second')
+    const left = stream.next()
+    await send({ kind: 'leave' })
+    expect((await left).value?.records).toEqual([])
+    const pending = stream.next()
+    abort.abort()
+    expect((await pending).done).toBe(true)
+  } finally { abort.abort(); await stream.return?.() }
 })

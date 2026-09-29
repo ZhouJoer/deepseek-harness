@@ -2,6 +2,17 @@
 export const NS = 'security-workbench'
 /** Chinese operator-facing security copy. */
 export const zh = {
+  activityScriptShort: '脚本',
+  activityEntry: '工具与进展', activityNoProject: '当前会话尚未关联安全分析任务；关联后将在此实时显示工具使用与阶段简报。',
+  activityTitle: '分析进展', activityCurrent: '当前分析', activityLive: '实时更新', activityDisconnected: '未连接',
+  activityTools: '工具', activityConclusion: '结论', activityNext: '下一步／阻碍', activityReason: '转向原因',
+  activityNoRecords: '尚无使用记录；旧历史可能未记录', activityNoConclusion: '尚无安全结论', activityPending: '等待下一步判断',
+  activityUnverified: '待确认', activityVerified: '调用已核实', activityObservation: '分析观察，未作安全确认', activityUnknown: '结果未知',
+  activityCancelled: '已取消', activityScript: '脚本内部工具未确认', activityCall: '原始调用', activityMore: '更多调用',
+  activityIncomplete: '输出不完整或完整性尚未确认', activityUnverifiedHint: '尚未核实目标工具实际执行，请查看调用结果。',
+  activityStopping: '正在停止…',
+  activityDetails: '查看调用与证据', activityRefresh: '刷新调用',
+  activityPartial: '输出不全',
   dashboardReadFailed: '读取失败，请点击刷新重试。',
   dashboardEntry: '安全工作台',
   dashboardEyebrow: '安全分析 · 工作台',
@@ -318,6 +329,17 @@ export const zh = {
 export type SecurityKey = keyof typeof zh
 /** English operator-facing security copy. */
 export const en: Record<SecurityKey, string> = {
+  activityScriptShort: 'Script',
+  activityEntry: 'Tools & progress', activityNoProject: 'This chat has no security task yet. Tool usage and stage briefs will appear here when a task is linked.',
+  activityTitle: 'Analysis progress', activityCurrent: 'Current analysis', activityLive: 'Live updates', activityDisconnected: 'Disconnected',
+  activityTools: 'Tools', activityConclusion: 'Conclusion', activityNext: 'Next action / blocker', activityReason: 'Reason for changing direction',
+  activityNoRecords: 'No usage recorded; older history may be unavailable', activityNoConclusion: 'No security conclusion yet', activityPending: 'Awaiting the next decision',
+  activityUnverified: 'Unverified', activityVerified: 'Observed call', activityObservation: 'Analyst observation, not a confirmed verdict', activityUnknown: 'Outcome unknown',
+  activityCancelled: 'Cancelled', activityScript: 'Unidentified tools inside script', activityCall: 'Original call', activityMore: 'More calls',
+  activityIncomplete: 'Output incomplete or completeness unverified', activityUnverifiedHint: 'Execution of the named tool is unverified; inspect the call result.',
+  activityStopping: 'Stopping…',
+  activityDetails: 'Inspect calls and evidence', activityRefresh: 'Refresh calls',
+  activityPartial: 'Incomplete output',
   dashboardReadFailed: 'Read failed. Refresh to try again.',
   dashboardEntry: 'Security workspace',
   dashboardEyebrow: 'SECURITY · WORKSPACE',

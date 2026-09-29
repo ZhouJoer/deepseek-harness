@@ -14,7 +14,9 @@ import { ProjectIcon, type ProjectActions } from './Projects.tsx'
 import { SecurityToolRow, securityToolNames } from './SecurityToolRow.tsx'
 import type { WorkbenchActions } from './Workbench.tsx'
 import { selectCoordinator } from './session-selection.ts'
-import { Dashboard, DashboardLauncher, type DashboardActions } from './Dashboard.tsx'
+import { Dashboard, type DashboardActions } from './Dashboard.tsx'
+import { ConversationProgressLauncher, ConversationProgressTab, ConversationProgressTitle, type ConversationProgressActions, type ConversationProgressEntryActions } from './ConversationProgress.tsx'
+import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import { DashboardSession, type DashboardSessionInput } from './DashboardSession.tsx'
 import { randomUUID } from '@deepseek-ai/dsh-util-crypto'
 import type {} from '@deepseek-ai/dsh-client-ui-workspace/client'
@@ -34,7 +36,7 @@ declare module '@deepseek-ai/dsh-api-session-controller/client' {
   interface SessionReferenceSourceMap { securityWorkbench: unknown }
 }
 /** Services required to mount security RPC and the input dock. */
-export const inject = ['remote', 'slots', 'locale', 'sessions', 'layout', 'workspaces']
+export const inject = ['remote', 'slots', 'locale', 'sessions', 'layout', 'workspaces', 'sidebarRight', 'sidebarRightTabs']
 
 async function unwrap<T>(pending: Promise<RemoteResult<T>>): Promise<T> {
   const result = await pending
@@ -67,6 +69,8 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     const panel = 'security-projects' as MainPanelId
     scoped.slots.inject('sidebar.panellist', () => scoped.slots.register({ name: 'sidebar.panellist', id: panel, order: 30, label: () => scoped.locale.bind(NS)('title'), locale: NS }, ProjectIcon))
     const actions: WorkbenchActions = {
+      followActivity: (id, signal) => remote.followActivity(id, signal),
+      activityDetails: (id, checkpoint, offset, through) => unwrap(remote.activityDetails(id, checkpoint, offset, through)),
       sendAnalysis: async (id, objective) => {
         const session = scoped.sessions.binding(id)?.session
         if (!session) throw new Error(scoped.locale.bind(NS)('analysisSessionChanged'))
@@ -89,6 +93,8 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     }
     const dashboardActions: DashboardActions = {
       ...projectActions,
+      followActivity: (id, signal) => remote.followActivity(id, signal),
+      activityDetails: (id, checkpoint, offset, through) => unwrap(remote.activityDetails(id, checkpoint, offset, through)),
       projectArtifact: (id, hash) => unwrap(remote.projectArtifact(id, hash)),
       findSession: async (projectId) => {
         const [ids] = await Promise.all([unwrap(remote.projectSessions(projectId)), scoped.sessions.refresh()])
@@ -127,10 +133,30 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     scoped.slots.inject('security.workbench.session', () => scoped.slots.register({
       name: 'security.workbench.session', locale: NS, inject: () => actions,
     }, DashboardSession))
+    const progressId = '@deepseek-ai/dsh-experimental-client-ui-security-analysis/progress'
+    scoped.effect(() => scoped.sidebarRightTabs.register({ id: progressId, kind: 'security-progress', priority: 'builtin',
+      title: () => scoped.locale.bind(NS)('activityEntry'),
+      guide: [{ id: 'security-progress', order: 30, title: () => scoped.locale.bind(NS)('activityEntry') }],
+    }))
+    scoped.slots.inject('sidebar.right.pane.tab', () => scoped.slots.register({
+      name: 'sidebar.right.pane.tab', key: progressId, locale: NS,
+      inject: (): ConversationProgressActions => {
+        return { ...dashboardActions,
+          followSessionView: (id, signal) => remote.followSessionView(id, signal),
+          openDashboard: () => { scoped.layout.selectPanel(panel) },
+        }
+      },
+    }, ConversationProgressTab))
+    scoped.slots.inject('sidebar.right.pane.tab.title', () => scoped.slots.register({
+      name: 'sidebar.right.pane.tab.title', key: progressId, locale: NS,
+    }, ConversationProgressTitle))
     scoped.slots.inject('conversation.input.dock', () => scoped.slots.register({
       name: 'conversation.input.dock', id: 'security-workbench', order: 30, locale: NS,
-      inject: () => ({ openDashboard: () =>{  scoped.layout.selectPanel(panel) } }),
-    }, DashboardLauncher))
+      inject: (): ConversationProgressEntryActions => ({ followSessionView: (id, signal) => remote.followSessionView(id, signal),
+        followActivity: (id, signal) => actions.followActivity(id, signal), subscribeReset: actions.subscribeReset,
+        openProgress: () => { scoped.sidebarRight.openTab('security-progress') },
+        openDashboard: () => { scoped.layout.selectPanel(panel) } }),
+    }, ConversationProgressLauncher))
   })
   try {
     await ui
