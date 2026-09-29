@@ -18,7 +18,9 @@ it('shows installed tools, missing dependencies and manual installation referenc
     ],
   } }
   const toolboxInventory = vi.fn(async () => data)
-  render(<Toolbox toolboxInventory={toolboxInventory}
+  render(<Toolbox toolboxInventory={toolboxInventory} toolboxDirectory={async () => data}
+    toolCatalog={async () => ({ editable: false, revision: '', tools: [], packs: [], collections: [] })}
+    previewToolPack={async () => { throw new Error('Unused') }} importToolPack={async () => { throw new Error('Unused') }} exportToolPack={async () => ''}
     toolboxConfiguration={async () => ({ editable: false, revision: '', tools: [] })}
     configureTool={async () => { throw new Error('Not configured in this fixture') }}
     toolboxFiles={async () => { throw new Error('Not configured in this fixture') }} t={makeTranslate(zh, commonZh)} />)
@@ -27,5 +29,8 @@ it('shows installed tools, missing dependencies and manual installation referenc
   expect(screen.getAllByRole('link', { name: '手动安装说明' })).toHaveLength(2)
   await waitFor(() => { expect(screen.getByRole('button', { name: '刷新' }).hasAttribute('disabled')).toBe(false) })
   fireEvent.click(screen.getByRole('button', { name: '刷新' }))
-  await waitFor(() => { expect(toolboxInventory).toHaveBeenCalledTimes(2) })
+  expect(toolboxInventory).not.toHaveBeenCalled()
+  await waitFor(() => { expect(screen.getByRole('button', { name: '检测筛选结果' }).hasAttribute('disabled')).toBe(false) })
+  fireEvent.click(screen.getByRole('button', { name: '检测筛选结果' }))
+  await waitFor(() => { expect(toolboxInventory).toHaveBeenCalledWith('local', ['r2pipe']) })
 })

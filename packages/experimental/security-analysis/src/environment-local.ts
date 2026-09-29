@@ -49,7 +49,8 @@ export class LocalEnvironmentManager {
    */
   inventory(environment: SecurityEnvironment, signal: AbortSignal, toolIds?: readonly string[]): Promise<ToolboxInventory> {
     return inspectToolbox(this.ctx, environment, { durationMs: this.config.timeoutMs,
-      maxOutputBytes: this.config.maxOutputBytes, graceMs: this.config.graceMs }, signal, toolIds)
+      maxOutputBytes: this.config.maxOutputBytes, graceMs: this.config.graceMs },
+    signal, toolIds, this.ctx.securityWorkbench.toolCatalog().tools)
   }
   /**
    * Inspect installed tools without provisioning them.

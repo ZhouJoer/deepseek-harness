@@ -6,9 +6,11 @@
 
 ## 持久化记录
 
-`ToolboxDirectory` 包含已配置的环境选项和一份实测 `ToolboxInventory`。其中的 `ToolboxTool` 条目分别描述可用性、调用方式和可选 provider 集成。这些只读观察不属于项目证据或执行权限；字段定义见[工具箱类型](../../packages/experimental/security-analysis/src/toolbox-types.ts)。
+`ToolboxDirectory` 包含已配置的环境选项和一份实测或显式未检测的 `ToolboxInventory`。其中的 `ToolboxTool` 条目分别描述可用性、调用方式和可选 provider 集成。这些只读观察不属于项目证据或执行权限；字段定义见[工具箱类型](../../packages/experimental/security-analysis/src/toolbox-types.ts)。
 
 [记录 schema](../../packages/experimental/security-analysis/src/workbench/model.ts)定义项目、资产、检查、证据、发现、计划、执行和已审核经验。每个命令向 storage-domain 日志追加一个修订，制品字节先于引用发布。Session 日志保留模型可见的工具结果；领域日志负责检查恢复。
+
+`ToolCatalogSnapshot` 保存解析后的工具定义、集合、工具包与导入修订版本。`ToolPackPreview` 在显式导入前列出冲突。`ToolPreferences` 包含活跃会话的软偏好，会记录到模型上下文，但不写入项目持久化记录。导入、检测和生命周期语义见[工具配置](../../packages/experimental/security-analysis/README.zh.md)。
 
 ## Cordis API 参考
 
@@ -52,11 +54,50 @@ Optional security profile service; default application compositions remain indep
  * @returns project identities and objectives. */
 @Remote('projects') async projects(): Promise<string>
 
+/** Read current definitions without probing installations.
+ * @returns the catalog with legacy installation definitions and import revision.
+ */
+@Remote('toolCatalog') toolCatalog(): ToolCatalogSnapshot
+
+/** Validate an operator-selected pack without executing its commands.
+ * @param input - JSON tool pack.
+ * @returns import preview and identity conflicts.
+ */
+@Remote('previewToolPack') previewToolPack(input: string): ToolPackPreview
+
+/** Register a reviewed pack without installing software or running probes.
+ * @param input - JSON tool pack.
+ * @param revision - preview revision.
+ * @param replace - explicit approval of all displayed conflicts.
+ * @returns updated definitions.
+ */
+@Remote('importToolPack') importToolPack(input: string, revision: string, replace: boolean): ToolCatalogSnapshot
+
+/** Export a shareable pack without local paths or measured results.
+ * @param id - registered pack identity.
+ * @returns formatted versioned JSON.
+ */
+@Remote('exportToolPack') exportToolPack(id: string): string
+
+/** Read or update soft preferences for the authenticated active session only.
+ * @param agent - carrier-resolved session; caller cannot nominate another agent.
+ * @param input - optional JSON selection; empty arrays restore automatic discovery.
+ * @returns the current session selection.
+ */
+@Remote('toolPreferences') toolPreferences(agent: Agent, input?: string): ToolPreferences
+
+/** Read unmeasured inventory rows for immediate operator display.
+ * @param environmentId - selected environment, defaulting to the first local environment.
+ * @returns declared installations, with every observation marked not checked.
+ */
+@Remote('toolboxDirectory') toolboxDirectory(environmentId?: string): ToolboxDirectory
+
 /** Inspect installed tools without selecting a project or starting an environment.
  * @param environmentId - configured environment; omission selects the first local environment.
+ * @param toolIds - selected definitions and their dependencies; omitted checks all.
  * @returns environment choices and current optional-tool observations.
  */
-@Remote('toolboxInventory') async toolboxInventory(environmentId?: string): Promise<ToolboxDirectory>
+@Remote('toolboxInventory') async toolboxInventory(environmentId?: string, toolIds?: string[]): Promise<ToolboxDirectory>
 
 /** Read editable tool settings independently of a project or conversation.
  * @param environmentId - selected environment.

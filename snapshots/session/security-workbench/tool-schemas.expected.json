@@ -253,10 +253,44 @@
     },
     {
       "name": "security_capabilities",
-      "description": "Discover the analysis directory, configured tools and role-permitted operations. Installation declarations are not health checks; missing target readiness must be reported.",
+      "description": "Discover task-relevant tools by query, tags, collectionIds or toolIds. Default returns brief definitions without probing. Set details with toolIds or providerId to load selected invocation guides. Use offset and limit for bounded pages. Definitions do not establish installation or execution permission.",
       "parameters": {
         "type": "object",
-        "properties": {}
+        "properties": {
+          "query": {
+            "type": "string"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "collectionIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "toolIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "providerId": {
+            "type": "string"
+          },
+          "details": {
+            "type": "boolean"
+          },
+          "offset": {
+            "type": "integer"
+          },
+          "limit": {
+            "type": "integer"
+          }
+        }
       }
     },
     {
@@ -352,6 +386,12 @@
           },
           "toolId": {
             "type": "string"
+          },
+          "toolIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         },
         "required": [

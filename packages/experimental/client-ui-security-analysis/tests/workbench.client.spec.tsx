@@ -17,6 +17,8 @@ const project = recordSchema.parse({ kind: 'engagement', value: { id: 'project',
 const view: WorkbenchView = { revision: 8, records: [project] }
 function actions(overrides: Partial<WorkbenchActions> = {}) {
   return {
+    toolCatalog: vi.fn(async () => ({ editable: false, revision: '', tools: [], packs: [], collections: [] })),
+    toolPreferences: vi.fn(async () => ({ toolIds: [], collectionIds: [], tags: [] })),
     followActivity: async function* (_id: string, signal: AbortSignal) {
       if (!signal.aborted) await new Promise<void>((resolve) =>{  signal.addEventListener('abort', () =>{  resolve() }, { once: true }) })
     },

@@ -3,6 +3,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import { JobId, type JobSnapshot } from '@deepseek-ai/dsh-jobs'
 import { z } from 'zod'
 import { toolboxCatalog } from './toolbox.ts'
+import type { ToolDefinition } from './tool-definitions.ts'
 import type { SecurityController } from './workbench/controller.ts'
 import type { SecurityActivity, SecurityActivityStore } from './workbench/activity.ts'
 
@@ -14,12 +15,14 @@ const background = z.object({ kind: z.literal('background'), jobId: z.string() }
 
 /** Extract only candidate identities; quotes, dead code and imports cannot prove execution.
  * @param command - submitted Shell program.
+ * @param catalog - definitions captured for this invocation.
  * @returns distinct catalog identities mentioned by the command, or an unidentified script.
  */
-export function analysisToolCandidates(command: string): string[] {
+export function analysisToolCandidates(command: string, catalog: readonly ToolDefinition[] = toolboxCatalog): string[] {
   const words = new Set(command.toLowerCase().split(/[^a-z0-9_-]+/u))
-  const tools = toolboxCatalog.filter(tool => tool.category !== 'runtime' && tool.id !== 'docker'
-    && [tool.id, ...tool.commands].some(name => words.has(name))).map(tool => tool.id)
+  const tools = catalog.filter(tool => tool.category !== 'runtime' && tool.id !== 'docker'
+    && [tool.id, ...tool.commands, ...(tool.probe.kind === 'python-module' ? [tool.probe.module.split('.')[0] ?? ''] : [])]
+      .some(name => words.has(name.toLowerCase()))).map(tool => tool.id)
   return tools.length ? tools : ['script']
 }
 
@@ -37,8 +40,10 @@ export function analysisJobOutcome(snapshot: JobSnapshot): Pick<SecurityActivity
 /** Track Shell invocations through the same dispatcher used by direct and PTC tools.
  * @param ctx - tool and job lifecycle owner.
  * @param ready - domain initialization.
+ * @param catalog - current definition reader; built-ins when omitted.
  */
-export function installActivityObserver(ctx: Context, ready: Promise<SecurityController>): void {
+export function installActivityObserver(ctx: Context, ready: Promise<SecurityController>,
+  catalog: () => readonly ToolDefinition[] = () => toolboxCatalog): void {
   const jobs = new Map<string, { record: SecurityActivity; store: SecurityActivityStore }>()
   const settled = async (snapshot: JobSnapshot) => {
     const key = JSON.stringify([snapshot.ownerSession, snapshot.id])
@@ -74,7 +79,7 @@ export function installActivityObserver(ctx: Context, ready: Promise<SecurityCon
     const args = z.object({ command: z.string() }).parse(exec.arguments)
     if (/^(?:&\s+)?(?:"[^"]+"|'[^']+'|[^\s;|&]+)\s+(?:--version|-version|-v|version)\s*$/u.test(args.command.trim())) return next()
     const record = await store.start({ projectId, sessionId: exec.agent.id, callId: exec.callId,
-      checkpointId: controller.checkpointId(exec.agent.id), tools: analysisToolCandidates(args.command),
+      checkpointId: controller.checkpointId(exec.agent.id), tools: analysisToolCandidates(args.command, catalog()),
       verified: false, parameters: args.command.slice(0, controller.options.maxOutputBytes) })
     try {
       const result = await next()

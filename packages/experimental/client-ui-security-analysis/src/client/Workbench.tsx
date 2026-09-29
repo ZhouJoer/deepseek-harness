@@ -8,6 +8,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { SecurityCommand, WorkbenchView } from '@deepseek-ai/dsh-experimental-security-analysis/client'
 import type { NS, SecurityKey } from './locales.ts'
 import css from './Workbench.module.css'
+import { ToolPreferences, type ToolPreferenceActions } from './ToolPreferences.tsx'
 import { AnalysisStart } from './AnalysisStart.tsx'
 import { MaterialPanel } from './MaterialPanel.tsx'
 import { ProjectManagement, projectLabel } from './ProjectManagement.tsx'
@@ -15,7 +16,7 @@ import { KnowledgePanel } from './KnowledgePanel.tsx'
 import { ActivityPanel, type ActivityActions } from './ActivityPanel.tsx'
 
 /** Service actions injected by the Cordis browser plugin. */
-export interface WorkbenchActions extends ActivityActions {
+export interface WorkbenchActions extends ActivityActions, ToolPreferenceActions {
   sendAnalysis(sessionId: SessionId, objective: string): Promise<void>
   /** Re-pull authoritative records after a new connection generation. */
   subscribeReset(this: void, listener: () => void): () => void
@@ -339,6 +340,7 @@ export function Workbench(props: WorkbenchProps) {
               )}
               {busy > 0 && <p role="status">{t('loading')}</p>}
               <div className={css.body}>
+                <ToolPreferences key={sessionId} {...props} />
                 {project && (tab === 'overview' || tab === 'assets') && <MaterialPanel key={sessionId + project.value.id} t={t}
                   disabled={busy > 0 || project.value.stopped}
                   limits={configuration.materialLimits}

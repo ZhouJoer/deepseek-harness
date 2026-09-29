@@ -30,3 +30,19 @@ it('doctor reports every selected installation and preserves the file when a sav
     await rm(directory, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 })
   }
 }, 40_000)
+
+it('set registers a previously unknown executable without requiring a definition first', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'dsh-tool-set-'))
+  const file = join(directory, 'tools.json')
+  try {
+    const result = await execa(process.execPath, ['--import', import.meta.resolve('tsx/esm'),
+      fileURLToPath(new URL('./security-tools.ts', import.meta.url)), 'set', 'new-command', process.execPath, '--config', file], {
+      cwd: directory, reject: false, timeout: 30_000, stdin: 'ignore',
+      env: { TSX_TSCONFIG_PATH: fileURLToPath(new URL('../tsconfig.base.json', import.meta.url)) },
+    })
+    expect(result.exitCode, result.stderr).toBe(0)
+    expect(JSON.parse(await readFile(file, 'utf8'))).toMatchObject({ 'new-command': { command: process.execPath, versionArgs: ['--version'] } })
+  } finally {
+    await rm(directory, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 })
+  }
+})

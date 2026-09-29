@@ -336,7 +336,7 @@ describe('security workbench Loader composition', () => {
     expect(controller.activity!.usage(project)).toMatchObject([{ tool: 'source', verified: false, total: 1, failed: 1 }])
     expect(controller.view(agent.id).revision).toBe(revision)
   })
-  it('includes configured reverse tools in the first model request before discovery calls', async () => {
+  it('loads task-specific definitions on demand without injecting paths or unrelated guides', async () => {
     const installations = [{ id: 'radare2', command: '/tools/radare2', prefixArgs: ['--fixture'],
       versionArgs: ['-v'], source: 'Fixture configuration' }]
     const { ctx, agent, model, controller } = await load(false, 0, { installations })
@@ -345,13 +345,28 @@ describe('security workbench Loader composition', () => {
     agent.followup(webPrompt('Inspect the supplied native binary.'))
     await agent.whenIdle()
     const request = JSON.stringify(model.requests[0])
-    expect(request).toContain('Prefer available radare2/r2')
-    expect(request).toContain('/tools/radare2')
-    expect(request).toContain('--fixture')
-    expect(request).toContain('unverified data')
-    const result = await execute(ctx, agent, 'security_capabilities')
+    expect(request).toContain('query security_capabilities')
+    expect(request).not.toContain('/tools/radare2')
+    expect(request).not.toContain('USBPcapCMD.exe')
+    const result = await execute(ctx, agent, 'security_capabilities', { toolIds: ['radare2'], details: true })
     expect(result.isError).toBe(false)
-    expect(JSON.stringify(result)).toContain('--fixture')
+    expect(JSON.stringify(result)).toContain('prefer available radare2/r2')
+    expect(JSON.stringify(result)).not.toContain('USBPcapCMD.exe')
+    const web = await execute(ctx, agent, 'security_capabilities', { collectionIds: ['web'] })
+    expect(JSON.stringify(web.value)).toContain('nuclei')
+    expect(JSON.stringify(web.value)).not.toContain('radare2')
+    ctx.securityWorkbench.toolPreferences(agent, JSON.stringify({ toolIds: ['radare2'], tags: [], collectionIds: [] }))
+    const scope = scopeOf(agent.ctx)
+    if (!scope) throw new Error('Expected an agent scope')
+    const assembly = await ctx.systemPrompt.assemble({ agent, scope })
+    expect(JSON.stringify(assembly.contexts)).toContain('radare2')
+    expect(JSON.stringify(assembly.contexts)).not.toContain('/tools/radare2')
+    const other = await ctx.agents.create({ sessionId: SessionId('other-tool-preferences') })
+    expect(ctx.securityWorkbench.toolPreferences(other.agent).toolIds).toEqual([])
+    ctx.securityWorkbench.toolPreferences(other.agent, JSON.stringify({ toolIds: ['tshark'], tags: [], collectionIds: [] }))
+    await other.dispose()
+    expect(ctx.securityWorkbench.toolPreferences(other.agent).toolIds).toEqual([])
+    expect(ctx.securityWorkbench.toolPreferences(agent).toolIds).toEqual(['radare2'])
   })
   it('runs generated scripts and relative outputs in the analysis directory and captures the execution log', async () => {
     const { ctx, agent, model, controller } = await load(false, 0, { native: true })
@@ -426,6 +441,7 @@ describe('security workbench Loader composition', () => {
       uncertainty: 'No candidate finding exists; this evidence assessment does not conclude a finding.',
       nextSteps: ['The coordinator can record a suspected finding if the evidence supports a candidate.'] }
     expect(controller.view(agent.id).records.filter(item => item.kind === 'finding' || item.kind === 'review')).toEqual([])
+    ctx.securityWorkbench.toolPreferences(agent, JSON.stringify({ toolIds: ['radare2'], tags: [], collectionIds: [] }))
     for (const role of ['reconnaissance', 'reviewer'] as const) {
       const result = await execute(ctx, agent, 'security_delegate', {
         assetId: asset.value.id, role, question: 'Inspect the assigned scope.', criterion: 'Return a scoped structured report.',
@@ -439,6 +455,8 @@ describe('security workbench Loader composition', () => {
         .map(item => item.value.report)).toContainEqual(model.childReport)
       expect(controller.view(agent.id).records.filter(item => item.kind === 'finding' || item.kind === 'review')).toEqual([])
       const child = model.requests.at(-1)!
+      expect(JSON.stringify(child.messages)).toContain('Operator tool preferences for this active session')
+      expect(JSON.stringify(child.messages)).toContain('radare2')
       const names = child.tools?.map(tool => tool.name)
       expect(names).toContain('structured_output')
       expect(names?.includes('write')).toBe(role === 'reconnaissance')
@@ -896,9 +914,9 @@ describe('security workbench Loader composition', () => {
       expect(visible.includes('security_static')).toBe(['reconnaissance', 'reverse-analyst'].includes(role))
       for (const name of ['security_execute', 'security_delegate', 'security_command'])
         expect((await execute(ctx, child, name)).isError).toBe(true)
-      const capabilities = await execute(ctx, child, 'security_capabilities')
+      const capabilities = await execute(ctx, child, 'security_capabilities', { providerId: 'binary', details: true })
       expect(capabilities.isError).toBe(false)
-      expect(JSON.stringify(capabilities)).toContain('hexadecimal address')
+      expect(JSON.stringify(await execute(ctx, child, 'security_capabilities', { providerId: 'ghidra', details: true }))).toContain('hexadecimal address')
       expect(JSON.stringify(capabilities)).toContain('minLength')
       if (role === 'reconnaissance' || role === 'reverse-analyst') {
         const observed = await execute(ctx, child, 'security_static', {

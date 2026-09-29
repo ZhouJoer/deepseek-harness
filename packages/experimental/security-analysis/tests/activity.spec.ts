@@ -9,6 +9,7 @@ import { JsonStorageBackend } from '@deepseek-ai/dsh-storage-json'
 import { JobId } from '@deepseek-ai/dsh-jobs'
 import { expect, it, onTestFinished } from 'vitest'
 import { SecurityActivityStore } from '../src/workbench/activity.ts'
+import { parseToolPack } from '../src/tool-definitions.ts'
 import { analysisJobOutcome, analysisToolCandidates } from '../src/activity-observer.ts'
 import { openSecurityJournal } from '../src/workbench/journal.ts'
 import { closingBrief } from '../src/turn-brief.ts'
@@ -111,6 +112,11 @@ it('does not promote command names or Python imports into confirmed execution', 
   expect(analysisToolCandidates('python -c "import unicorn; print(1)"')).toEqual(['unicorn'])
   expect(analysisToolCandidates('echo r2; r2 -q sample')).toEqual(['radare2'])
   expect(analysisToolCandidates('python analysis.py')).toEqual(['script'])
+  const pack = parseToolPack({ version: 1, id: 'custom', label: 'Custom', tools: [
+    { id: 'module-alias', label: 'Module alias', dependency: 'python', invocation: 'python',
+      probe: { kind: 'python-module', module: 'other_module', distribution: 'other-dist' } },
+  ] })
+  expect(analysisToolCandidates('python -c "import other_module"', pack.tools)).toEqual(['module-alias'])
   const job = { id: JobId('pwsh-1'), kind: 'pwsh' as const, label: 'script', status: 'completed' as const,
     detail: 'exit code: 3', startedAt: 1, reported: false }
   expect(analysisJobOutcome(job).status).toBe('failed')

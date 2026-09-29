@@ -836,6 +836,10 @@ export interface Config {
 ```ts config-catalog
 /** Explicit host locations and operational limits. */
 export interface WorkbenchConfig {
+  /** Optional absolute file containing imported definition packs. */
+  toolCatalogPath?: string
+  /** Maximum definitions returned in one discovery page. */
+  toolDiscoveryPageSize: number
   /** Shared UI/CLI installation file for one local environment. */
   toolConfiguration?: {
     /** Absolute JSON path for local executable overrides. */
@@ -980,7 +984,7 @@ export interface ToolInstallation {
 }
 ```
 
-来源： [`packages/experimental/security-analysis/src/index.ts:49`](../packages/experimental/security-analysis/src/index.ts)
+来源： [`packages/experimental/security-analysis/src/index.ts:51`](../packages/experimental/security-analysis/src/index.ts)
 
 <a id="deepseek-aidsh-experimental-tool-agent-team"></a>
 

@@ -7,10 +7,10 @@ describe('security role assignments', () => {
     for (const role of ['reconnaissance', 'reverse-analyst'] as const) {
       const prompt = delegationPrompt({ role, task: resolveTask(role), assetId: 'sample', question: 'Inspect ELF functions',
         criterion: 'Identify one function', durationMs: 3000, maxOutputBytes: 4096 })
-      expect(prompt).toContain('Prefer available radare2/r2')
-      expect(prompt).toContain('not native .so instructions')
-      expect(prompt).toContain('security_environment before writing an analysis script')
-      expect(prompt).toContain('narrow fallback')
+      expect(prompt).toContain('query security_capabilities')
+      expect(prompt).not.toContain('radare2')
+      expect(prompt).toContain('check them with security_environment')
+      expect(prompt).toContain('demonstrated gap')
     }
     const reviewer = delegationPrompt({ role: 'reviewer', task: 'review', assetId: 'sample', question: 'Review evidence',
       criterion: 'Assess evidence', durationMs: 3000, maxOutputBytes: 4096 })

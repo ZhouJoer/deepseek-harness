@@ -29,7 +29,9 @@ import { installNativeAnalysis } from './native-analysis.ts'
 import { installActivityObserver } from './activity-observer.ts'
 import { SecurityActivityStore, type SecurityActivityFrame, type SecurityActivityPage } from './workbench/activity.ts'
 import { analysisDirectory, ANALYSIS_FILES_GUIDANCE } from './analysis-workspace.ts'
-import { BINARY_TOOL_GUIDANCE, configuredToolContext } from './analysis-tools.ts'
+import { TOOL_DISCOVERY_GUIDANCE } from './analysis-tools.ts'
+import { ToolCatalog, type ToolCatalogSnapshot, type ToolPackPreview } from './tool-catalog.ts'
+import { discoverTools, toolPreferencesSchema, type ToolPreferences } from './tool-definitions.ts'
 import { LocalToolConfiguration, browseToolFiles, toolConfigurationInput } from './tool-configuration.ts'
 import { standaloneTool } from './local-tools.ts'
 import { modelPage, recordDetail, commandReceipt, sourceEvidenceLines } from './workbench/model-view.ts'
@@ -47,6 +49,10 @@ import { refineKnowledge, refinementPrompt } from './workbench/knowledge.ts'
 
 /** Explicit host locations and operational limits. */
 export interface WorkbenchConfig {
+  /** Optional absolute file containing imported definition packs. */
+  toolCatalogPath?: string
+  /** Maximum definitions returned in one discovery page. */
+  toolDiscoveryPageSize: number
   /** Shared UI/CLI installation file for one local environment. */
   toolConfiguration?: {
     /** Absolute JSON path for local executable overrides. */
@@ -122,7 +128,7 @@ Record findings only about target security behavior, with conditions, impact and
 
 Collecting roles may use native file and shell tools to write and run Python, Bash or PowerShell analysis scripts in the workspace under existing DSH permissions. Discover executable paths and execution locations with security_environment. Container commands run through the Host Docker CLI in the selected running container. Collect background work with job_output. Save committed calls with security_capture_analysis to obtain auxiliary evidence IDs. Script logs alone do not establish complete implementation evidence or approved runtime validation. Research and reviewer roles cannot execute scripts. Missing capabilities do not authorize another target or environment. For external source code, find the actual file in the official repository before fetching its raw URL. An HTTP error page is a failed retrieval, not source evidence; inspect repository listings or saved search results instead of guessing nearby filenames.
 
-${BINARY_TOOL_GUIDANCE}
+${TOOL_DISCOVERY_GUIDANCE}
 
 ${ANALYSIS_FILES_GUIDANCE}
 
@@ -134,6 +140,8 @@ Give the user three concise lines when a finding, research direction, consequent
 export default class SecurityWorkbench extends TypertRemoteService {
   static inject = ['tools', 'agents', 'systemPrompt', 'storageDomain', 'jobs', 'subagents']
   static Config: Schema<WorkbenchConfig> = Schema.object({
+    toolCatalogPath: Schema.string(),
+    toolDiscoveryPageSize: Schema.number().step(1).min(1).max(100).default(20),
     taskIntake: Schema.union([Schema.const(undefined), Schema.object({
       workspaces: Schema.array(Schema.object({
         cwd: Schema.string().required(),
@@ -187,7 +195,9 @@ export default class SecurityWorkbench extends TypertRemoteService {
     maxOutputBytes: Schema.number().step(1).min(4096).default(1048576),
     maxDurationMs: Schema.number().step(1).min(1).max(2147483647).default(60000),
   })
-  private readonly creating = new Map<string, { assetId: string; role: DelegatedRole }>()
+  private readonly creating = new Map<string, { assetId: string; role: DelegatedRole; preferences: ToolPreferences }>()
+  private readonly preferences = new Map<SessionId, ToolPreferences>()
+  private readonly catalog: ToolCatalog
   private readonly toolConfiguration: LocalToolConfiguration | undefined
   private controller: SecurityController | undefined
   private creationQueue = Promise.resolve()
@@ -210,6 +220,9 @@ export default class SecurityWorkbench extends TypertRemoteService {
     private readonly config: WorkbenchConfig,
   ) {
     super(ctx, 'securityWorkbench')
+    if (config.toolCatalogPath && !isAbsolute(config.toolCatalogPath)) throw new Error('toolCatalogPath must be absolute')
+    this.catalog = new ToolCatalog(config.toolCatalogPath)
+    this.catalog.read(config.environments.flatMap(env => env.tools))
     if ((config.knowledgeProvider === undefined) !== (config.knowledgeModel === undefined))
       throw new Error('knowledgeProvider and knowledgeModel must be configured together')
     if (![config.root, ...config.importRoots, ...config.environments.map(env => env.cwd)].every(isAbsolute)) {
@@ -223,13 +236,14 @@ export default class SecurityWorkbench extends TypertRemoteService {
     if (config.toolConfiguration) {
       const environment = config.environments.find(item => item.id === config.toolConfiguration?.environmentId)
       if (!environment) throw new Error('Tool configuration refers to an unknown environment')
-      this.toolConfiguration = new LocalToolConfiguration(config.toolConfiguration.path, environment)
+      this.toolConfiguration = new LocalToolConfiguration(config.toolConfiguration.path, environment,
+        () => this.catalog.read(environment.tools).tools)
     }
     validateTaskIntake(config.taskIntake, config.environments.map(environment => environment.id))
     ctx.inject(['skills'], (skillCtx) => { installSecurityMethods(skillCtx) })
     this.ready = this.initialize()
     installNativeAnalysis(ctx, this.ready)
-    installActivityObserver(ctx, this.ready)
+    installActivityObserver(ctx, this.ready, () => this.toolCatalog().tools)
     const output = {
       schema: { type: 'json' } as const,
       render: (_args: unknown, value: JsonValue) => [{ type: 'text' as const, text: JSON.stringify(value) }],
@@ -290,31 +304,42 @@ export default class SecurityWorkbench extends TypertRemoteService {
     ctx.tools.register(
       defineTool({
         name: 'security_capabilities',
-        description: 'Discover the analysis directory, configured tools and role-permitted operations. Installation declarations are not health checks; missing target readiness must be reported.',
-        parameters: {},
+        description: 'Discover task-relevant tools by query, tags, collectionIds or toolIds. Default returns brief definitions without probing. Set details with toolIds or providerId to load selected invocation guides. Use offset and limit for bounded pages. Definitions do not establish installation or execution permission.',
+        parameters: { query: { type: 'string' }, tags: { type: 'array', items: { type: 'string' } },
+          collectionIds: { type: 'array', items: { type: 'string' } }, toolIds: { type: 'array', items: { type: 'string' } },
+          providerId: { type: 'string' }, details: { type: 'boolean' }, offset: { type: 'integer' }, limit: { type: 'integer' } },
         output,
-        execute: async (_args, exec) => {
+        execute: async (args, exec) => {
           if (!exec.agent) throw new Error('Security tools require a session')
           const controller = await this.ready
           const binding = controller.binding(exec.agent.id)
+          const catalog = this.toolCatalog()
+          if (args.details && !args.toolIds?.length && !args.providerId) throw new Error('Select toolIds before loading details')
+          if (args.providerId && !controller.providers.list().includes(args.providerId)) throw new Error('Unknown provider: ' + args.providerId)
+          const matches = args.providerId && !args.toolIds?.length ? [] : discoverTools(catalog.tools, catalog.collections, args)
+          const offset = z.number().int().nonnegative().parse(args.offset ?? 0)
+          const limit = z.number().int().positive().max(config.toolDiscoveryPageSize).parse(args.limit ?? config.toolDiscoveryPageSize)
+          const page = matches.slice(offset, offset + limit)
           const project = controller.view(exec.agent.id).records.find(item => item.kind === 'engagement')
           return json({
             role: binding?.role ?? null,
             analysisDirectory: analysisDirectory(exec.agent.session.header.cwd, binding),
             tools: toolsForRole(binding?.role),
             environments: config.environments.filter(env => project?.kind === 'engagement' && project.value.environmentIds.includes(env.id))
-              .map(({ id, kind, cwd, containerId, tools }) => ({ id, kind, cwd, containerId,
-                execution: kind === 'docker' ? 'Use the Host shell and docker exec in this running container; paths are container paths.' : 'Use native workspace shell tools.',
-                installations: tools.map(({ id, source, command, prefixArgs }) =>
-                  ({ id, source, command, prefixArgs: prefixArgs ?? [] })) })),
+              .map(({ id, kind }) => ({ id, kind })),
+            catalogRevision: catalog.revision,
+            total: matches.length, nextOffset: offset + page.length < matches.length ? offset + page.length : null,
+            catalog: page.map(tool => args.details ? tool : ({ id: tool.id, label: tool.label,
+              description: tool.description, tags: tool.tags, invocation: tool.invocation,
+              dependency: tool.dependency, provider: tool.provider })),
+            collections: catalog.collections.slice(offset, offset + limit).map(({ id, label }) => ({ id, label })),
+            preferences: this.preferences.get(exec.agent.id) ?? null,
             providers: controller.providers.list().map(id => ({ id,
-              inputGuide: controller.providers.get(id).inputGuide ?? 'No input guide registered; consult the provider documentation.',
+              ...(args.details && (args.providerId === id || page.some(tool => tool.provider === id))
+                ? { inputGuide: controller.providers.get(id).inputGuide } : {}),
               operations: controller.providers.get(id).operations.map(operation => ({ operation,
-                observationAllowed: binding !== undefined && canObserve(binding.role, id, operation),
-              })),
+                observationAllowed: binding !== undefined && canObserve(binding.role, id, operation) })),
             })),
-            nativeToolSelection: BINARY_TOOL_GUIDANCE,
-            providerInventoryOnly: ['fastboot', 'john'],
             readiness: 'Use security_environment when allowed, otherwise ask the coordinator for health results, and use the exact provider request; configured installations do not establish readiness. Binary inspection needs no external executable. Other providers require operator configuration.',
           })
         },
@@ -324,7 +349,7 @@ export default class SecurityWorkbench extends TypertRemoteService {
       defineTool({
         name: 'security_environment',
         description: 'Check tool versions and runtime readiness in one project environment. Optionally select toolId when a full inventory exceeds the output budget. Does not install tools, start containers or change devices. Health is not sample evidence.',
-        parameters: { environmentId: { type: 'string', required: true }, toolId: { type: 'string' } },
+        parameters: { environmentId: { type: 'string', required: true }, toolId: { type: 'string' }, toolIds: { type: 'array', items: { type: 'string' } } },
         output,
         execute: async (args, exec) => {
           if (!exec.agent) throw new Error('Security tools require a session')
@@ -334,11 +359,12 @@ export default class SecurityWorkbench extends TypertRemoteService {
             throw new Error('Environment is outside active project scope')
           const environment = config.environments.find(env => env.id === args.environmentId)
           assert(environment, 'Project environment must be configured')
+          this.toolConfiguration?.refresh()
           const manager = controller.environments.get('local').manager
           const inventory = await controller.manageEnvironment(environment.id, signal => manager.inventory(environment,
             AbortSignal.any([signal, exec.signal, this.shutdown.signal]),
-            args.toolId === undefined ? undefined : [args.toolId]), project.value.id)
-          if (args.toolId !== undefined) {
+            args.toolIds ?? (args.toolId === undefined ? undefined : [args.toolId])), project.value.id)
+          if (args.toolId !== undefined && args.toolIds === undefined) {
             inventory.tools = inventory.tools.filter(tool => tool.id === args.toolId)
             if (!inventory.tools.length) throw new Error('Unknown tool identity')
           }
@@ -591,7 +617,8 @@ export default class SecurityWorkbench extends TypertRemoteService {
                 AbortSignal.timeout(config.delegationTimeoutMs),
               ])
               const create = this.creationQueue.then(async () => {
-                this.creating.set(parent.id, { assetId: args.assetId, role: args.role })
+                this.creating.set(parent.id, { assetId: args.assetId, role: args.role,
+                  preferences: structuredClone(this.preferences.get(parent.id) ?? { toolIds: [], tags: [], collectionIds: [] }) })
                 try {
                   return await ctx.subagents.start('spawn', {
                     parent,
@@ -695,8 +722,10 @@ export default class SecurityWorkbench extends TypertRemoteService {
       await this.ready
       const parent = agent.session.header.parentSession
       const pending = parent === undefined ? undefined : this.creating.get(parent)
-      if (parent !== undefined && pending)
+      if (parent !== undefined && pending) {
+        this.preferences.set(agent.id, structuredClone(pending.preferences))
         await (await this.ready).bindChild(parent, agent.id, [pending.assetId], pending.role)
+      }
       const names = ctx.tools
         .schemas(agent)
         .filter(tool => tool.name !== 'structured_output' && toolsForRole(this.controller?.binding(agent.id)?.role).includes(tool.name))
@@ -730,7 +759,7 @@ export default class SecurityWorkbench extends TypertRemoteService {
         if (candidate?.message.id === event.data.id) candidate.committed = true
       }
     })
-    ctx.on('agent/disposed', ({ agent }) => { this.intakeCandidates.delete(agent.id); this.turnBriefs.delete(agent.id) })
+    ctx.on('agent/disposed', ({ agent }) => { this.intakeCandidates.delete(agent.id); this.turnBriefs.delete(agent.id); this.preferences.delete(agent.id) })
     ctx.on('tools/execute', async (exec, next) => {
       if (!exec.agent || exec.signal.aborted) return next()
       const agent = exec.agent
@@ -764,11 +793,23 @@ export default class SecurityWorkbench extends TypertRemoteService {
       order: ctx.systemPrompt.getSectionOrder('DEPLOYMENT_PERSONA_SUFFIX'),
       text: () => {
         this.toolConfiguration?.refresh()
-        return GUIDANCE + '\n\n' + configuredToolContext(config.environments)
+        return GUIDANCE
       },
       interpolate: false,
     })
+    ctx.systemPrompt.context({ name: 'security:tool-preferences', order: ctx.systemPrompt.getContextOrder('SANDBOX_POLICY'),
+      text: ({ agent }) => {
+        const preferences = agent && this.preferences.get(agent.id)
+        if (!preferences || ![...preferences.toolIds, ...preferences.tags, ...preferences.collectionIds].length) return ''
+        const catalog = this.toolCatalog()
+        const missing = [...preferences.toolIds.filter(id => !catalog.tools.some(tool => tool.id === id)),
+          ...preferences.collectionIds.filter(id => !catalog.collections.some(group => group.id === id))]
+        return 'Operator tool preferences for this active session (soft preferences; discover additional tools as needed; no execution authority): '
+          + JSON.stringify({ ...preferences, unavailableReferences: missing })
+      },
+    })
     ctx.effect(() => async () => {
+      this.preferences.clear()
       this.shutdown.abort(new Error('Security service disposed'))
       try {
         await (await this.ready).dispose()
@@ -980,20 +1021,104 @@ export default class SecurityWorkbench extends TypertRemoteService {
   async projects(): Promise<string> {
     return JSON.stringify((await this.ready).projects(true))
   }
+  /** Read current definitions without probing installations.
+   * @returns the catalog with legacy installation definitions and import revision.
+   */
+  @Remote('toolCatalog')
+  toolCatalog(): ToolCatalogSnapshot {
+    this.toolConfiguration?.refresh()
+    return this.catalog.read(this.config.environments.flatMap(env => env.tools))
+  }
+  /** Validate an operator-selected pack without executing its commands.
+   * @param input - JSON tool pack.
+   * @returns import preview and identity conflicts.
+   */
+  @Remote('previewToolPack')
+  previewToolPack(input: string): ToolPackPreview {
+    if (Buffer.byteLength(input) > this.config.maxOutputBytes) throw new Error('Tool pack exceeds import byte limit')
+    const preview = this.catalog.preview(input)
+    for (const tool of preview.pack.tools)
+      if (tool.provider && this.controller && !this.controller.providers.list().includes(tool.provider))
+        throw new Error('Tool refers to an unregistered provider: ' + tool.provider)
+    return preview
+  }
+  /** Register a reviewed pack without installing software or running probes.
+   * @param input - JSON tool pack.
+   * @param revision - preview revision.
+   * @param replace - explicit approval of all displayed conflicts.
+   * @returns updated definitions.
+   */
+  @Remote('importToolPack')
+  importToolPack(input: string, revision: string, replace: boolean): ToolCatalogSnapshot {
+    this.previewToolPack(input)
+    return this.catalog.import(input, revision, replace)
+  }
+  /** Export a shareable pack without local paths or measured results.
+   * @param id - registered pack identity.
+   * @returns formatted versioned JSON.
+   */
+  @Remote('exportToolPack')
+  exportToolPack(id: string): string {
+    const pack = this.catalog.read().packs.find(pack => pack.id === id)
+    if (!pack) throw new Error('Unknown tool pack: ' + id)
+    return JSON.stringify(pack, null, 2) + '\n'
+  }
+  /** Read or update soft preferences for the authenticated active session only.
+   * @param agent - carrier-resolved session; caller cannot nominate another agent.
+   * @param input - optional JSON selection; empty arrays restore automatic discovery.
+   * @returns the current session selection.
+   */
+  @Remote('toolPreferences')
+  toolPreferences(agent: Agent, input?: string): ToolPreferences {
+    if (input !== undefined) {
+      const preferences = toolPreferencesSchema.parse(JSON.parse(input))
+      const catalog = this.toolCatalog()
+      discoverTools(catalog.tools, catalog.collections, preferences)
+      this.preferences.set(agent.id, preferences)
+    }
+    return structuredClone(this.preferences.get(agent.id) ?? { toolIds: [], tags: [], collectionIds: [] })
+  }
+  /** Read unmeasured inventory rows for immediate operator display.
+   * @param environmentId - selected environment, defaulting to the first local environment.
+   * @returns declared installations, with every observation marked not checked.
+   */
+  @Remote('toolboxDirectory')
+  toolboxDirectory(environmentId?: string): ToolboxDirectory {
+    const catalog = this.toolCatalog()
+    const environments = this.config.environments
+    const environment = environmentId === undefined ? environments.find(env => env.kind === 'local') ?? environments[0]
+      : environments.find(env => env.id === environmentId)
+    if (!environment) throw new Error('Configure an analysis environment before inspecting tools')
+    return { environments: environments.map(({ id, label, kind }) => ({ id, label, kind })), inventory: {
+      environmentId: environment.id, kind: environment.kind, runtime: 'unchecked', detail: '', checkedAt: 0,
+      workdir: environment.cwd, tools: catalog.tools.map((tool) => {
+        const pin = environment.tools.find(pin => pin.id === tool.id)
+        return { id: tool.id, category: tool.category, status: 'not-checked', command: pin?.command ?? '',
+          prefixArgs: pin?.prefixArgs ?? [], version: '', location: '', source: pin?.source ?? 'PATH',
+          ...(tool.dependency ? { dependency: tool.dependency } : {}), detail: '', installUrl: tool.url, invocation: tool.invocation, ...(tool.provider ? { provider: tool.provider } : {}) }
+      }),
+    } }
+  }
   /** Inspect installed tools without selecting a project or starting an environment.
    * @param environmentId - configured environment; omission selects the first local environment.
+   * @param toolIds - selected definitions and their dependencies; omitted checks all.
    * @returns environment choices and current optional-tool observations.
    */
   @Remote('toolboxInventory')
-  async toolboxInventory(environmentId?: string): Promise<ToolboxDirectory> {
+  async toolboxInventory(environmentId?: string, toolIds?: string[]): Promise<ToolboxDirectory> {
     const controller = await this.ready
     this.toolConfiguration?.refresh()
     const environments = this.config.environments
     const environment = environmentId === undefined ? environments.find(item => item.kind === 'local') ?? environments[0]
       : environments.find(item => item.id === environmentId)
     if (!environment) throw new Error('Configure an analysis environment before inspecting tools')
-    const inventory = await controller.environments.get('local').manager.inventory(environment, this.shutdown.signal)
-    return { environments: environments.map(({ id, label, kind }) => ({ id, label, kind })), inventory }
+    const pending = controller.manageEnvironment(environment.id, signal => controller.environments.get('local').manager.inventory(environment,
+      AbortSignal.any([signal, this.shutdown.signal]), toolIds))
+    this.pending.add(pending)
+    try {
+      const inventory = await pending
+      return { environments: environments.map(({ id, label, kind }) => ({ id, label, kind })), inventory }
+    } finally { this.pending.delete(pending) }
   }
   /** Read editable tool settings independently of a project or conversation.
    * @param environmentId - selected environment.
@@ -1014,7 +1139,7 @@ export default class SecurityWorkbench extends TypertRemoteService {
     const settings = this.toolConfiguration
     if (!settings || settings.environment.id !== environmentId) throw new Error('This environment has no editable tool configuration')
     const update = toolConfigurationInput.parse(JSON.parse(input))
-    const catalog = standaloneTool(update.id)
+    const catalog = standaloneTool(update.id, this.toolCatalog().tools)
     const controller = await this.ready
     return controller.manageEnvironment(environmentId, async (signal) => {
       const current = settings.read()

@@ -59,7 +59,12 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       toolboxConfiguration: id => unwrap(remote.toolboxConfiguration(id)),
       configureTool: (id, input) => unwrap(remote.configureTool(id, input)),
       toolboxFiles: (id, directory) => unwrap(remote.toolboxFiles(id, directory)),
-      toolboxInventory: id => unwrap(remote.toolboxInventory(id)),
+      toolboxInventory: (id, tools) => unwrap(remote.toolboxInventory(id, tools)),
+      toolboxDirectory: id => unwrap(remote.toolboxDirectory(id)),
+      toolCatalog: () => unwrap(remote.toolCatalog()),
+      previewToolPack: input => unwrap(remote.previewToolPack(input)),
+      importToolPack: (input, revision, replace) => unwrap(remote.importToolPack(input, revision, replace)),
+      exportToolPack: id => unwrap(remote.exportToolPack(id)),
       manageProject: (id, input) => unwrap(remote.manageProject(id, input)),
       projects: () => unwrap(remote.projects()), project: id => unwrap(remote.project(id)),
       laboratory: (project, action, id) => unwrap(remote.laboratory(project, action, id)),
@@ -69,6 +74,8 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     const panel = 'security-projects' as MainPanelId
     scoped.slots.inject('sidebar.panellist', () => scoped.slots.register({ name: 'sidebar.panellist', id: panel, order: 30, label: () => scoped.locale.bind(NS)('title'), locale: NS }, ProjectIcon))
     const actions: WorkbenchActions = {
+      toolCatalog: projectActions.toolCatalog,
+      toolPreferences: (id, input) => unwrap(remote.toolPreferences(id, input)),
       followActivity: (id, signal) => remote.followActivity(id, signal),
       activityDetails: (id, checkpoint, offset, through) => unwrap(remote.activityDetails(id, checkpoint, offset, through)),
       sendAnalysis: async (id, objective) => {

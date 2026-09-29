@@ -7,6 +7,7 @@ import { homedir } from 'node:os'
 import { z } from 'zod'
 import { readSecurityTools, standaloneTool, writeSecurityToolsFile, type SecurityToolPin } from './local-tools.ts'
 import { toolboxCatalog } from './toolbox.ts'
+import type { ToolDefinition } from './tool-definitions.ts'
 import type { ToolboxConfiguration, ToolboxFiles } from './toolbox-types.ts'
 import type { SecurityEnvironment } from './workbench/providers.ts'
 
@@ -19,7 +20,8 @@ export const toolConfigurationInput = z.object({
 /** Live configuration changes apply only after an atomic file commit. */
 export class LocalToolConfiguration {
   private readonly defaults: SecurityEnvironment['tools']
-  constructor(readonly path: string, readonly environment: SecurityEnvironment) {
+  constructor(readonly path: string, readonly environment: SecurityEnvironment,
+    private readonly catalog: () => readonly ToolDefinition[] = () => toolboxCatalog) {
     if (!isAbsolute(path)) throw new Error('Tool configuration file must be absolute')
     if (environment.kind !== 'local') throw new Error('Tool configuration requires a local environment')
     this.defaults = structuredClone(environment.tools)
@@ -28,7 +30,7 @@ export class LocalToolConfiguration {
   /** Reload edits without retaining removed overrides.
    * @returns the applied installation map. */
   refresh(): Record<string, SecurityToolPin> {
-    const pins = readSecurityTools(this.path)
+    const pins = readSecurityTools(this.path, this.catalog())
     const tools = new Map(this.defaults.map(tool => [tool.id, tool]))
     for (const [id, pin] of Object.entries(pins)) tools.set(id, { id, ...pin, source: 'Local tool configuration' })
     this.environment.tools = [...tools.values()]
@@ -38,13 +40,14 @@ export class LocalToolConfiguration {
    * @returns configured values and a revision for operator edits. */
   read(): ToolboxConfiguration {
     const pins = this.refresh()
+    const toolboxCatalog = this.catalog()
     const ids = new Set([...toolboxCatalog.filter(tool => tool.commands.length).map(tool => tool.id),
       ...this.environment.tools.map(tool => tool.id)])
     return { editable: true, revision: revision(pins), tools: [...ids].filter(id =>
       !toolboxCatalog.some(tool => tool.id === id && !tool.commands.length)).map((id) => {
       const tool = this.environment.tools.find(tool => tool.id === id)
       return { id, command: tool?.command ?? '', prefixArgs: tool?.prefixArgs ?? [],
-        versionArgs: tool?.versionArgs ?? standaloneTool(id).args, saved: Object.hasOwn(pins, id) }
+        versionArgs: tool?.versionArgs ?? standaloneTool(id, toolboxCatalog).args, saved: Object.hasOwn(pins, id) }
     }) }
   }
   /** Commit a checked executable or remove its override after checking the observed file revision.
@@ -54,7 +57,7 @@ export class LocalToolConfiguration {
    * @returns committed configuration, already applied to subsequent operations.
    */
   commit(id: string, pin: SecurityToolPin | undefined, expectedRevision: string): ToolboxConfiguration {
-    standaloneTool(id)
+    standaloneTool(id, this.catalog())
     const pins = readSecurityTools(this.path)
     if (revision(pins) !== expectedRevision) throw new Error('Tool configuration changed; reload before saving')
     if (pin) pins[id] = pin

@@ -1,45 +1,14 @@
 /** Inspect and pin existing local executables for pnpm security. @module */
-import { accessSync, constants, existsSync, globSync, statSync } from 'node:fs'
-import { delimiter, isAbsolute, join, resolve } from 'node:path'
+import { existsSync, readFileSync, statSync } from 'node:fs'
+import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { parseArgs } from 'node:util'
 import { execa } from 'execa'
-import { toolboxCatalog, pythonModuleProbe } from '../packages/experimental/security-analysis/src/toolbox.ts'
+import { ToolCatalog } from '../packages/experimental/security-analysis/src/tool-catalog.ts'
+import { discoverTools, orderTools } from '../packages/experimental/security-analysis/src/tool-definitions.ts'
+import { probeArguments, probeIdentity } from '../packages/experimental/security-analysis/src/tool-probes.ts'
+import { toolCandidates } from '../packages/experimental/security-analysis/src/tool-candidates.ts'
 import { scrubbedParentEnv } from '../packages/subprocess/subprocess/src/index.ts'
 import { readSecurityTools, securityToolsFile, standaloneTool, writeSecurityToolsFile } from './security-tools-config.ts'
-
-function candidates(id: string, directories: string[]): string[] {
-  const tool = standaloneTool(id)
-  const roots = (process.env.PATH ?? '').split(delimiter).filter(Boolean)
-  if (process.platform === 'win32') {
-    for (const root of [process.env.ProgramFiles, process.env['ProgramFiles(x86)']].filter((root): root is string => !!root)) {
-      if (id === 'tshark') roots.push(join(root, 'Wireshark'))
-      if (id === 'nmap') roots.push(join(root, 'Nmap'))
-    }
-    if (id === 'jadx') {
-      if (process.env.JADX_HOME) roots.push(join(process.env.JADX_HOME, 'bin'))
-      if (process.env.USERPROFILE) roots.push(join(process.env.USERPROFILE, 'scoop', 'apps', 'jadx', 'current', 'bin'))
-    }
-  }
-  const suffixes = process.platform === 'win32' ? ['', ...(process.env.PATHEXT ?? '.EXE;.CMD;.BAT;.COM').toLowerCase().split(';')] : ['']
-  const names = tool.commands.flatMap(command => suffixes.map(suffix => command + suffix))
-  const paths = roots.flatMap(root => names.map(name => resolve(root.replace(/^"|"$/g, ''), name)))
-  for (const directory of directories) {
-    if (!statSync(directory).isDirectory()) throw new Error(`Search directory is not a directory: ${directory}`)
-    for (const name of names) paths.push(...globSync(`**/${name}`, {
-      cwd: directory, exclude: ['**/node_modules/**', '**/.git/**'],
-    }).map(path => resolve(directory, path)))
-  }
-  return [...new Set(paths)].filter((path) => {
-    try {
-      if (!statSync(path).isFile()) return false
-      accessSync(path, constants.X_OK)
-      return true
-    } catch (error) {
-      if (['ENOENT', 'ENOTDIR', 'EACCES'].includes((error as NodeJS.ErrnoException).code ?? '')) return false
-      throw error
-    }
-  })
-}
 
 async function probe(command: string, args: string[]): Promise<string> {
   if (process.platform === 'win32' && /\.(cmd|bat|ps1)$/i.test(command))
@@ -59,16 +28,18 @@ async function probe(command: string, args: string[]): Promise<string> {
  */
 export async function manageSecurityTools(args: string[]): Promise<void> {
   const { values, positionals } = parseArgs({ args, allowPositionals: true, options: {
+    catalog: { type: 'string' }, tag: { type: 'string', multiple: true }, collection: { type: 'string', multiple: true },
+    replace: { type: 'boolean' },
     arg: { type: 'string', multiple: true },
     'version-arg': { type: 'string', multiple: true },
     config: { type: 'string' }, dir: { type: 'string', multiple: true }, save: { type: 'boolean' }, help: { type: 'boolean' },
   } })
   if (values.help) {
-    console.log('pnpm security:tools [list | doctor [ids...] | scan [ids...] [--dir DIR] [--save] | set ID PATH | remove ID]\nOptions: --config FILE; --dir DIR (repeatable), --save (scan/doctor only); --arg=ARG, --version-arg=ARG (repeatable, set only). doctor checks Python environment details, Python modules (unicorn, r2pipe, frida) and native tools. Custom IDs supported. Refresh the toolbox after changes.')
+    console.log('pnpm security:tools [import PACK.json [--replace] | export PACK_ID FILE.json | list | doctor [ids...] | scan [ids...] [--dir DIR] [--save] | set ID PATH | remove ID]\nOptions: --config FILE; --catalog FILE; --tag TAG; --collection ID; --dir DIR (repeatable), --save (scan/doctor only); --arg=ARG, --version-arg=ARG (repeatable, set only). doctor checks Python environment details, Python modules (unicorn, r2pipe, frida) and native tools. Custom IDs supported. Refresh the toolbox after changes.')
     return
   }
   const [action = 'list', ...selected] = positionals
-  if (!['list', 'scan', 'doctor', 'set', 'remove'].includes(action)) throw new Error(`Unknown action: ${action}`)
+  if (!['list', 'scan', 'doctor', 'set', 'remove', 'import', 'export'].includes(action)) throw new Error(`Unknown action: ${action}`)
   if (values.save && action !== 'scan' && action !== 'doctor') throw new Error('--save is only valid with scan or doctor')
   if (values.dir && action !== 'scan' && action !== 'doctor') throw new Error('--dir is only valid with scan or doctor')
   if ((action === 'list' && selected.length) || (action === 'set' && selected.length !== 2) || (action === 'remove' && selected.length !== 1))
@@ -76,37 +47,59 @@ export async function manageSecurityTools(args: string[]): Promise<void> {
   if (values.arg && action !== 'set') throw new Error('--arg is only valid with set')
   if (values['version-arg'] && action !== 'set') throw new Error('--version-arg is only valid with set')
   const file = resolve(values.config ?? securityToolsFile)
-  let pins = readSecurityTools(file)
+  const store = new ToolCatalog(resolve(values.catalog ?? join(dirname(file), 'security-tool-packs.json')))
+  if (action === 'import') {
+    if (selected.length !== 1) throw new Error('Expected import PACK.json')
+    const input = readFileSync(resolve(selected[0] ?? ''), 'utf8'), preview = store.preview(input)
+    console.log('Import preview: ' + JSON.stringify({ id: preview.pack.id, tools: preview.pack.tools.map(tool => tool.id), conflicts: preview.conflicts }))
+    store.import(input, preview.revision, values.replace ?? false)
+    console.log('Registered definitions; use doctor to explicitly check installations.')
+    return
+  }
+  if (action === 'export') {
+    if (selected.length !== 2) throw new Error('Expected export PACK_ID FILE.json')
+    const pack = store.read().packs.find(pack => pack.id === selected[0])
+    if (!pack) throw new Error('Unknown tool pack: ' + (selected[0] ?? ''))
+    writeSecurityToolsFile(resolve(selected[1] ?? ''), JSON.stringify(pack, null, 2) + '\n')
+    return
+  }
+  const snapshot = store.read()
+  const toolboxCatalog = snapshot.tools
+  const toolDefinition = (id: string) => standaloneTool(id, toolboxCatalog)
+  let pins = readSecurityTools(file, toolboxCatalog)
   const ids = action === 'set' ? selected.slice(0, 1) : selected
   for (const id of ids) {
-    if (!['doctor', 'scan'].includes(action) || !toolboxCatalog.find(tool => tool.id === id)?.dependency) standaloneTool(id)
+    if (!['doctor', 'scan'].includes(action) || !toolboxCatalog.find(tool => tool.id === id)?.dependency) toolDefinition(id)
   }
   let unhealthy = false
   let available = 0
   let missing = 0
   let unchecked = 0
   if (action === 'list') {
-    const custom = Object.keys(pins).filter(id => !toolboxCatalog.some(tool => tool.id === id)).map(standaloneTool)
-    console.table([...toolboxCatalog, ...custom].map(tool => ({ tool: tool.id, command: pins[tool.id]?.command ?? tool.commands.join(' / '),
+    const custom = Object.keys(pins).filter(id => !toolboxCatalog.some(tool => tool.id === id)).map(toolDefinition)
+    console.table(discoverTools([...toolboxCatalog, ...custom], snapshot.collections, { tags: values.tag, collectionIds: values.collection }).map(tool => ({ tool: tool.id, command: pins[tool.id]?.command ?? tool.commands.join(' / '),
       prefixArgs: (pins[tool.id]?.prefixArgs ?? []).join(' '),
       versionArgs: (pins[tool.id]?.versionArgs ?? tool.args).join(' '),
-      via: tool.dependency ?? tool.invocation ?? 'shell' })))
+      via: tool.dependency ?? tool.invocation })))
   } else if (action === 'remove') {
     pins = Object.fromEntries(Object.entries(pins).filter(([id]) => id !== selected[0]))
   } else {
     const requestedPath = action === 'set' ? selected[1] : undefined
-    const requested = ids.length ? ids : [
-      ...toolboxCatalog.filter(tool => tool.commands.length || tool.dependency).map(tool => tool.id), ...Object.keys(pins),
-    ]
-    const ordered = new Set<string>()
-    for (const id of requested) {
-      const dependency = toolboxCatalog.find(tool => tool.id === id)?.dependency
-      if (dependency) ordered.add(dependency)
-      ordered.add(id)
-    }
+    const custom = [...new Set([...Object.keys(pins), ...ids])]
+      .filter(id => !toolboxCatalog.some(tool => tool.id === id)).map(toolDefinition)
+    const definitions = [...toolboxCatalog, ...custom]
+    const filtered = discoverTools(definitions, snapshot.collections, { tags: values.tag, collectionIds: values.collection })
+    const requested = ids.length ? ids : filtered.filter(tool => tool.commands.length || tool.dependency).map(tool => tool.id)
+    const ordered = orderTools(definitions, requested).map(tool => tool.id)
     const resolved = new Map<string, { command: string; prefixArgs: string[] }>()
     for (const id of ordered) {
       const entry = toolboxCatalog.find(tool => tool.id === id)
+      if (entry?.platforms.length && !entry.platforms.includes(process.platform as 'win32' | 'linux' | 'darwin')) {
+        unchecked++; console.log(id + ': not checked | unsupported-platform'); continue
+      }
+      if (entry?.dependencies.some(id => !resolved.has(id))) {
+        unchecked++; console.log(id + ': not checked | dependency-unavailable'); continue
+      }
       if (entry?.dependency) {
         const runtime = resolved.get(entry.dependency)
         if (!runtime) {
@@ -116,18 +109,13 @@ export async function manageSecurityTools(args: string[]): Promise<void> {
         }
         try {
           const output = await probe(runtime.command, [...runtime.prefixArgs,
-            ...(entry.invocation === 'python' ? pythonModuleProbe(id) : entry.args)])
-          const plugin = entry.invocation === 'plugin'
-            ? (JSON.parse(output) as { name: string; version?: string; path?: string }[]).find(plugin => plugin.name === id) : undefined
-          if (entry.invocation === 'plugin' && !plugin) {
-            missing++
-            console.log(`${id}: optional/missing | via ${runtime.command}`)
-            continue
-          }
+            ...probeArguments(entry)])
+          const identity = probeIdentity(entry, output)
+          if (!identity) { missing++; console.log(id + ': optional/missing | via ' + runtime.command); continue }
+          resolved.set(id, runtime)
           available++
-          const identity = entry.invocation === 'python' ? JSON.parse(output) as { version: string; location: string } : undefined
-          console.log(`${id}: available | via ${runtime.command} | ${identity?.version ?? plugin?.version ?? 'installed'}`)
-          if (identity) console.log(`  module: ${identity.location}`)
+          console.log(id + ': available | via ' + runtime.command + ' | ' + identity.version)
+          if (identity.location) console.log('  module: ' + identity.location)
         } catch (error) {
           const detail = error instanceof Error ? error.message : String(error)
           const absent = /ModuleNotFoundError|PackageNotFoundError/.test(detail)
@@ -139,15 +127,16 @@ export async function manageSecurityTools(args: string[]): Promise<void> {
       }
       const explicit = requestedPath === undefined ? pins[id]?.command : resolve(requestedPath)
       const prefixArgs = action === 'set' ? values.arg ?? [] : pins[id]?.prefixArgs ?? []
-      const versionArgs = id === 'python' ? standaloneTool(id).args : values['version-arg'] ?? pins[id]?.versionArgs ?? standaloneTool(id).args
-      const paths = explicit ? [explicit] : candidates(id, values.dir ?? [])
+      const definition = toolDefinition(id)
+      const versionArgs = probeArguments(definition, values['version-arg'] ?? pins[id]?.versionArgs)
+      const paths = explicit ? [explicit] : toolCandidates(definition, values.dir ?? [])
       let failure = 'Executable not found; use --dir or set ID PATH'
       let found = false
       for (const command of paths) {
         try {
           if (!isAbsolute(command) || !existsSync(command) || !statSync(command).isFile()) throw new Error('Executable file does not exist')
           const version = await probe(command, [...prefixArgs, ...versionArgs])
-          if (id === 'python') {
+          if (definition.probe.kind === 'identity') {
             const identity = JSON.parse(version) as {
               version: string
               location: string

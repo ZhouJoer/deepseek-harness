@@ -10,7 +10,7 @@ description: "启动独立安全工作台，并准备经授权的逆向分析检
 
 ## 1. 准备 profile
 
-在仓库根目录执行 `pnpm run build` 构建。源码启动器仍加载已构建的工作区插件；修改 Host 或 Client 插件后，需要先重新构建再重启，刷新页面不能替代构建。打开**安全分析 → 逆向工具箱**，在工具卡片点击**配置工具**，或用**添加工具**登记自定义安装。**选择工具文件**浏览运行 DSH 的电脑上的文件，不会上传可执行文件。点击**检测**查看版本和诊断，或点击**检测并保存**在检测成功后立即应用。检测失败不会改变已保存配置。高级参数每行填写一个参数，用于解释器和自定义版本查询。**恢复默认配置**移除本机覆盖项。模型从下次请求起收到新路径，无需重启服务。源码安全 profile 为本机环境启用编辑。也可使用下面的命令行入口。使用 Frida 时，`python` 必须安装官方 Frida bindings。工具安装情况和目标是否就绪分开检查。
+在仓库根目录执行 `pnpm run build` 构建。源码启动器仍加载已构建的工作区插件；修改 Host 或 Client 插件后，需要先重新构建再重启，刷新页面不能替代构建。打开**安全分析 → 逆向工具箱**，在工具卡片点击**配置工具**，或用**添加工具**登记自定义安装。**选择工具文件**浏览运行 DSH 的电脑上的文件，不会上传可执行文件。点击**检测**查看版本和诊断，或点击**检测并保存**在检测成功后立即应用。检测失败不会改变已保存配置。高级参数每行填写一个参数，用于解释器和自定义版本查询。**恢复默认配置**移除本机覆盖项。模型通过下一次所选环境检测发现新路径，无需重启服务。源码安全 profile 为本机环境启用编辑。也可使用下面的命令行入口。使用 Frida 时，`python` 必须安装官方 Frida bindings。工具安装情况和目标是否就绪分开检查。
 
 ```sh
 pnpm security:doctor
@@ -18,6 +18,12 @@ pnpm security:doctor python unicorn radare2 tshark jadx --save
 ```
 
 `pnpm security:doctor` 检查原生命令工具及 Python 模块（Unicorn、r2pipe 和 Frida），与工具箱使用同一个选定解释器。Python 诊断显示解释器路径、版本、虚拟环境、基础运行时和 pip 可用性，并区分可用安装、缺失的可选工具和失效的已保存路径。添加 `--dir "目录" --save` 可发现便携安装并保存可用路径；已保存路径失效时命令失败且不保存修改。完成后刷新工具箱。`pnpm security:tools list` 显示内置及已保存的自定义工具。工具 ID 可以扩展，使用小写字母、数字、连字符和下划线。Nmap、TShark、JADX 和 Metasploit（`msfconsole`）有内置发现项。`scan` 检查 PATH 和 Windows 常见安装目录，并执行有时限的版本查询；省略工具 ID 时检查全部原生工具及目录中登记的依赖项。添加 `--dir "目录"` 可递归搜索安装目录，包括便携版 JADX。未加 `--save` 时只报告扫描结果。使用 `set 工具ID "可执行文件"` 检查并保存确切路径，或用 `remove 工具ID` 删除已保存的覆盖项。Unicorn、r2pipe 等依赖工具通过所属运行时配置。用 `python -m venv .dsh/runtimes/unicorn` 创建独立环境；Windows 上用 `.dsh/runtimes/unicorn/Scripts/python.exe -m pip install unicorn` 安装（POSIX 使用 `bin/python`），然后在 Python 卡片选择该解释器，或运行 `pnpm security:tools set python "PYTHON绝对路径"`。运行 `pnpm security:doctor python unicorn` 检查两者。Unicorn 通过 Python 脚本提供 CPU 仿真，不提供 Android 或操作系统服务。
+
+工具箱打开时先显示目录，不自动扫描全部工具。按用途搜索或按标签、工具包筛选后，点击单个工具的 **检测** 或 **检测筛选结果**。**工具定义与导入** 支持鼠标编辑 CLI/Python 模块定义、选择 JSON 文件导入以及导出工具包；高级 JSON 可编辑集合、依赖、平台、技能引用与 provider 引用。导入先预览校验并列出冲突，覆盖需要勾选确认；保存只注册定义，不安装软件、不运行命令。定义保存在独立的 `.dsh/security-tool-packs.json`，安装路径仍在原配置文件中。
+
+工具包使用 `{"version":1,"id":"my-tools","label":"My tools","tools":[{"id":"my-cli","label":"My CLI","commands":["my-cli"],"tags":["firmware"],"guide":"Use bounded output."}],"collections":[]}` 格式。Python 模块使用 `dependency:"python"`、`invocation:"python"` 和 `probe:{kind:"python-module",module:"import_name",distribution:"package-name"}`。依赖可以引用其它已注册工具，导入时拒绝缺失引用和循环依赖。CLI 也支持 `pnpm security:tools import pack.json`（冲突时显式加 `--replace`）、`export PACK_ID output.json`、`doctor --tag firmware`、`doctor --collection web`，以及 `--catalog FILE` 指定定义文件。
+
+会话的高级工作台提供 **本次会话工具偏好**。默认由模型按任务发现工具，所选工具或集合只是优先建议，模型仍可查询其它工具。偏好只影响本次活跃会话，下次请求生效；关闭会话或重启后恢复自动发现。安全委派复制创建时的偏好，此后父子独立。项目、角色和执行授权保持原有约束。
 
 自定义工具默认用 `--version` 查询版本；在 `set` 时重复传入 `--version-arg=参数` 可覆盖。解释器可通过重复的 `--arg=参数` 为每次调用添加固定启动参数；`set` 不带 `--arg` 时清除原有启动参数。例如，将 JADX 配置为 Java 可执行文件，并传入 `--arg=-jar --arg="路径/jadx.jar"`。Windows 的 `.cmd`、`.bat` 和 `.ps1` 启动脚本需要改为配置解释器可执行文件。这些选项用于已有安装；登记名称不会安装软件或创建专用 provider。
 

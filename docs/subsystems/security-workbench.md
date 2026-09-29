@@ -6,9 +6,11 @@ The experimental [security domain](../../packages/experimental/security-analysis
 
 ## Durable records
 
-`ToolboxDirectory` contains configured environment choices and one measured `ToolboxInventory`. Its `ToolboxTool` entries separate availability, invocation method and optional provider integration. These read-only observations are not project evidence or execution authority; fields are defined in [toolbox types](../../packages/experimental/security-analysis/src/toolbox-types.ts).
+`ToolboxDirectory` contains configured environment choices and one measured or explicitly unchecked `ToolboxInventory`. Its `ToolboxTool` entries separate availability, invocation method and optional provider integration. These read-only observations are not project evidence or execution authority; fields are defined in [toolbox types](../../packages/experimental/security-analysis/src/toolbox-types.ts).
 
 [Record schemas](../../packages/experimental/security-analysis/src/workbench/model.ts) define project, asset, check, evidence, finding, plan, execution and reviewed knowledge values. Each command appends one revision to the storage-domain journal. Artifact bytes are published before references. Session logs retain model-visible tool results; the domain journal owns check recovery.
+
+`ToolCatalogSnapshot` holds the resolved tool definitions, collections, packs and import revision. `ToolPackPreview` lists conflicts before an explicit import. `ToolPreferences` contains active-session soft selections, recorded in model context but excluded from project persistence. See [tool configuration](../../packages/experimental/security-analysis/README.md) for import, probing and lifecycle semantics.
 
 ## Cordis API reference
 
@@ -52,11 +54,50 @@ Optional security profile service; default application compositions remain indep
  * @returns project identities and objectives. */
 @Remote('projects') async projects(): Promise<string>
 
+/** Read current definitions without probing installations.
+ * @returns the catalog with legacy installation definitions and import revision.
+ */
+@Remote('toolCatalog') toolCatalog(): ToolCatalogSnapshot
+
+/** Validate an operator-selected pack without executing its commands.
+ * @param input - JSON tool pack.
+ * @returns import preview and identity conflicts.
+ */
+@Remote('previewToolPack') previewToolPack(input: string): ToolPackPreview
+
+/** Register a reviewed pack without installing software or running probes.
+ * @param input - JSON tool pack.
+ * @param revision - preview revision.
+ * @param replace - explicit approval of all displayed conflicts.
+ * @returns updated definitions.
+ */
+@Remote('importToolPack') importToolPack(input: string, revision: string, replace: boolean): ToolCatalogSnapshot
+
+/** Export a shareable pack without local paths or measured results.
+ * @param id - registered pack identity.
+ * @returns formatted versioned JSON.
+ */
+@Remote('exportToolPack') exportToolPack(id: string): string
+
+/** Read or update soft preferences for the authenticated active session only.
+ * @param agent - carrier-resolved session; caller cannot nominate another agent.
+ * @param input - optional JSON selection; empty arrays restore automatic discovery.
+ * @returns the current session selection.
+ */
+@Remote('toolPreferences') toolPreferences(agent: Agent, input?: string): ToolPreferences
+
+/** Read unmeasured inventory rows for immediate operator display.
+ * @param environmentId - selected environment, defaulting to the first local environment.
+ * @returns declared installations, with every observation marked not checked.
+ */
+@Remote('toolboxDirectory') toolboxDirectory(environmentId?: string): ToolboxDirectory
+
 /** Inspect installed tools without selecting a project or starting an environment.
  * @param environmentId - configured environment; omission selects the first local environment.
+ * @param toolIds - selected definitions and their dependencies; omitted checks all.
  * @returns environment choices and current optional-tool observations.
  */
-@Remote('toolboxInventory') async toolboxInventory(environmentId?: string): Promise<ToolboxDirectory>
+@Remote('toolboxInventory') async toolboxInventory(environmentId?: string, toolIds?: string[]): Promise<ToolboxDirectory>
 
 /** Read editable tool settings independently of a project or conversation.
  * @param environmentId - selected environment.

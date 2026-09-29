@@ -1,53 +1,18 @@
 /** Bounded, read-only discovery in the selected execution environment. @module */
 import type { Context } from '@deepseek-ai/cordis'
-import { z } from 'zod'
 import type { SecurityEnvironment, ToolInstallation } from './workbench/providers.ts'
 import { runProcess, requireProcessSuccess } from './workbench/process.ts'
 import type { ToolboxInventory, ToolboxTool } from './toolbox-types.ts'
 
-interface CatalogEntry {
-  id: string
-  category: ToolboxTool['category']
-  commands: string[]
-  args: string[]
-  url: string
-  dependency?: string
-  invocation?: ToolboxTool['invocation']
-  provider?: string
-}
+import { builtinToolPack } from './builtin-tools.ts'
+import { orderTools, type ToolDefinition } from './tool-definitions.ts'
+import { resolveCatalog } from './tool-catalog.ts'
+import { toolCandidates } from './tool-candidates.ts'
+import { probeArguments, probeIdentity } from './tool-probes.ts'
+export { pythonModuleProbe } from './tool-probes.ts'
+/** Built-in definitions; runtime consumers resolve the operator catalog for each request. */
+export const toolboxCatalog = builtinToolPack.tools
 class MissingContainerTool extends Error {}
-/** Python module identity probe shared by the toolbox and local diagnostics.
- * @param id - catalog-owned Python module and distribution name.
- * @returns Python arguments for import and installed version discovery.
- */
-export function pythonModuleProbe(id: string): string[] {
-  return ['-c', `import json,importlib,importlib.metadata; m=importlib.import_module(${JSON.stringify(id)}); print(json.dumps({'version':importlib.metadata.version(${JSON.stringify(id)}),'location':m.__file__ or ''}))`]
-}
-const pythonIdentity = 'import json,sys,importlib.util; print(json.dumps({"version":sys.version.split()[0],"location":sys.executable,"prefix":sys.prefix,"basePrefix":sys.base_prefix,"virtualEnvironment":sys.prefix!=sys.base_prefix,"pipAvailable":importlib.util.find_spec("pip") is not None}))'
-/** Optional installations and read-only version probes shared with the local configuration script. */
-export const toolboxCatalog: readonly CatalogEntry[] = [
-  { id: 'python', category: 'runtime', commands: ['python', 'python3'], args: ['-c', pythonIdentity], url: 'https://www.python.org/downloads/' },
-  { id: 'bash', category: 'runtime', commands: ['bash'], args: ['--version'], url: 'https://www.gnu.org/software/bash/' },
-  { id: 'pwsh', category: 'runtime', commands: ['pwsh', 'powershell'], args: ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', '$PSVersionTable.PSVersion.ToString()'], url: 'https://github.com/PowerShell/PowerShell' },
-  { id: 'radare2', category: 'reverse', commands: ['radare2', 'r2'], args: ['-v'], url: 'https://github.com/radareorg/radare2' },
-  { id: 'r2ghidra', category: 'reverse', commands: [], args: ['-q', '-c', 'Lcj', '--'], dependency: 'radare2', invocation: 'plugin', url: 'https://github.com/radareorg/r2ghidra' },
-  { id: 'r2pipe', category: 'reverse', commands: [], args: [], dependency: 'python', invocation: 'python', url: 'https://github.com/radareorg/radare2-r2pipe' },
-  { id: 'unicorn', category: 'reverse', commands: [], args: [], dependency: 'python', invocation: 'python', url: 'https://www.unicorn-engine.org/docs/' },
-  { id: 'frida', category: 'reverse', commands: [], args: [], dependency: 'python', invocation: 'python', provider: 'frida', url: 'https://frida.re/docs/installation/' },
-  { id: 'ghidra', category: 'reverse', commands: [], args: [], invocation: 'provider', provider: 'ghidra', url: 'https://ghidra-sre.org/' },
-  { id: 'jadx', category: 'reverse', commands: ['jadx'], args: ['--version'], provider: 'android', url: 'https://github.com/skylot/jadx' },
-  { id: 'adb', category: 'device', commands: ['adb'], args: ['version'], provider: 'android', url: 'https://developer.android.com/tools/releases/platform-tools' },
-  { id: 'fastboot', category: 'device', commands: ['fastboot'], args: ['--version'], url: 'https://developer.android.com/tools/releases/platform-tools' },
-  { id: 'docker', category: 'utility', commands: ['docker'], args: ['--version'], url: 'https://docs.docker.com/get-docker/' },
-  { id: 'curl', category: 'web', commands: ['curl'], args: ['--version'], provider: 'web', url: 'https://curl.se/download.html' },
-  { id: 'nmap', category: 'web', commands: ['nmap'], args: ['--version'], url: 'https://nmap.org/download.html' },
-  { id: 'tshark', category: 'utility', commands: ['tshark'], args: ['--version'], url: 'https://www.wireshark.org/download.html' },
-  { id: 'john', category: 'utility', commands: ['john'], args: ['--list=build-info'], url: 'https://www.openwall.com/john/' },
-  { id: 'nuclei', category: 'web', commands: ['nuclei'], args: ['-version'], url: 'https://github.com/projectdiscovery/nuclei' },
-  { id: 'metasploit', category: 'web', commands: ['msfconsole'], args: ['--version'], url: 'https://docs.metasploit.com/' },
-  { id: 'file', category: 'utility', commands: ['file'], args: ['--version'], url: 'https://www.darwinsys.com/file/' },
-  ...['strings', 'readelf', 'objdump', 'nm'].map(id => ({ id, category: 'reverse' as const, commands: [id], args: ['--version'], url: 'https://www.gnu.org/software/binutils/' })),
-]
 
 /** Configured per-process bounds shared with environment health checks. */
 export interface InventoryLimits { durationMs: number; maxOutputBytes: number; graceMs: number }
@@ -58,18 +23,14 @@ export interface InventoryLimits { durationMs: number; maxOutputBytes: number; g
  * @param limits - process deadline and output bounds.
  * @param signal - caller cancellation.
  * @param toolIds - optional tool selection; required runtime dependencies are also inspected.
+ * @param catalog - captured current definitions; built-ins when omitted.
  * @returns separate runtime and optional-tool observations.
  */
 export async function inspectToolbox(ctx: Context, environment: SecurityEnvironment, limits: InventoryLimits,
-  signal: AbortSignal, toolIds?: readonly string[]): Promise<ToolboxInventory> {
-  let entries: CatalogEntry[] = [...toolboxCatalog.filter(item => environment.kind !== 'docker' || item.id !== 'docker'),
-    ...environment.tools.filter(tool => !toolboxCatalog.some(item => item.id === tool.id))
-      .map(tool => ({ id: tool.id, category: 'custom' as const, commands: [tool.command], args: tool.versionArgs, url: '' }))]
-  if (toolIds) {
-    const selected = new Set(toolIds)
-    for (const entry of entries) if (selected.has(entry.id) && entry.dependency) selected.add(entry.dependency)
-    entries = entries.filter(entry => selected.has(entry.id))
-  }
+  signal: AbortSignal, toolIds?: readonly string[], catalog: readonly ToolDefinition[] = toolboxCatalog): Promise<ToolboxInventory> {
+  environment = { ...environment, tools: structuredClone(environment.tools) }
+  const resolved = resolveCatalog([{ ...builtinToolPack, tools: [...catalog], collections: [] }], environment.tools)
+  const entries = orderTools(resolved.tools, toolIds).filter(tool => environment.kind !== 'docker' || tool.id !== 'docker')
   const inventory: ToolboxInventory = { environmentId: environment.id, kind: environment.kind,
     runtime: 'ready', detail: '', checkedAt: Date.now(), workdir: environment.kind === 'docker'
       ? environment.webTarget ? '/tmp' : '/workspace' : environment.cwd,
@@ -102,12 +63,18 @@ export async function inspectToolbox(ctx: Context, environment: SecurityEnvironm
     const configured = environment.tools.find(tool => tool.id === entry.id)
     const row: ToolboxTool = { id: entry.id, category: entry.category, status: 'not-checked',
       command: configured?.command ?? '', location: '', version: '', source: configured?.source ?? 'PATH',
-      detail: '', installUrl: entry.url, invocation: entry.invocation ?? 'shell',
+      detail: '', installUrl: entry.url, invocation: entry.invocation,
       ...(configured?.prefixArgs?.length ? { prefixArgs: configured.prefixArgs } : {}),
       ...(entry.provider ? { provider: entry.provider } : {}),
       ...(entry.dependency ? { dependency: entry.dependency } : {}) }
     inventory.tools.push(row)
     if (inventory.runtime !== 'ready') continue
+    if (entry.platforms.length && !entry.platforms.includes(environment.kind === 'docker' ? 'linux' : process.platform as 'win32' | 'linux' | 'darwin')) {
+      row.detail = 'unsupported-platform'; continue
+    }
+    if (entry.dependencies.some(id => inventory.tools.find(tool => tool.id === id)?.status !== 'available')) {
+      row.detail = 'dependency-unavailable'; continue
+    }
     let executableFound = false
     try {
       if (entry.dependency) {
@@ -123,24 +90,15 @@ export async function inspectToolbox(ctx: Context, environment: SecurityEnvironm
         executableFound = true
         row.source = dependency.source
         if (dependency.prefixArgs) row.prefixArgs = dependency.prefixArgs
-        const prefixArgs = environment.tools.find(tool => tool.id === entry.dependency)?.prefixArgs ?? []
+        const prefixArgs = dependency.prefixArgs ?? []
         const tool = { id: entry.id, command: dependency.command, prefixArgs, versionArgs: [], source: row.source }
-        if (entry.id === 'r2ghidra') {
-          const plugins = z.array(z.object({ name: z.string(), version: z.string().optional(), path: z.string().optional() }))
-            .parse(JSON.parse(await run(tool, entry.args)))
-          const plugin = plugins.find(item => item.name === 'r2ghidra')
-          if (!plugin) { row.status = 'missing'; continue }
-          row.version = plugin.version ?? ''
-          row.location = plugin.path ?? ''
-        } else {
-          const data = z.object({ version: z.string(), location: z.string() }).parse(JSON.parse(await run(tool,
-            pythonModuleProbe(entry.id))))
-          row.version = data.version; row.location = data.location
-        }
+        const identity = probeIdentity(entry, await run(tool, probeArguments(entry)))
+        if (!identity) { row.status = 'missing'; continue }
+        row.version = identity.version; row.location = identity.location ?? ''
         row.status = 'available'
         continue
       }
-      const candidates = configured ? [configured.command] : entry.commands
+      const candidates = configured ? [configured.command] : [...entry.commands, ...(environment.kind === 'docker' ? [] : toolCandidates(entry))]
       if (!candidates.length) { row.detail = 'configuration-required'; continue }
       let lastError: unknown
       for (const candidate of candidates) {
@@ -149,12 +107,9 @@ export async function inspectToolbox(ctx: Context, environment: SecurityEnvironm
           executableFound = true
           row.location = row.command
           const tool = { id: entry.id, command: row.command, versionArgs: configured?.versionArgs ?? entry.args, source: row.source }
-          const output = await run(tool, entry.id === 'python' ? entry.args : tool.versionArgs)
-          if (!output) throw new Error('Version query returned no output')
-          if (entry.id === 'python') {
-            const data = z.object({ version: z.string(), location: z.string() }).parse(JSON.parse(output))
-            row.version = data.version; row.location = data.location
-          } else row.version = output
+          const identity = probeIdentity(entry, await run(tool, probeArguments(entry, tool.versionArgs)))
+          if (!identity) { row.status = 'missing'; break }
+          row.version = identity.version; row.location = identity.location ?? row.command
           row.status = 'available'
           break
         } catch (error) { signal.throwIfAborted(); lastError = error }
@@ -163,7 +118,7 @@ export async function inspectToolbox(ctx: Context, environment: SecurityEnvironm
     } catch (error) {
       signal.throwIfAborted()
       row.detail = error instanceof Error ? error.message : String(error)
-      row.status = configured || (executableFound && !(error instanceof MissingContainerTool) && !row.detail.includes('ModuleNotFoundError')) ? 'error' : 'missing'
+      row.status = configured || (executableFound && !(error instanceof MissingContainerTool) && !/ModuleNotFoundError|PackageNotFoundError/.test(row.detail)) ? 'error' : 'missing'
     }
   }
   return inventory

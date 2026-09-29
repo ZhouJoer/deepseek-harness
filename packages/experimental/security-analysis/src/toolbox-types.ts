@@ -23,7 +23,7 @@ export interface ToolboxTool {
 export interface ToolboxInventory {
   environmentId: string
   kind: 'local' | 'docker' | 'android'
-  runtime: 'ready' | 'stopped' | 'unavailable'
+  runtime: 'ready' | 'stopped' | 'unavailable' | 'unchecked'
   detail: string
   checkedAt: number
   containerId?: string
