@@ -34,7 +34,7 @@ kind: "package-bundle"
 <details>
 <summary>实现细节</summary>
 
-Host patch 挂载领域服务和专用 provider。安全 preset 包含原生文件读取、写入、编辑和搜索，Windows 上的 PowerShell 或 POSIX 上的 Bash，以及 jobs、goal、todo、安全方法、网页检索和 compaction。协调者与采集角色可在继承的 DSH 权限下运行工作区脚本；研究和复核角色保持仅访问证据的权限。委派先组合父级 preset，再应用子角色过滤。默认 profile 和 agent-loop 保持不变。不发布 invariant companion，因为此包拥有可撤销的组合注册，业务状态由领域服务持有。
+Host patch 挂载领域服务和专用 provider。bundle 向 `agent-preset-registry` 注册声明式安全 preset，Web patch 将其设为默认值。安全 preset 包含原生文件读取、写入、编辑和搜索，Windows 上的 PowerShell 或 POSIX 上的 Bash，以及 jobs、goal、todo、安全方法、网页检索和 compaction。协调者与采集角色可在继承的 DSH 权限下运行工作区脚本；研究和复核角色保持仅访问证据的权限。委派先组合父级 preset，再应用子角色过滤。默认 profile 和 agent-loop 保持不变。不发布 invariant companion，因为此包拥有可撤销的组合注册，业务状态由领域服务持有。
 
 </details>
 

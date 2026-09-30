@@ -1,6 +1,76 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
+# Bilingual-pair consistency record for security-harness-simplification.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write docs/roadmaps/security-harness-simplification.md
-security-harness-simplification.md: d47751e45528676a2cf9d6ab24f0d626cce29d40
-security-harness-simplification.zh.md: f0f19be9a61d3680a48c3434783964fc29796207
+/:
+  en: 7ddfb8ff51b875b3
+  zh: 6f750fe1f8b33f30
+/general-purpose-dsh-with-stronger-security-analysis-implementation-plan:
+  en: d1af8e88e53c5269
+  zh: c045ef69b95a33ae
+/general-purpose-dsh-with-stronger-security-analysis-implementation-plan/summary:
+  en: 57082bdc52f3fe09
+  zh: bddc345528f8f810
+/general-purpose-dsh-with-stronger-security-analysis-implementation-plan/contents:
+  en: 3e9134ffbc323bd5
+  zh: 050de1d01d317ee4
+/general-purpose-dsh-with-stronger-security-analysis-implementation-plan/outcome-and-first-release:
+  en: 4d9610c6db62529b
+  zh: bb451be4e01960b7
+/general-purpose-dsh-with-stronger-security-analysis-implementation-plan/reuse-and-proposed-responsibilities:
+  en: 934359d7cf940118
+  zh: fd95e87054c2e789
+/general-purpose-dsh-with-stronger-security-analysis-implementation-plan/delegation-driven-by-missing-evidence:
+  en: 61804c9a922a384f
+  zh: f8600ef5154bbc26
+/general-purpose-dsh-with-stronger-security-analysis-implementation-plan/delegation-driven-by-missing-evidence/admission-and-choice-of-feedback:
+  en: ff985edca97538e8
+  zh: 2561a672d5f51884
+/general-purpose-dsh-with-stronger-security-analysis-implementation-plan/delegation-driven-by-missing-evidence/investigation-verification-and-review:
+  en: 8b506c62682fbf99
+  zh: 89858489a414da1b
+/general-purpose-dsh-with-stronger-security-analysis-implementation-plan/delegation-driven-by-missing-evidence/task-inputs-and-durable-results:
+  en: 0f6fe780133d24d4
+  zh: af871824c38466a2
+/general-purpose-dsh-with-stronger-security-analysis-implementation-plan/delegation-driven-by-missing-evidence/dependencies-budgets-and-stopping:
+  en: b602827c11236f75
+  zh: a79a0c356220aac8
+/general-purpose-dsh-with-stronger-security-analysis-implementation-plan/delegation-driven-by-missing-evidence/user-experience-and-acceptance:
+  en: add01191ee456484
+  zh: 3c5c6a2bcb7102f5
+/general-purpose-dsh-with-stronger-security-analysis-implementation-plan/implementation-steps:
+  en: fdcd8e5262811d4d
+  zh: 0992d98392620f1f
+/general-purpose-dsh-with-stronger-security-analysis-implementation-plan/implementation-steps/1-establish-the-baseline-and-executable-examples:
+  en: 71dec24069b61c8b
+  zh: f1f8f4b820e7a674
+/general-purpose-dsh-with-stronger-security-analysis-implementation-plan/implementation-steps/2-complete-one-natural-language-web-task:
+  en: f41c3183417bad0e
+  zh: 68f91482daed48a0
+/general-purpose-dsh-with-stronger-security-analysis-implementation-plan/implementation-steps/3-strengthen-security-reasoning-and-tool-use:
+  en: 6be59fceab15f16e
+  zh: 15b002f11cf3b892
+/general-purpose-dsh-with-stronger-security-analysis-implementation-plan/implementation-steps/4-improve-delegation-and-independent-validation:
+  en: dfd60172712e1ac0
+  zh: 2fe2dbf107b1f2f7
+/general-purpose-dsh-with-stronger-security-analysis-implementation-plan/implementation-steps/5-finish-the-workspace-conversation-and-result-interface:
+  en: abd8d90d530e9edd
+  zh: dab9494c36df3cfe
+/general-purpose-dsh-with-stronger-security-analysis-implementation-plan/implementation-steps/6-complete-cross-domain-acceptance-and-delivery:
+  en: 1502286565cacac7
+  zh: 054f04377bd61db0
+/general-purpose-dsh-with-stronger-security-analysis-implementation-plan/dependencies-and-change-ownership:
+  en: 7a1def7d47fd2270
+  zh: 9928dd1b39ef9a67
+/general-purpose-dsh-with-stronger-security-analysis-implementation-plan/acceptance-scenarios:
+  en: 0ce86b90adbd26fc
+  zh: b053a5c07a8ceeb8
+/general-purpose-dsh-with-stronger-security-analysis-implementation-plan/compatibility-and-validation:
+  en: 582b7ab21f4d2e70
+  zh: fdad2104a447f585
+/general-purpose-dsh-with-stronger-security-analysis-implementation-plan/first-implementation-action:
+  en: 76a5f8f17e04a5a0
+  zh: 5b6159fcb80f2e01
+/general-purpose-dsh-with-stronger-security-analysis-implementation-plan/dev-note:
+  en: dc53bb5a93aee186
+  zh: accde52399483004

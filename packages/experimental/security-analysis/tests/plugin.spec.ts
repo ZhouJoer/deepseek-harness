@@ -191,7 +191,7 @@ async function load(existingRoot?: string, endpoint?: string) {
     JSON.stringify(
       [...modules.keys()].map(name => ({
         id: name,
-        name,
+        name: 'cordis:' + name,
         config:
           name === 'loop'
             ? { agents: [] }
@@ -210,13 +210,7 @@ async function load(existingRoot?: string, endpoint?: string) {
   ctx.baseUrl = pathToFileURL(root).href + '/'
   await ctx.plugin(Loader)
   ctx.loader.builtins.include = Include
-  ctx.loader.internal = {
-    version: 'v2',
-    async import(specifier: string) {
-      if (!modules.has(specifier)) throw new Error(`Unexpected fixture module ${specifier}`)
-      return modules.get(specifier)
-    },
-  } as unknown as NonNullable<typeof ctx.loader.internal>
+  for (const [name, module] of modules) ctx.loader.builtins[name] = module
   await ctx.loader.create({ name: 'cordis:include', config: { path: pathToFileURL(configPath).href } })
   await ctx.loader.await()
   const security = [...ctx.loader.entries()].find(entry => entry.options.id === 'security')?.fiber
@@ -281,8 +275,7 @@ describe('security analysis Loader composition', () => {
     expect(JSON.stringify(logged)).toContain('fixture-engagement')
     expect(JSON.stringify(logged)).toContain('operator-declared')
     const toolReply = model.requests[1]?.messages
-      .flatMap(message => message.content)
-      .find(block => block.type === 'tool-result')
+      .find(message => message.role === 'tool')
     expect(toolReply).toMatchObject({ toolCallId: 'scope-call', isError: false })
     const prompt = await ctx.systemPrompt.assemble({ agent, scope: agent, signal: new AbortController().signal })
     expect(prompt.sections.find(section => section.name === 'security:workflow')?.text).toContain(
@@ -307,12 +300,13 @@ describe('security analysis Loader composition', () => {
       limit: 2,
     })
     expect(observation.isError).toBe(false)
+    const textValue: unknown = expect.stringContaining('parse_packet')
     const evidence = observation.value as SecurityRecord
     expect(evidence).toMatchObject({
       kind: 'evidence',
       evidenceType: 'static',
       status: 'observed',
-      text: expect.stringContaining('parse_packet') as unknown,
+      text: textValue,
     })
     expect(loaded.requests).toEqual(['/methods?offset=0&limit=2'])
     expect((await record(ctx, agent, 'surface', [evidence.id])).isError).toBe(false)

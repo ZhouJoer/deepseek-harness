@@ -39,7 +39,7 @@ describe('immutable binary inspection', () => {
     const { run } = await fixture(Buffer.from('hello\0', 'utf16le'))
     const result = await run('strings', { encoding: 'utf16le' })
     expect(result.incomplete).toBe(false)
-    expect(JSON.parse(Buffer.from(result.bytes).toString()) as unknown).toMatchObject({ strings: [{ offset: 0, text: 'hello' }] })
+    expect(JSON.parse(Buffer.from(result.bytes).toString())).toMatchObject({ strings: [{ offset: 0, text: 'hello' }] })
   })
   it('measures selected PE and ELF header fields without claiming full format validation', async () => {
     const pe = Buffer.alloc(128)
@@ -50,7 +50,7 @@ describe('immutable binary inspection', () => {
     const elf = Buffer.alloc(64)
     elf.set([0x7f, 0x45, 0x4c, 0x46, 2, 2]); elf.writeUInt16BE(183, 18)
     const other = await fixture(elf)
-    expect(JSON.parse(Buffer.from((await other.run('identity')).bytes).toString()) as unknown)
+    expect(JSON.parse(Buffer.from((await other.run('identity')).bytes).toString()))
       .toMatchObject({ header: { bits: 64, endian: 'big', machine: 183 } })
   })
   it('rejects malformed headers, oversized requests, writes and cancelled collection', async () => {

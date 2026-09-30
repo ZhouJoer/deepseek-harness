@@ -1,6 +1,6 @@
 /** Frida adapter limits, fixed probe behavior, and managed process cleanup. */
 import { runInNewContext } from 'node:vm'
-import type { Context } from '@deepseek-ai/cordis'
+import { Context } from '@deepseek-ai/cordis'
 import type { SubprocessHandle, SubprocessOutcome, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { FRIDA_PYTHON_SCRIPT } from '../src/frida-script.ts'
@@ -45,7 +45,7 @@ function fixture(stdout = JSON.stringify({ items: [], truncated: false }), lossy
     return handle
   })
   // The consumer exercises only this service; no Cordis registry or live process is acquired.
-  const ctx = { subprocess: { resolveExecutable, spawn } } as unknown as Context
+  const ctx = Object.assign(new Context(), { subprocess: { resolveExecutable, spawn } })
   return { ctx, completion, quiescence, spawned, cleanupStarted, terminate, resolveExecutable, spawn }
 }
 

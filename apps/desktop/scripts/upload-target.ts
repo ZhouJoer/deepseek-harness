@@ -1,4 +1,4 @@
-/** Upload one validated Desktop release to its Tencent COS update directory. */
+/** Upload validated Desktop update artifacts or a fixed installer to Tencent COS. */
 
 import { resolve } from 'node:path'
 import { parseArgs } from 'node:util'
@@ -6,7 +6,8 @@ import type { DesktopPackageTargetName } from './package-target.ts'
 import { createDesktopCos } from './desktop-cos.ts'
 import { resolveDesktopUploadConfig } from './desktop-auto-update-environment.mjs'
 import { loadDesktopPackageEnvironment } from './desktop-package-environment.mjs'
-import { createDesktopUploadPlan } from './desktop-upload-plan.ts'
+import { createDesktopUploadPlan, type DesktopUploadPlan } from './desktop-upload-plan.ts'
+import { desktopReleaseTag, tagDesktopRelease } from './desktop-release-tag.ts'
 import { uploadDesktopRelease } from './desktop-upload-run.ts'
 
 const SUPPORTED_TARGETS = new Set<DesktopPackageTargetName>(['mac-arm64', 'mac-x64', 'win-x64'])
@@ -57,8 +58,14 @@ export function resolveCredentialUploadEnvironment(
   }
 }
 
-async function main(): Promise<void> {
-  const { positionals, values } = parseArgs({ args: process.argv.slice(2), allowPositionals: true, options: {
+/**
+ * Upload the selected target and record a release tag only for production update uploads.
+ * @param args Target and upload options from the command line.
+ * @returns Resolves after upload and any release-tag attempt complete.
+ */
+export async function uploadDesktopTarget(args: string[]): Promise<void> {
+  const { positionals, values } = parseArgs({ args, allowPositionals: true, options: {
+    latest: { type: 'boolean' },
     'credential-launcher': { type: 'boolean' }, environment: { type: 'string' }, bucket: { type: 'string' },
   } })
   const target = positionals[0]
@@ -78,17 +85,44 @@ async function main(): Promise<void> {
   const environment = launcher
     ? resolveCredentialUploadEnvironment(fileEnvironment, process.env, values.environment as 'test' | 'production', values.bucket!, name)
     : fileEnvironment
-  const plan = await createDesktopUploadPlan(name, { environment })
+  const plan = await createDesktopUploadPlan(name, { environment, latest: values.latest === true })
   const cos = createDesktopCos({
     secretId: requiredEnvironmentValue(environment, plan.secretIdEnvName),
     secretKey: requiredEnvironmentValue(environment, plan.secretKeyEnvName),
   })
   process.stdout.write(`desktop upload: ${plan.target} ${plan.version} -> ${plan.publicUrl}\n`)
   await uploadDesktopRelease(plan, cos, resolve(import.meta.dirname, '../.desktop-build/upload-records'))
+  if (plan.environment === 'production' && !values.latest) recordProductionRelease(plan)
+}
+
+/**
+ * Tag the commit an external release was packaged from, after its artifacts are public.
+ * @param plan Completed production upload.
+ */
+function recordProductionRelease(plan: DesktopUploadPlan): void {
+  const tag = desktopReleaseTag(plan.version)
+  if (plan.commit === undefined) {
+    process.stdout.write(`desktop upload: this package was built before builds recorded their commit; tag it by hand as ${tag}\n`)
+    return
+  }
+  if (plan.dirty === true) {
+    // A tag would name a commit whose tree is not what the users received.
+    process.stderr.write(`desktop upload: packaged from ${plan.commit} with uncommitted changes, so ${tag} was not created\n`)
+    return
+  }
+  const result = tagDesktopRelease({ version: plan.version, commit: plan.commit, repositoryRoot: resolve(import.meta.dirname, '../../..') })
+  if (result.status === 'failed') {
+    process.stderr.write(`desktop upload: the release is published but ${result.tag} was not recorded: ${result.detail ?? 'unknown error'}\n`)
+    if (result.recovery !== undefined) {
+      process.stderr.write(`desktop upload: record it with: ${result.recovery.join(' && ')}\n`)
+    }
+    return
+  }
+  process.stdout.write(`desktop upload: ${result.tag} ${result.status === 'created' ? 'records' : 'already recorded'} ${plan.commit}\n`)
 }
 
 if (process.argv[1] !== undefined && import.meta.filename === resolve(process.argv[1])) {
-  main().catch(() => {
+  uploadDesktopTarget(process.argv.slice(2)).catch(() => {
     process.stderr.write('desktop upload: failed; inspect the printed record directory if allocated. No automatic retry; reconcile remote state before another upload.\n')
     process.exitCode = 1
   })

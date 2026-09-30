@@ -1,6 +1,28 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
+# Bilingual-pair consistency record for FORK_DEVELOPMENT.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write docs/FORK_DEVELOPMENT.md
-FORK_DEVELOPMENT.md: 44cf20c63d710017c738536c1d9930e59bab976e
-FORK_DEVELOPMENT.zh.md: 7d176c3da6d8be3983864597cc5c254039509ef3
+/fork-development:
+  en: c2890414d18c37fc
+  zh: cd715153f86f9c20
+/fork-development/summary:
+  en: 2ad4f1ab6bc93117
+  zh: d8e535317e733c53
+/fork-development/table-of-contents:
+  en: 6b6333fb317e8e51
+  zh: 0935ec7090b2a1eb
+/fork-development/development-line:
+  en: 26952e845d75102d
+  zh: ef19fd51001dc4a5
+/fork-development/branch-policy:
+  en: 8fa0d444947edadc
+  zh: 43f25ff210468794
+/fork-development/upstream-synchronization:
+  en: ed335eb49140b4c9
+  zh: 6b26e13337435c4e
+/fork-development/validation:
+  en: f8becbe2327db91e
+  zh: c4b87e0a126f8ad2
+/fork-development/dev-note:
+  en: 5c6ff9410d32de4c
+  zh: 74d92911d1655dd7

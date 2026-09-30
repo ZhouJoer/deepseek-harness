@@ -24,7 +24,7 @@ function harness(extra: object = {}) {
     ...extra,
   }
   // Unused framework seats and advanced actions do not participate in this creation fixture.
-  return { api, props: api as unknown as Parameters<typeof DashboardSession>[0] }
+  return { api, props: api as Parameters<typeof DashboardSession>[0] }
 }
 it('retries sending without recreating a prepared task or importing its materials again', async () => {
   const send = vi.fn().mockRejectedValueOnce(new Error('Connection lost')).mockResolvedValue(undefined)

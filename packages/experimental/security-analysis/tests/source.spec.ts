@@ -29,13 +29,16 @@ async function fixture(selection: 'directory' | 'file' = 'directory') {
   }, context), context)
   return { root, source, store, artifact, context, provider, run }
 }
+const stringValue: unknown = expect.any(String)
+
 describe('immutable source', () => {
   it('retains measured lines when the live source changes and exposes continuation', async () => {
     const { source, run } = await fixture()
     await writeFile(join(source, 'main.py'), 'changed')
     const result = await run('read', { path: 'main.py', startLine: 1, limit: 1 })
+    const hashValue: unknown = expect.stringMatching(/^[a-f0-9]{64}$/)
     expect(JSON.parse(Buffer.from(result.bytes).toString())).toMatchObject({
-      items: [{ path: 'main.py', sha256: expect.stringMatching(/^[a-f0-9]{64}$/) as unknown, line: 1, text: 'name = "测试"' }],
+      items: [{ path: 'main.py', sha256: hashValue, line: 1, text: 'name = "测试"' }],
       nextLine: 2, hasMore: true,
     })
     expect(result).toMatchObject({ incomplete: true, method: 'static' })
@@ -79,7 +82,7 @@ describe('immutable source', () => {
     const { run } = await fixture()
     const result = await run('search', { query: 'print(' })
     expect((JSON.parse(Buffer.from(result.bytes).toString()) as { items: unknown }).items).toEqual([
-      { path: 'main.py', sha256: expect.any(String) as unknown, line: 2, text: 'print(name)' },
+      { path: 'main.py', sha256: stringValue, line: 2, text: 'print(name)' },
     ])
     expect(result.incomplete).toBe(false)
   })
@@ -110,7 +113,7 @@ describe('immutable source', () => {
     await symlink(outside, join(source, 'linked'), process.platform === 'win32' ? 'junction' : 'dir')
     const artifact = await importSource(store, source, [root], { entries: 10, bytes: 65536 })
     const manifest = sourceManifestSchema.parse(JSON.parse((await store.read(artifact)).toString()))
-    expect(manifest.excluded).toEqual([{ path: 'linked', reason: expect.any(String) as unknown }])
+    expect(manifest.excluded).toEqual([{ path: 'linked', reason: stringValue }])
     expect(manifest.files.some(file => file.path.includes('private'))).toBe(false)
   })
   it('rejects duplicate and escaping manifest members', async () => {

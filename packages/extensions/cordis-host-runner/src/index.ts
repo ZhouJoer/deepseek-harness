@@ -9,6 +9,12 @@ import type { Fiber } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
+declare module '@deepseek-ai/dsh-llm' {
+  interface MessageSourceMap {
+    'cordis-host-runner': { kind: 'cordis-host-runner' }
+  }
+}
+
 import { TypertRemoteService, Remote } from '@deepseek-ai/dsh-typert-protocol'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import { isPlugin, normalizeHandler } from './guard.ts'
@@ -39,7 +45,6 @@ export type {
 } from './registry.ts'
 export { CordisInspectRegistryService } from './inspect-registry.ts'
 export type { HostCordisInspectProviderRegistration } from './inspect-registry.ts'
-export { HOST_BUILTIN_INSPECTION } from './sandbox.ts'
 
 /**
  * Brand a Host-minted Plugin ID.
@@ -88,6 +93,8 @@ declare module '@deepseek-ai/cordis' {
 export interface Config {
   /** Maximum synchronous VM evaluation time in milliseconds. */
   vmTimeoutMs?: number
+  /** Maximum wait for a valid Client inspect response in milliseconds. */
+  clientInspectTimeoutMs?: number
 }
 
 type ResolvedConfig = Required<Config>
@@ -126,6 +133,7 @@ export class DynamicCordisRunnerService extends TypertRemoteService {
 
   static Config: z<Config> = z.object({
     vmTimeoutMs: z.number().min(1).default(5000),
+    clientInspectTimeoutMs: z.number().step(1).min(1).max(2_147_483_647).default(10_000),
   })
 
   private readonly rootCtx: Context
@@ -140,7 +148,7 @@ export class DynamicCordisRunnerService extends TypertRemoteService {
     super(ctx, 'dynamicCordisRunner')
     this.rootCtx = ctx
     this.resolved = config as ResolvedConfig
-    this.inspectRegistry = new CordisInspectRegistryService(ctx)
+    this.inspectRegistry = new CordisInspectRegistryService(ctx, this.resolved.clientInspectTimeoutMs)
   }
 
   /**
@@ -501,11 +509,12 @@ export class DynamicCordisRunnerService extends TypertRemoteService {
   }
 
   /**
-   * Claim one pending Client inspect query with its live result.
+   * Submit a Client inspect result or failure for a pending query.
    * @param agent - Session that owns the query.
    * @param requestId - exact pending query identity.
    * @param resolution - provider result or structured refusal.
-   * @returns whether this answer won the query.
+   * @returns acknowledgement with accepted true only for a valid success that settles the query;
+   * pending-query failures return { accepted: false } and retain only the first diagnostic.
    */
   @Remote('resolveInspectQuery')
   resolveInspectQuery(
@@ -1042,7 +1051,7 @@ export class DynamicCordisRunnerService extends TypertRemoteService {
     }
     agent.steer(createUserMessage({
       content: [{ type: 'text', text }],
-      source: { kind: 'plugin', plugin: 'cordis-host-runner' },
+      source: { kind: 'cordis-host-runner' },
     }))
   }
 
@@ -1062,7 +1071,7 @@ export class DynamicCordisRunnerService extends TypertRemoteService {
           + `entryAbdicated: ${failure.abdicated}\n`
           + 'Report the Client render failure to the user; the definition can be stopped through the Cordis panel.',
       }],
-      source: { kind: 'plugin', plugin: 'cordis-host-runner' },
+      source: { kind: 'cordis-host-runner' },
     }))
   }
 
@@ -1086,7 +1095,7 @@ export class DynamicCordisRunnerService extends TypertRemoteService {
           + 'The Plugin remains running. Report the Host handler failure to the user. If the handler needs a Service, either declare '
           + 'that Service in the returned Plugin inject list or read it with ctx.get(name) and handle undefined.',
       }],
-      source: { kind: 'plugin', plugin: 'cordis-host-runner' },
+      source: { kind: 'cordis-host-runner' },
     }))
   }
 
@@ -1109,7 +1118,7 @@ export class DynamicCordisRunnerService extends TypertRemoteService {
           + `(${run.pluginRunId}) after activation.\n${formatErrorDetails(failure)}\n`
           + 'The Plugin remains running. Report the guard rejection to the user; it can be stopped through the Cordis panel.',
       }],
-      source: { kind: 'plugin', plugin: 'cordis-host-runner' },
+      source: { kind: 'cordis-host-runner' },
     }))
   }
   /* jscpd:ignore-end */
@@ -1149,7 +1158,7 @@ export class DynamicCordisRunnerService extends TypertRemoteService {
     if (agents?.get(agent.id) !== agent) return
     agent.inject(createUserMessage({
       content: [{ type: 'text', text }],
-      source: { kind: 'plugin', plugin: 'cordis-host-runner' },
+      source: { kind: 'cordis-host-runner' },
     }))
   }
 

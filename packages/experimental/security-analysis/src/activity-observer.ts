@@ -1,6 +1,6 @@
 /** Observe native analysis execution without treating command text as proof of inner tools. @module */
 import type { Context } from '@deepseek-ai/cordis'
-import { JobId, type JobSnapshot } from '@deepseek-ai/dsh-jobs'
+import { JobId, type JobView } from '@deepseek-ai/dsh-jobs'
 import { z } from 'zod'
 import { toolboxCatalog } from './toolbox.ts'
 import type { ToolDefinition } from './tool-definitions.ts'
@@ -30,7 +30,7 @@ export function analysisToolCandidates(command: string, catalog: readonly ToolDe
  * @param snapshot - runtime-owned job settlement.
  * @returns independent invocation outcome and output completeness.
  */
-export function analysisJobOutcome(snapshot: JobSnapshot): Pick<SecurityActivity, 'status' | 'incomplete' | 'detail'> {
+export function analysisJobOutcome(snapshot: JobView): Pick<SecurityActivity, 'status' | 'incomplete' | 'detail'> {
   const exit = /^exit code: (-?\d+)$/u.exec(snapshot.detail ?? '')
   const status = snapshot.status === 'killed' ? 'cancelled' : snapshot.status === 'failed' ? 'failed'
     : snapshot.status === 'completed' && exit ? (Number(exit[1]) === 0 ? 'completed' : 'failed') : 'unknown'
@@ -45,14 +45,22 @@ export function analysisJobOutcome(snapshot: JobSnapshot): Pick<SecurityActivity
 export function installActivityObserver(ctx: Context, ready: Promise<SecurityController>,
   catalog: () => readonly ToolDefinition[] = () => toolboxCatalog): void {
   const jobs = new Map<string, { record: SecurityActivity; store: SecurityActivityStore }>()
-  const settled = async (snapshot: JobSnapshot) => {
-    const key = JSON.stringify([snapshot.ownerSession, snapshot.id])
+  const pending = new Set<Promise<void>>()
+  const settled = async (snapshot: JobView) => {
+    const key = JSON.stringify([snapshot.owner, snapshot.id])
     const entry = jobs.get(key)
     if (!entry || snapshot.status === 'running' || snapshot.status === 'stopping') return
     jobs.delete(key)
     await entry.store.finish(entry.record.id, analysisJobOutcome(snapshot))
   }
-  ctx.effect(() => ctx.jobs.onJobDone(snapshot => settled(snapshot)))
+  ctx.jobs.events.subscribe({ owners: 'scope' }, (event) => {
+    if (event.type !== 'settled') return
+    const work = settled(event.job)
+      .catch((error: unknown) => { ctx.logger.error('Security job activity could not be saved: %s', String(error)) })
+      .finally(() => { pending.delete(work) })
+    pending.add(work)
+  })
+  ctx.effect(() => async () => { await Promise.all(pending) })
   ctx.on('tools/post-execute', async (exec, result, next) => {
     if (exec.agent && result.isError && ['security_static', 'security_execute'].includes(exec.name)) {
       const controller = await ready
@@ -85,7 +93,7 @@ export function installActivityObserver(ctx: Context, ready: Promise<SecurityCon
       const result = await next()
       const job = background.safeParse(result.value)
       if (!result.isError && job.success) {
-        const snapshot = ctx.jobs.get(JobId(job.data.jobId), exec.agent)
+        const snapshot = ctx.jobs.get(JobId(job.data.jobId), exec.agent.id)
         jobs.set(JSON.stringify([exec.agent.id, snapshot.id]), { record, store })
         await settled(snapshot)
       } else {

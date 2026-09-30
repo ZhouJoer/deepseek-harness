@@ -1,0 +1,28 @@
+# Bilingual-pair consistency record for 2026-09-30-security-budget-source.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/persistence-changes/2026-09-30-security-budget-source.md
+/:
+  en: 3d5a424ae7d7e46b
+  zh: c22a8e4a62d8cc1a
+/2026-09-30-security-budget-source:
+  en: 6a88a925a74f1cd7
+  zh: 2b1b82927225b599
+/2026-09-30-security-budget-source/summary:
+  en: df8c6b2d70a33533
+  zh: 49c3b1bb00f486e7
+/2026-09-30-security-budget-source/table-of-contents:
+  en: 6cf314a069ceb451
+  zh: 9adff678e9ecab3b
+/2026-09-30-security-budget-source/declaration:
+  en: 6907136f28e48c90
+  zh: 02f8298485f3d8e7
+/2026-09-30-security-budget-source/compatibility:
+  en: 97d637537a3d8851
+  zh: 6f63f1da7524e798
+/2026-09-30-security-budget-source/verification:
+  en: 8716120f788c309a
+  zh: bdefb764f223bd7e
+/2026-09-30-security-budget-source/dev-note:
+  en: b75c8458928b72b9
+  zh: 003ba4e17b4b5269

@@ -1,6 +1,49 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/experimental/client-ui-security-analysis/README.md
-README.md: 05e3ffb70ad62e07713daf0445d4d7fd4e7887b5
-README.zh.md: 3672a512ec52e87c1897803900f77cf0b79bda36
+/:
+  en: 04a958d4492538cf
+  zh: 8a1ccfa12bc2395f
+/deepseek-ai-dsh-experimental-client-ui-security-analysis:
+  en: 001938f801e7fb94
+  zh: a6122788cc8de394
+/deepseek-ai-dsh-experimental-client-ui-security-analysis/summary:
+  en: 4f7c2f62a4c16bbe
+  zh: e8b2388f69ebac1a
+/deepseek-ai-dsh-experimental-client-ui-security-analysis/table-of-contents:
+  en: 1bfe2a7ece1db634
+  zh: 1271115c5d3a97fe
+/deepseek-ai-dsh-experimental-client-ui-security-analysis/use-this-package:
+  en: 972e63ed6ce4620f
+  zh: 6b43575b17836b9d
+/deepseek-ai-dsh-experimental-client-ui-security-analysis/understand-the-implementation:
+  en: cc1b25ffc7bb2ebf
+  zh: bfb0aeaa3036af6e
+/deepseek-ai-dsh-experimental-client-ui-security-analysis/further-exploration:
+  en: 3871dcee862f75e6
+  zh: 5a0b10b5af162b70
+/deepseek-ai-dsh-experimental-client-ui-security-analysis/persistent-security-projects:
+  en: 342a46a1209daa0b
+  zh: f47b21cc4225454e
+/deepseek-ai-dsh-experimental-client-ui-security-analysis/model-experience:
+  en: 215e7ba838619b7b
+  zh: a311da3843709f90
+/deepseek-ai-dsh-experimental-client-ui-security-analysis/model-experience/security-context:
+  en: 48465898d655ca11
+  zh: 5671fc2990940521
+/deepseek-ai-dsh-experimental-client-ui-security-analysis/model-experience/security-context/what-the-model-sees:
+  en: a4deb9810e691072
+  zh: a43fe521b7efd4b6
+/deepseek-ai-dsh-experimental-client-ui-security-analysis/model-experience/security-context/token-effect:
+  en: 10f4088297978ee2
+  zh: 247eb985aca49fe8
+/deepseek-ai-dsh-experimental-client-ui-security-analysis/model-experience/security-context/kv-cache-effect:
+  en: e32ea73b1aa3ea35
+  zh: 7ad0a7a3aec9bc22
+/deepseek-ai-dsh-experimental-client-ui-security-analysis/known-limitations-and-deferred-work:
+  en: 5e9371656aef41fc
+  zh: b8d5a0dc47f41bed
+/deepseek-ai-dsh-experimental-client-ui-security-analysis/known-limitations-and-deferred-work/dev-note:
+  en: 47f83e1859b04e11
+  zh: 5ff63007bdc1a3c4

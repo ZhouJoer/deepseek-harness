@@ -22,7 +22,7 @@ import type {
 import type {
   ArbitrateKey, ArbitrateOutcome, ComposerKeyboard, Occurrence, ReferenceInsert, TokenSpan,
 } from '../contract/draft-editor.ts'
-import type { InputSubmitMode } from '../contract/composer-submission.ts'
+import type { InputSubmitMode, MessageSubmission, MessageSubmissionState } from '../contract/composer-submission.ts'
 import { SubmitMachine } from './machine.ts'
 import { DraftEditorRuntime } from './editor/runtime.ts'
 import type { EditorProjection } from './editor/projection.ts'
@@ -41,6 +41,10 @@ export interface PopupDismissFace {
 export interface SessionInputDeps {
   /** Session-scope ctx handed to claim.submit transactions. */
   actx: Context
+  /** Snapshot the Session facts before asynchronous command arbitration. */
+  submissionState?: () => MessageSubmissionState
+  /** Notify one ordinary message attempt before reference serialization. */
+  messageSubmitted?: (submission: MessageSubmission) => void
   /** Enter adjudication face resolver; absent/undefined answer = every '/' line falls to the default sink. */
   inputTriggers?: (() => InputTriggerController | undefined) | undefined
   /** PopupSelect shell face resolver (dismissal on submit lock / escape). */
@@ -117,6 +121,12 @@ export class SessionInputShell implements SessionInput {
   }
   /** The public provide-channel action face (one stable identity per session). */
   readonly actions: InputActions = {
+    captureInsertion: () => ({ ...this.caretSpan(), draftRev: this.rev }),
+    insertText: (text, span) => {
+      if (this.snapshot.phase === 'adjudicating' || this.snapshot.phase === 'submitting' || this.disposed) return false
+      if (span.draftRev !== this.rev) return false
+      return this.draftEditor.insertAsyncText(span, text)
+    },
     setDraft: (text) => { this.setDraft(text) },
     addAttachments: ids => this.addAttachments(ids),
     removeAttachment: (id) => { this.removeAttachment(id) },
@@ -216,6 +226,20 @@ export class SessionInputShell implements SessionInput {
   }
 
   /**
+   * Add validated file references and attachment ids while admission is editable.
+   * @param references - reference chips in source order.
+   * @param ids - newly allocated attachment ids.
+   * @returns false when admission is locked or the editor refuses the insertion.
+   */
+  addFiles(references: readonly ReferenceInsert[], ids: readonly DraftAttachmentId[]): boolean {
+    if (this.snapshot.phase === 'adjudicating' || this.snapshot.phase === 'submitting') return false
+    if (!this.draftEditor.insertFileReferences(references)) return false
+    this.attachmentIds = [...this.attachmentIds, ...ids]
+    this.publish()
+    return true
+  }
+
+  /**
    * Remove one attachment id from this draft. Busy admission phases refuse, like
    * {@link addAttachments}: a removal landing while a command submit serializes
    * would otherwise vanish from the rail yet still ride the in-flight send.
@@ -270,7 +294,16 @@ export class SessionInputShell implements SessionInput {
    * (adjudicating/submitting) force-closes the transient layers: the popup
    * dismisses and the menu tracks frozen.
    */
-  submit(mode: InputSubmitMode = 'queue'): void {
+  submit(mode: InputSubmitMode = 'queue', source?: 'click' | 'enter'): void {
+    if (this.disposed) return
+    const timestamp = Date.now()
+    let state: MessageSubmissionState | undefined
+    if (this.snapshot.phase === 'plain' && (this.snapshot.draft.trim() !== '' || this.attachmentIds.length > 0)) {
+      try { state = this.deps.submissionState?.() } catch (_error) { /* Optional Session observations cannot interrupt submission. */ }
+    }
+    const submission: MessageSubmission = Object.freeze({
+      timestamp, mode, ...source === undefined ? {} : { source }, ...state === undefined ? {} : { state },
+    })
     if (this.snapshot.draft.trim() === '' && this.attachmentIds.length > 0) {
       if (this.snapshot.phase === 'plain') {
         const attachmentIds = [...this.attachmentIds]
@@ -279,6 +312,7 @@ export class SessionInputShell implements SessionInput {
         const flight = this.attachmentFlightSeq
         this.attachmentFlights.set(flight, { controller, attachmentIds })
         this.commitSend(attachmentIds)
+        this.notifySubmission(submission)
         void this.deps.defaultSink('', attachmentIds, mode, controller.signal).then((outcome) => {
           if (this.disposed || !this.attachmentFlights.delete(flight)) return
           if (outcome.kind === 'success') return
@@ -301,7 +335,7 @@ export class SessionInputShell implements SessionInput {
       this.notify('error', this.deps.commandAttachments.unsupportedNotice(before.claim?.token ?? before.draft))
       return
     }
-    this.dispatchRun(({ type: 'enter', mode, draft: this.projection.clipboardText }))
+    this.dispatchRun({ type: 'enter', mode, draft: this.projection.clipboardText, submission })
     const phase = this.snapshot.phase
     if (phase === 'adjudicating' || phase === 'submitting') {
       this.deps.popup?.()?.dismiss()
@@ -552,7 +586,8 @@ export class SessionInputShell implements SessionInput {
   /** Dispatch + execute, refreshing the claim decoration when the styled token flips. */
   private dispatchRun(ev: Parameters<SubmitMachine['dispatch']>[0]): void {
     const beforeToken = this.activeClaimToken()
-    this.run(this.core.dispatch(ev))
+    const effects = this.core.dispatch(ev)
+    this.run(effects)
     if (this.activeClaimToken() !== beforeToken) this.draftEditor.refreshClaimDecoration()
   }
 
@@ -613,6 +648,7 @@ export class SessionInputShell implements SessionInput {
     draft: string,
     mode: InputSubmitMode,
   ): void {
+    this.notifySubmission(attempt.submission)
     const attachmentIds = [...this.attachmentIds]
     this.attachmentIds = []
     const occurrences = this.projection.occurrences
@@ -655,6 +691,11 @@ export class SessionInputShell implements SessionInput {
         this.settleDetachedFailure(attempt, message)
       },
     )
+  }
+
+  private notifySubmission(submission: MessageSubmission | undefined): void {
+    if (submission === undefined) return
+    try { this.deps.messageSubmitted?.(submission) } catch (_error) { /* Notification consumers cannot interrupt submission. */ }
   }
 
   /** Settle one detached default send independently of other sends. */

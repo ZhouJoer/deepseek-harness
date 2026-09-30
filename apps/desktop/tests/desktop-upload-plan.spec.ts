@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { createRequire } from 'node:module'
 import { join } from 'node:path'
@@ -8,11 +8,15 @@ import { load } from 'js-yaml'
 import { createDesktopUploadPlan } from '../scripts/desktop-upload-plan.ts'
 import { desktopUpdateMetadataFilename } from '../scripts/desktop-auto-update-environment.mjs'
 import type { DesktopPackageTargetName } from '../scripts/package-target.ts'
+import { createDesktopCos } from '../scripts/desktop-cos.ts'
+import { uploadDesktopRelease } from '../scripts/desktop-upload-run.ts'
+import { startCosLoopback } from './cos-loopback.ts'
 
 const temporaryDirectories: string[] = []
 const TEST_ORIGIN = 'https://desktop-updates.example.com'
-const TEST_BUCKET = 'test-download-bucket'
-const PRODUCTION_BUCKET = 'production-download-bucket'
+const TEST_BUCKET = 'test-download-bucket-1250000000'
+const RELEASE_ID = '0123456789abcdef0123456789abcdef'
+const PRODUCTION_BUCKET = 'production-download-bucket-1250000000'
 const require = createRequire(import.meta.url)
 const { createBlockmap } = require('app-builder-lib/out/targets/differentialUpdateInfoBuilder.js') as {
   createBlockmap: (file: string, target: object, packager: { info: { emitArtifactBuildCompleted(event: object): Promise<void> } },
@@ -54,7 +58,7 @@ async function fixture(
     target,
     version,
     environment,
-    publicUrl: `${origin}/dsh-desk/feeds/${target}/`,
+    publicUrl: `${origin}/dsh-desk/${environment === 'test' ? `${RELEASE_ID}/` : ''}feeds/${target}/`,
   })}\n`)
 
   if (os === 'mac') {
@@ -64,6 +68,7 @@ async function fixture(
     await writeFile(join(artifactsRoot, `${base}.dmg`), 'notarized DMG fixture')
     await writeFile(join(artifactsRoot, desktopUpdateMetadataFilename(version, 'darwin')), `${JSON.stringify({
       version,
+      path: `${base}.zip`,
       files: [{ url: `${base}.zip`, size: Buffer.byteLength(zip), sha512: digest(zip) }],
     })}\n`)
   }
@@ -75,6 +80,7 @@ async function fixture(
     expect(Object.hasOwn(info, 'blockMapSize')).toBe(false)
     await writeFile(join(artifactsRoot, desktopUpdateMetadataFilename(version, 'win32')), `${JSON.stringify({
       version,
+      path: `${base}.exe`,
       files: [{
         url: `${base}.exe`,
         ...info,
@@ -89,6 +95,7 @@ async function fixture(
       ? {
         DSH_DESKTOP_AUTO_UPDATE_ENV: 'test',
         DOWNLOAD_TEST_ORIGIN: TEST_ORIGIN,
+        DOWNLOAD_TEST_RELEASE_ID: RELEASE_ID,
         DOWNLOAD_TEST_COS_BUCKET: TEST_BUCKET,
       }
       : {
@@ -106,6 +113,64 @@ afterEach(async () => {
 })
 
 describe('desktop upload plan', () => {
+  it('uploads only the selected latest installer to each deployment using the existing COS transport', async () => {
+    const published = []
+    for (const environment of ['production', 'test'] as const) {
+      for (const target of ['mac-arm64', 'mac-x64', 'win-x64'] as const) {
+        const paths = await fixture(target, '1.2.3', environment)
+        const plan = await createDesktopUploadPlan(target, { ...paths, latest: true })
+        const loopback = await startCosLoopback()
+        try {
+          const cos = createDesktopCos({ secretId: 'fixture-id', secretKey: 'fixture-secret' })
+          loopback.redirect(cos)
+          const directory = await uploadDesktopRelease(plan, cos, join(paths.appRoot, 'records'))
+          expect(plan.artifacts).toHaveLength(1)
+          const artifact = plan.artifacts[0]!
+          expect(loopback.requests).toHaveLength(1)
+          const request = loopback.requests[0]!
+          expect(request.method).toBe('PUT')
+          expect(request.path).toBe(`/${artifact.key}`)
+          expect(request.body).toEqual(await readFile(artifact.path))
+          expect(JSON.parse(await readFile(join(directory, 'result.json'), 'utf8'))).toMatchObject({
+            success: true, confirmedPuts: 1, publicReadback: 'not-performed',
+          })
+          published.push({ environment, target, bucket: plan.bucket, publicUrl: plan.publicUrl,
+            filename: artifact.filename, key: artifact.key, contentType: artifact.contentType,
+            channelMetadata: artifact.channelMetadata })
+        } finally {
+          await loopback.close()
+        }
+      }
+    }
+    await expect(`${JSON.stringify(published, null, 2)}\n`).toMatchFileSnapshot('./expected/latest-installer-uploads.json')
+  })
+
+  it('allows an explicitly selected production prerelease at the fixed installer URL', async () => {
+    const paths = await fixture('win-x64', '1.2.3-alpha.4', 'production')
+    const plan = await createDesktopUploadPlan('win-x64', { ...paths, latest: true })
+    expect(plan.version).toBe('1.2.3-alpha.4')
+    expect(plan.artifacts).toHaveLength(1)
+    expect(plan.artifacts[0]).toMatchObject({
+      path: join(paths.artifactsRoot, 'deepseek-harness-1.2.3-alpha.4-win-x64.exe'),
+      key: 'desktop/dsh-latest-windows-x64.exe', channelMetadata: false,
+    })
+  })
+
+  it.each(['completion', 'deployment', 'checksum'] as const)('rejects invalid %s before planning a latest upload', async (failure) => {
+    const paths = await fixture('win-x64', '1.2.3', 'production')
+    if (failure === 'completion') await rm(join(paths.artifactsRoot, 'win-x64-release.json'))
+    if (failure === 'deployment') Object.assign(paths.environment, {
+      DSH_DESKTOP_AUTO_UPDATE_ENV: 'test', DOWNLOAD_TEST_ORIGIN: TEST_ORIGIN,
+      DOWNLOAD_TEST_RELEASE_ID: RELEASE_ID, DOWNLOAD_TEST_COS_BUCKET: TEST_BUCKET,
+    })
+    if (failure === 'checksum') {
+      const path = join(paths.artifactsRoot, 'deepseek-harness-1.2.3-win-x64.exe')
+      await writeFile(path, Buffer.alloc((await readFile(path)).length))
+    }
+    await expect(createDesktopUploadPlan('win-x64', { ...paths, latest: true }))
+      .rejects.toThrow(failure === 'checksum' ? /SHA-512/u : /completion record/u)
+  })
+
   it('publishes fixed feeds referencing versioned binaries without overriding CDN cache policy', async () => {
     const paths = await fixture('win-x64', '1.2.3', 'production')
     const plan = await createDesktopUploadPlan('win-x64', paths)
@@ -132,7 +197,7 @@ describe('desktop upload plan', () => {
     expect(plan).toMatchObject({
       environment: 'test',
       version: '1.2.3',
-      publicUrl: 'https://desktop-updates.example.com/dsh-desk/feeds/mac-arm64/',
+      publicUrl: `https://desktop-updates.example.com/dsh-desk/${RELEASE_ID}/feeds/mac-arm64/`,
       bucket: TEST_BUCKET,
     })
     expect(plan.artifacts.map(artifact => artifact.filename)).toEqual([
@@ -145,6 +210,34 @@ describe('desktop upload plan', () => {
     expect(plan.artifacts.at(-1)).toMatchObject({
       channelMetadata: true,
     })
+  })
+
+  it.each(['mac-arm64', 'mac-x64', 'win-x64'] as const)('publishes every %s object and YAML reference inside the test release directory', async (target) => {
+    const paths = await fixture(target)
+    const plan = await createDesktopUploadPlan(target, paths)
+    const prefix = `dsh-desk/${RELEASE_ID}`
+    const payload = plan.artifacts.find(artifact => artifact.filename.endsWith(target === 'win-x64' ? '.exe' : '.zip'))!
+    for (const artifact of plan.artifacts) {
+      expect(artifact.key).toBe(`${prefix}/${artifact.channelMetadata ? 'feeds' : 'bin'}/${target}/${artifact.filename}`)
+      if (artifact.channelMetadata) {
+        expect(load(artifact.contents!)).toMatchObject({
+          path: `${TEST_ORIGIN}/${payload.key}`,
+          files: [{ url: `${TEST_ORIGIN}/${payload.key}` }],
+        })
+      }
+    }
+    await expect(JSON.stringify(plan.artifacts.map(({ key, contents }) => ({ key, contents })), null, 2) + '\n')
+      .toMatchFileSnapshot(`./expected/test-release-upload-${target}.json`)
+  })
+
+  it('rejects a changed or missing release ID before uploading a completed package', async () => {
+    const paths = await fixture('mac-arm64')
+    await expect(createDesktopUploadPlan('mac-arm64', {
+      ...paths, environment: { ...paths.environment, DOWNLOAD_TEST_RELEASE_ID: 'a'.repeat(32) },
+    })).rejects.toThrow(/completion record/u)
+    await expect(createDesktopUploadPlan('mac-arm64', {
+      ...paths, environment: { ...paths.environment, DOWNLOAD_TEST_RELEASE_ID: undefined },
+    })).rejects.toThrow(/DOWNLOAD_TEST_RELEASE_ID/u)
   })
 
   it('uploads the prerelease channel metadata emitted by electron-builder', async () => {
@@ -193,6 +286,7 @@ describe('desktop upload plan', () => {
       environment: {
         DSH_DESKTOP_AUTO_UPDATE_ENV: 'test',
         DOWNLOAD_TEST_ORIGIN: TEST_ORIGIN,
+        DOWNLOAD_TEST_RELEASE_ID: RELEASE_ID,
         DOWNLOAD_TEST_COS_BUCKET: TEST_BUCKET,
       },
     })).rejects.toThrow(/completion record.*test/u)

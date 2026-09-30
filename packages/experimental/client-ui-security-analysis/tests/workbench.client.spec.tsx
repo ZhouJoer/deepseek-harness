@@ -12,6 +12,14 @@ import { Projects } from '../src/client/Projects.tsx'
 import type {} from '../src/client/index.ts'
 import { en, zh } from '../src/client/locales.ts'
 
+const unusedProjectAction = async () => { throw new Error('Unexpected advanced project action') }
+const unusedProjectActions = {
+  manageProject: unusedProjectAction, toolboxDirectory: unusedProjectAction, toolboxInventory: unusedProjectAction,
+  toolboxConfiguration: unusedProjectAction, configureTool: unusedProjectAction, toolboxFiles: unusedProjectAction,
+  toolCatalog: unusedProjectAction, previewToolPack: unusedProjectAction, importToolPack: unusedProjectAction,
+  exportToolPack: unusedProjectAction,
+}
+
 afterEach(cleanup)
 const project = recordSchema.parse({ kind: 'engagement', value: { id: 'project', title: 'Owned lab', objective: 'Review the sample', environmentIds: ['local'], stopped: false, maxAttempts: 3 } })
 const view: WorkbenchView = { revision: 8, records: [project] }
@@ -38,7 +46,7 @@ function actions(overrides: Partial<WorkbenchActions> = {}) {
 function props(api: WorkbenchActions, sessionId = 'parent', running = false): WorkbenchProps {
   return { ...api, sessionId: sessionId as SessionId, t: makeTranslate(zh, commonZh),
     useSession: (select: (snapshot: { running: boolean }) => unknown) => select({ running }),
-  } as unknown as WorkbenchProps
+  } as WorkbenchProps
 }
 it('clears checks and findings after leaving, then exposes project creation', async () => {
   const check = recordSchema.parse({ kind: 'check', value: { id: 'check', engagementId: 'project', assetId: 'sample',
@@ -92,9 +100,9 @@ it('renders saved Markdown reports from the report read API in both project view
   expect(api.artifact).not.toHaveBeenCalled()
   workbench.unmount()
 
-  const projectProps = { projects: async () => JSON.stringify([{ id: 'project', title: 'Owned lab' }]),
+  const projectProps = { ...unusedProjectActions, projects: async () => JSON.stringify([{ id: 'project', title: 'Owned lab' }]),
     project: async () => projectView, laboratory: async () => projectView, report,
-    subscribeReset: () => () => {}, t: makeTranslate(zh, commonZh) } as unknown as Parameters<typeof Projects>[0]
+    subscribeReset: () => () => {}, t: makeTranslate(zh, commonZh) } as Parameters<typeof Projects>[0]
   render(<Projects {...projectProps} />)
   await screen.findByRole('option', { name: 'Owned lab' })
   fireEvent.change(screen.getByRole('combobox'), { target: { value: 'project' } })
@@ -144,8 +152,8 @@ it('submits explicit approval for the displayed plan identity', async () => {
 
 it('reuses the configured local image through an explicit operator gesture', async () => {
   const laboratory = vi.fn(async () => view)
-  const projectProps = { projects: async () => JSON.stringify([{ id: 'project', title: 'Owned lab' }]), project: async () => view,
-    laboratory, report: async () => '', subscribeReset: () => () => {}, t: makeTranslate(zh, commonZh) } as unknown as Parameters<typeof Projects>[0]
+  const projectProps = { ...unusedProjectActions, projects: async () => JSON.stringify([{ id: 'project', title: 'Owned lab' }]), project: async () => view,
+    laboratory, report: async () => '', subscribeReset: () => () => {}, t: makeTranslate(zh, commonZh) } as Parameters<typeof Projects>[0]
   render(<Projects {...projectProps} />)
   await screen.findByRole('option', { name: 'Owned lab' })
   await waitFor(() => { expect(screen.getByRole('combobox').hasAttribute('disabled')).toBe(false) })

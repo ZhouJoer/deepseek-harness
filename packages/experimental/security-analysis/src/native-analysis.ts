@@ -13,7 +13,7 @@ export function installNativeAnalysis(ctx: Context, ready: Promise<SecurityContr
     const controller = await ready
     const project = controller.analysisProject(exec.agent.id)
     if (!project) return next()
-    const owner = exec.agent
+    const owner = exec.agent.id
     const abort = new AbortController()
     const done = Promise.withResolvers<void>()
     const release = controller.trackDelegation(project, abort, done.promise)
@@ -33,7 +33,9 @@ export function installNativeAnalysis(ctx: Context, ready: Promise<SecurityContr
         let off = () => {}
         const cleanup = () => { off(); abort.signal.removeEventListener('abort', kill); release(); done.resolve() }
         const kill = () => { ctx.jobs.kill(id, owner, 'Security project stopped') }
-        off = ctx.jobs.onJobDone((snapshot, agent) => { if (snapshot.id === id && agent === owner) cleanup() })
+        off = ctx.jobs.events.subscribe({ owner }, (event) => {
+          if (event.type === 'settled' && event.job.id === id) cleanup()
+        })
         abort.signal.addEventListener('abort', kill, { once: true })
         background = true
         if (abort.signal.aborted) kill()

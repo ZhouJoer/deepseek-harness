@@ -12,7 +12,10 @@
       "path": "../../../vendor/cordis"
     },
     {
-      "path": "../../preset/agent-presets"
+      "path": "../../preset/agent-preset-registry"
+    },
+    {
+      "path": "../../../vendor/include"
     }
   ]
 }

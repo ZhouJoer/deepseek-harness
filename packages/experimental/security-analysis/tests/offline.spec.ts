@@ -36,6 +36,8 @@ async function fixture() {
   const resolved = await provider.prepare(request, context)
   return { root, provider, context, resolved }
 }
+const stringValue: unknown = expect.any(String)
+
 describe('offline provider', () => {
   it('pins the installed image and confines approved scripts to immutable inputs', async () => {
     const { root, provider, context, resolved } = await fixture()
@@ -54,7 +56,7 @@ describe('offline provider', () => {
     const { provider, context, resolved } = await fixture()
     vi.mocked(runProcess).mockResolvedValueOnce({ ...completed, stdout: 'partial', timedOut: true, exitCode: null }).mockResolvedValueOnce(completed)
     const result = await provider.run(resolved, context)
-    expect(result).toMatchObject({ incomplete: true, failure: expect.any(String) as unknown, cleanup: 'Owned offline container removed' })
+    expect(result).toMatchObject({ incomplete: true, failure: stringValue, cleanup: 'Owned offline container removed' })
     expect((JSON.parse(Buffer.from(result.bytes).toString()) as { stdout: string }).stdout).toBe('partial')
     expect(vi.mocked(runProcess).mock.calls[2]![4].signal).not.toBe(context.signal)
   })
@@ -62,7 +64,8 @@ describe('offline provider', () => {
     const { provider, context, resolved } = await fixture()
     vi.mocked(runProcess).mockResolvedValueOnce(completed).mockRejectedValueOnce(new Error('Docker unavailable'))
     const result = await provider.run(resolved, context)
-    expect(result).toMatchObject({ incomplete: true, cleanup: expect.stringContaining('Docker unavailable') as unknown })
+    const cleanupValue: unknown = expect.stringContaining('Docker unavailable')
+    expect(result).toMatchObject({ incomplete: true, cleanup: cleanupValue })
     expect((JSON.parse(Buffer.from(result.bytes).toString()) as { stdout: string }).stdout).toBe('passed')
   })
   it('marks output loss and nonzero exits incomplete', async () => {

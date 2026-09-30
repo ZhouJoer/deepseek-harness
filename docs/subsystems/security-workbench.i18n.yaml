@@ -1,6 +1,13 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
+# Bilingual-pair consistency record for security-workbench.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write docs/subsystems/security-workbench.md
-security-workbench.md: 1b45e7bc12e2b7364f535d5279579017505331e3
-security-workbench.zh.md: eb5eff8a34a68d4c026c542f74d5b52dcd8b9c64
+/security-workbench:
+  en: 6a30622348a922cc
+  zh: e82f8c717bd32a64
+/security-workbench/durable-records:
+  en: 58e092874375979a
+  zh: 78dff8dee5d9a648
+/security-workbench/cordis-api-reference:
+  en: d37c7403e92a8df3
+  zh: a07ec545bc9173b2

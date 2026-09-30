@@ -40,7 +40,7 @@ kind: "package-reference"
 <details>
 <summary>实现细节</summary>
 
-此包通过 profile patch 或消息输入框的 dock slot 组合能力，不修改默认 profile 或 agent-loop。浏览器通过生成的 Remote 调用领域服务，文案由双语字典提供。不发布 invariant companion，因为包只有可撤销的组合或 UI 注册，业务状态由领域服务持有。
+此包通过 profile patch 或消息输入框的 dock slot 组合能力，不修改默认 profile 或 agent-loop。浏览器通过生成的 Remote 调用领域服务，文案由双语字典提供。安全工具卡片在准备和执行阶段显示运行中，结果详情与错误状态仅在结果记录后显示。不发布 invariant companion，因为包只有可撤销的组合或 UI 注册，业务状态由领域服务持有。
 
 </details>
 

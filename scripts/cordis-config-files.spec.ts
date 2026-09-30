@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { cordisConfigFiles } from './cordis-config-files.ts'
+import { cordisConfigFiles, resolveCordisConfigAliases } from './cordis-config-files.ts'
 
 const roots: string[] = []
 
@@ -11,6 +11,13 @@ afterEach(() => {
 })
 
 describe('cordisConfigFiles', () => {
+  it('resolves text-link aliases to one checked config', () => {
+    expect(resolveCordisConfigAliases(['apps/cordis.yml', 'snapshots/cordis.yml'], new Map([
+      ['apps/cordis.yml', '../snapshots/cordis.yml'],
+    ]))).toEqual(['snapshots/cordis.yml'])
+    expect(() => resolveCordisConfigAliases(['cordis.yml'], new Map([['cordis.yml', '../outside.yml']]))).toThrow('escapes')
+    expect(() => resolveCordisConfigAliases(['cordis.yml'], new Map([['cordis.yml', 'cordis.yml']]))).toThrow('cycle')
+  })
   it('finds Loader YAML without treating translation records as configs', () => {
     const root = mkdtempSync(join(tmpdir(), 'dsh-cordis-config-files-'))
     roots.push(root)

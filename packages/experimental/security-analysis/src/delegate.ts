@@ -37,7 +37,7 @@ export function startReconnaissance(
   let completion: Promise<JobOutcome> | undefined
   const id = ctx.jobs.start({
     kind: 'subagent',
-    owner: parent,
+    owner: parent.id,
     label: `Reconnaissance: ${assetId}`,
     outputLimitBytes: config.maxOutputBytes,
     run() {
@@ -87,7 +87,7 @@ export function startReconnaissance(
             if (Buffer.byteLength(output, 'utf8') > config.maxOutputBytes)
               throw new Error('reconnaissance report exceeds maxOutputBytes; narrow the question')
             combined.throwIfAborted()
-            return { status: 'completed', output }
+            return { status: 'completed', result: output }
           } finally {
             await run.dispose()
           }

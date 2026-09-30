@@ -7,8 +7,9 @@
     compressionLevel: 1
     compressionThresholdBytes: 1024
 
-- id: agent-presets
-  disabled: true
+- id: agent-preset-registry
+  config:
+    default: security
 
 - insert:
     - id: security-presets

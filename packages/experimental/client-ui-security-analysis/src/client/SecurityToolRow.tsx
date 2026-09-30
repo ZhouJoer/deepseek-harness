@@ -18,12 +18,12 @@ const labels: Record<string, SecurityKey> = {
 }
 
 /** Render the security result summary before expandable raw details. */
-export function SecurityToolRow({ block, toolName, t }: ToolCallViewProps & PropsLocale<typeof NS>) {
-  const settled = 'kind' in block
-  const output = settled ? block.content.map(item => item.type === 'text' ? item.text : JSON.stringify(item)).join('\n') : ''
+export function SecurityToolRow(props: ToolCallViewProps & PropsLocale<typeof NS>) {
+  const { toolName, t } = props
+  const output = props.phase === 'result' ? props.block.content.map(item => item.type === 'text' ? item.text : JSON.stringify(item)).join('\n') : ''
   let summary = ''
   try {
-    const value = JSON.parse(output) as unknown
+    const value: unknown = JSON.parse(output)
     if (typeof value === 'object' && value !== null) {
       if ('summary' in value && typeof value.summary === 'string') summary = value.summary.slice(0, 180)
       else if ('committed' in value && value.committed === true) summary = t('toolSaved')
@@ -33,7 +33,7 @@ export function SecurityToolRow({ block, toolName, t }: ToolCallViewProps & Prop
     if (!(error instanceof SyntaxError)) throw error
     // Non-JSON output stays available in the technical details.
   }
-  const state = !settled ? t('toolRunning') : block.isError ? t('toolFailed') : t('toolDone')
+  const state = props.phase !== 'result' ? t('toolRunning') : props.block.isError ? t('toolFailed') : t('toolDone')
   return <div className={css.row} data-tool={toolName}>
     <strong>{t(labels[toolName] ?? 'toolSecurity')}</strong><span>{state}</span>{summary && <span>{summary}</span>}
     {output && <details><summary>{t('toolDetails')}</summary><pre>{output}</pre></details>}

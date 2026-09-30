@@ -1,6 +1,46 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
+# Bilingual-pair consistency record for security-analysis.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write docs/roadmaps/security-analysis.md
-security-analysis.md: 22bf8fc93127c2f6857bd7d00368915f02a11fc5
-security-analysis.zh.md: d528119985194de75bebe7063963a7cb9afe1c5f
+/:
+  en: 64d7a07e6a5ffb3e
+  zh: aef9a46959e80655
+/security-harness-roadmap:
+  en: b751e42422dc40c4
+  zh: cab6e8cdd3ad6687
+/security-harness-roadmap/summary:
+  en: b3328f40196a1689
+  zh: 82f3fb2ba8234afc
+/security-harness-roadmap/contents:
+  en: dcc637d32a39c1b2
+  zh: cbec541fcb35aff7
+/security-harness-roadmap/feature-todo:
+  en: adaa230ce2a77dbc
+  zh: 8c5a1c5e33720431
+/security-harness-roadmap/feature-todo/p0-usable-reverse-analysis-agent:
+  en: a12b880e169442ee
+  zh: 0db847e0c747e80a
+/security-harness-roadmap/feature-todo/p1-tools-knowledge-and-android-workflow:
+  en: 207f702a697f4090
+  zh: 15b55c1a01dfa88a
+/security-harness-roadmap/feature-todo/p2-additional-security-projects:
+  en: 9da386acd8736421
+  zh: 28ce19d8734d7092
+/security-harness-roadmap/baseline:
+  en: 134617e08b4041f2
+  zh: 0e6e6913f6c8c5de
+/security-harness-roadmap/delivery-milestones:
+  en: 0d3be487ace96c96
+  zh: 85df198f4997f45e
+/security-harness-roadmap/tool-and-environment-expansion:
+  en: 6c52e6b81a02dcc0
+  zh: 16c41c82974ba8f6
+/security-harness-roadmap/release-acceptance:
+  en: c9521a716116fcf8
+  zh: 95e6729737e904bd
+/security-harness-roadmap/web-delivery-scope-2026-09-22:
+  en: d0159d84a8a63465
+  zh: add5e126f100789f
+/security-harness-roadmap/source-pilot-scope-2026-09-22:
+  en: f51af9d61052aed0
+  zh: 7bde0e1cd517c228

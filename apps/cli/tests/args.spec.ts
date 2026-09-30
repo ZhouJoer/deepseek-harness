@@ -1,15 +1,15 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { parseDshArgs } from '../src/args.ts'
 
-const parse = (argv: string[]) => parseDshArgs(argv, '1.2.3')
+const parse = (argv: string[], manageDesktopProfile = false) => parseDshArgs(argv, '1.2.3', manageDesktopProfile)
 
 /** Capture the process exit code while muting Commander's output. */
-function exitCode(argv: string[]): number {
+function exitCode(argv: string[], manageDesktopProfile = false): number {
   const exit = vi.spyOn(process, 'exit').mockImplementation(() => { throw new Error('exit') })
   vi.spyOn(process.stdout, 'write').mockReturnValue(true)
   vi.spyOn(process.stderr, 'write').mockReturnValue(true)
   try {
-    parse(argv)
+    parse(argv, manageDesktopProfile)
     throw new Error(`expected ${JSON.stringify(argv)} to exit`)
   } catch {
     return exit.mock.calls.at(-1)?.[0] as number
@@ -61,7 +61,7 @@ describe('parseDshArgs', () => {
       [], ['task', 'words'], ['--help'], ['-h'], ['web'],
       ['--patch', 'a.yml', '--patch', 'b.yml'],
       ['--from-default-profile', 'web', '--help'],
-      ['--dump-config'], ['--dump-default-config'],
+      ['--dump-config'], ['--dump-default-config'], ['--dump-config-schema'],
       ['--patch', 'a.yml', '--resume', 'id', '--patch', 'late.yml'],
       ['--', '--help'], ['--', '--', 'task'],
       ['plugin'], ['--', 'plugin'],
@@ -122,6 +122,20 @@ describe('parseDshArgs', () => {
       .toEqual({ mode: 'plugin', profile: 'tui', args: ['add', '--save-dev', 'x'] })
   })
 
+  it.each(['desktop', 'Desktop', 'DESKTOP'])('permits installed Desktop plugin commands for %s', (profile) => {
+    expect(parse(['plugin', '--profile', profile, 'add', 'example-plugin'], true))
+      .toEqual({ mode: 'plugin', profile: 'desktop', args: ['add', 'example-plugin'] })
+    expect(exitCode(['plugin', '--profile', profile, 'add', 'example-plugin'])).toBe(1)
+  })
+
+  it.each([
+    ['desktop'], ['--profile', 'Desktop'],
+    ['desktop', '--dump-config'], ['DESKTOP', '--dump-default-config'],
+    ['desktop', '--dump-config-schema'],
+  ])('keeps Desktop boot and inspection reserved in its installed CLI: %j', (...argv: string[]) => {
+    expect(exitCode(argv, true)).toBe(1)
+  })
+
   it('routes profile and web config dumps', () => {
     expect(parse(['--profile', 'web', '--dump-config']))
       .toEqual({ mode: 'dump-config', profile: 'web', defaultOnly: false, patches: [] })
@@ -141,6 +155,44 @@ describe('parseDshArgs', () => {
       .toEqual({ mode: 'dump-config', profile: 'web', defaultOnly: false, patches: [] })
     expect(parse(['web', '--dump-default-config']))
       .toEqual({ mode: 'dump-config', profile: 'web', defaultOnly: true, patches: [] })
+  })
+
+  it('routes schema dumps with ordered overlays and explicit initialization', () => {
+    expect(parse(['--profile', 'web', '--dump-config-schema']))
+      .toEqual({ mode: 'dump-config-schema', profile: 'web', patches: [] })
+    expect(parse(['rescue', '--from-default-profile', 'web', '--patch', 'first.yml', '--dump-config-schema', '--patch', 'second.json']))
+      .toEqual({
+        mode: 'dump-config-schema',
+        profile: 'rescue',
+        fromDefaultProfile: 'web',
+        patches: ['first.yml', 'second.json'],
+      })
+    expect(parse(['web', '--port', '8080', '--dump-config-schema']))
+      .toMatchObject({ mode: 'profile', args: ['--port', '8080', '--dump-config-schema'] })
+  })
+
+  it.each([
+    ['--dump-config', '--dump-default-config'],
+    ['--dump-config', '--dump-config-schema'],
+    ['--dump-default-config', '--dump-config-schema'],
+    ['--dump-config', '--dump-default-config', '--dump-config-schema'],
+  ])('rejects competing dump flags %j', (...flags: string[]) => {
+    expect(exitCode(['web', ...flags])).toBe(1)
+    expect(exitCode(['--profile', 'web', ...flags.toReversed()])).toBe(1)
+  })
+
+  it.each([
+    ['--dump-config-schema'],
+    ['desktop', '--dump-config-schema'],
+    ['--profile', 'Desktop', '--dump-config-schema'],
+    ['web', '--dump-config-schema', 'task'],
+    ['web', '--dump-config-schema', '--port', '8080'],
+    ['web', '--dump-config-schema', '--help'],
+    ['web', '--dump-config-schema', '--', '--patch', 'late.yml'],
+    ['web', '--dump-config-schema', '--patch='],
+    ['rescue', '--dump-config-schema', '--from-default-profile='],
+  ])('rejects invalid schema dump inputs %j', (...argv: string[]) => {
+    expect(exitCode(argv)).toBe(1)
   })
 
   it('rejects missing profile, removed flags, and contradictory inputs', () => {

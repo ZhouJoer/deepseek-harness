@@ -55,7 +55,7 @@ import * as NativeFs from '@deepseek-ai/dsh-tool-fs'
 import * as NativeBash from '@deepseek-ai/dsh-tool-bash'
 import * as NativePwsh from '@deepseek-ai/dsh-tool-pwsh'
 import SessionQuery from '@deepseek-ai/dsh-session-query'
-import AgentPresets from '@deepseek-ai/dsh-agent-presets'
+import AgentPresets from '@deepseek-ai/dsh-agent-preset-registry'
 import * as NativeJobs from '@deepseek-ai/dsh-tool-jobs'
 
 class ExactQuery extends SessionQuery {
@@ -238,7 +238,7 @@ async function load(inheritJobTool = false, knowledgeIntervalMs = 0,
     JSON.stringify(
       [...modules.keys()].map(name => ({
         id: name,
-        name,
+        name: 'cordis:' + name,
         config:
           name === 'loop'
             ? { agents: [] }
@@ -268,13 +268,7 @@ async function load(inheritJobTool = false, knowledgeIntervalMs = 0,
   ctx.baseUrl = pathToFileURL(root).href + '/'
   await ctx.plugin(Loader)
   ctx.loader.builtins.include = Include
-  ctx.loader.internal = {
-    version: 'v2',
-    async import(specifier: string) {
-      if (!modules.has(specifier)) throw new Error('Unexpected fixture module ' + specifier)
-      return modules.get(specifier)
-    },
-  } as unknown as NonNullable<typeof ctx.loader.internal>
+  for (const [name, module] of modules) ctx.loader.builtins[name] = module
   await ctx.loader.create({ name: 'cordis:include', config: { path: pathToFileURL(configPath).href } })
   await ctx.loader.await()
   const controller = await ctx.securityWorkbench.ready
@@ -288,7 +282,8 @@ async function load(inheritJobTool = false, knowledgeIntervalMs = 0,
     ctx.loader.builtins['native-jobs'] = NativeJobs
     await writeFile(join(presets, 'native', 'agent.cordis.yml'), JSON.stringify(['native-fs-tools', 'native-shell-tools', 'native-jobs'].map(name => ({ id: name, name: 'cordis:' + name,
       ...(name === 'native-jobs' ? { config: { completionDelivery: 'quiet' } } : {}) }))))
-    await ctx.plugin(AgentPresets, { default: 'native', roots: [{ path: presets, trust: 'system' }], includeShippedRoot: false, includeUserRoot: false })
+    await ctx.plugin(AgentPresets, { default: 'native' })
+    ctx.effect(() => ctx.agentPresets.register({ id: 'native', name: 'Native fixture', plugins: ['native-fs-tools', 'native-shell-tools', 'native-jobs'].map(name => ({ id: name, name: 'cordis:' + name, ...(name === 'native-jobs' ? { config: { completionDelivery: 'quiet' } } : {}) })) }))
   } else if (inheritJobTool) {
     const preset = createScope(ctx.plugin(() => {}).ctx, presetKey).ctx
     await preset.plugin({ inject: ['tools'], apply(scoped: Context) { independentTool(scoped, 'job_output') } })
@@ -460,9 +455,9 @@ describe('security workbench Loader composition', () => {
       })
       expect(result.isError, JSON.stringify(result)).toBe(false)
       const { jobId } = JSON.parse(result.content.filter(block => block.type === 'text').map(block => block.text).join('')) as { jobId: string }
-      const job = await ctx.jobs.wait(JobId(jobId), 10000, agent)
+      const job = await ctx.jobs.wait(JobId(jobId), 10000, agent.id)
       expect(job.status, JSON.stringify(job)).toBe('completed')
-      expect(ctx.jobs.read(JobId(jobId), agent).text).toContain('Assigned evidence review completed.')
+      expect(ctx.jobs.read(JobId(jobId), agent.id).result).toContain('Assigned evidence review completed.')
       expect(controller.view(agent.id).records.filter(item => item.kind === 'binding').filter(item => item.value.role === role)
         .map(item => item.value.report)).toContainEqual(model.childReport)
       expect(controller.view(agent.id).records.filter(item => item.kind === 'finding' || item.kind === 'review')).toEqual([])
@@ -500,12 +495,12 @@ describe('security workbench Loader composition', () => {
       expect((await running).isError).toBe(false)
       const project = controller.binding(agent.id)!.engagementId
       await controller.manageProject(project, { operationId: 'archive-native', expectedRevision: controller.view(agent.id).revision, action: { kind: 'archive' } })
-      expect(ctx.jobs.list(agent).every(job => job.status !== 'running' && job.status !== 'stopping')).toBe(true)
+      expect(ctx.jobs.list(agent.id).every(job => job.status !== 'running' && job.status !== 'stopping')).toBe(true)
     } else await send({ kind: 'stop' })
     await running
     expect(controller.activity!.usage(projectId)).toMatchObject([{ total: 1, running: 0, cancelled: 1 }])
     if (background) {
-      const job = ctx.jobs.list(agent)[0]!
+      const job = ctx.jobs.list(agent.id)[0]!
       expect((await execute(ctx, agent, 'job_output', { job_id: job.id })).isError).toBe(false)
       expect(controller.activity!.usage(projectId)).toMatchObject([{ total: 1, cancelled: 1 }])
     }
@@ -569,7 +564,7 @@ describe('security workbench Loader composition', () => {
     expect(controller.binding(agent.id)?.engagementId).toBe(project.id)
     const scope = agent.session.snapshotEvents().find(event => event.type === 'tool/result')
     if (scope?.type !== 'tool/result') throw new Error('Missing scope result')
-    expect(scope.data.message.content[0].isError).not.toBe(true)
+    expect(scope.data.message.isError).not.toBe(true)
     expect(JSON.stringify(scope.data.message)).toContain(objective)
     expect(model.requests[1]?.messages).toContainEqual(scope.data.message)
     for (const action of [
@@ -875,8 +870,8 @@ describe('security workbench Loader composition', () => {
     ])
     const loaded = events.find(event => event.type === 'tool/result')
     if (loaded?.type !== 'tool/result') throw new Error('Missing loaded skill result')
-    expect(loaded.data.message.content[0].isError).not.toBe(true)
-    const text = loaded.data.message.content[0].content.filter(block => block.type === 'text').map(block => block.text).join('')
+    expect(loaded.data.message.isError).not.toBe(true)
+    const text = loaded.data.message.content.filter(block => block.type === 'text').map(block => block.text).join('')
     expect(text).toContain('<skill_content name="security-web">')
     expect(text).toContain('expected authorization rule')
     expect(model.requests[1]?.messages).toContainEqual(loaded.data.message)
@@ -1102,8 +1097,7 @@ it.each([500, 1200])('summarizes once when another comparable step would reach t
   expect(model.requests).toHaveLength(2)
   expect(model.requests[1]!.tools ?? []).toEqual([])
   const events = agent.session.snapshotEvents()
-  const checkpoint = events.filter(event => event.type === 'user/message' && event.data.source.kind === 'plugin'
-    && event.data.source.plugin === 'security-analysis-budget')
+  const checkpoint = events.filter(event => event.type === 'user/message' && event.data.source.kind === 'plugin:security-analysis-budget')
   expect(checkpoint).toHaveLength(1)
   expect(JSON.stringify(checkpoint)).toContain(String(usage) + ' / 1000 tokens (excluding cache reads)')
   expect(JSON.stringify(model.requests[1]!.messages)).toContain('saved evidence or file locations')
@@ -1195,7 +1189,7 @@ it('keeps a delegated structured report available during budget wrap-up', async 
   })
   expect(result.isError, JSON.stringify(result)).toBe(false)
   const { jobId } = JSON.parse(result.content.filter(block => block.type === 'text').map(block => block.text).join('')) as { jobId: string }
-  expect((await ctx.jobs.wait(JobId(jobId), 10000, agent)).status).toBe('completed')
+  expect((await ctx.jobs.wait(JobId(jobId), 10000, agent.id)).status).toBe('completed')
   expect(model.requests).toHaveLength(2)
   expect(model.requests[1]!.tools?.map(tool => tool.name)).toEqual(['structured_output'])
   expect(JSON.stringify(model.requests[1]!.messages)).toContain('security-analysis-budget')
@@ -1372,7 +1366,7 @@ it.each(['guard', 'outer-pre-execute'] as const)(
     expect(events.some(event => event.type === 'user/message' && event.data.id === message.id)).toBe(true)
     const result = events.find(event => event.type === 'tool/result')
     if (result?.type !== 'tool/result') throw new Error('Missing denied tool result')
-    expect(result.data.message.content[0].isError).toBe(true)
+    expect(result.data.message.isError).toBe(true)
     expect(JSON.stringify(result.data.message)).toContain(reason)
     expect(dispatch).not.toHaveBeenCalled()
     expect(controller.projects()).toEqual([])

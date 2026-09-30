@@ -153,7 +153,7 @@ it('does not promote command names or Python imports into confirmed execution', 
   ] })
   expect(analysisToolCandidates('python -c "import other_module"', pack.tools)).toEqual(['module-alias'])
   const job = { id: JobId('pwsh-1'), kind: 'pwsh' as const, label: 'script', status: 'completed' as const,
-    detail: 'exit code: 3', startedAt: 1, reported: false }
+    detail: 'exit code: 3', startedAt: 1, output: { total: 0, earliest: 0 } }
   expect(analysisJobOutcome(job).status).toBe('failed')
   expect(analysisJobOutcome({ ...job, detail: 'exit code: 0' }).status).toBe('completed')
   expect(analysisJobOutcome({ ...job, detail: 'unobserved' }).status).toBe('unknown')

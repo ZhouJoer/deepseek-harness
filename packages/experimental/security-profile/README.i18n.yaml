@@ -1,6 +1,46 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/experimental/security-profile/README.md
-README.md: c911737952c813a3209365adb86ae9b6c2c2bcf4
-README.zh.md: 4352772aaddb4b8b1316330a450cffeb33a2cedd
+/:
+  en: 36c30053c77ea754
+  zh: 1dc2514126fbdaf0
+/deepseek-ai-dsh-experimental-security-profile:
+  en: fb91078b3cc8cf87
+  zh: ae9f69360c125473
+/deepseek-ai-dsh-experimental-security-profile/summary:
+  en: d4a30300c62c5d44
+  zh: a833cc891dc65427
+/deepseek-ai-dsh-experimental-security-profile/table-of-contents:
+  en: b563e4ec4727d0de
+  zh: e6b4b00711a76062
+/deepseek-ai-dsh-experimental-security-profile/use-this-package:
+  en: 8b3034951c9fb653
+  zh: 1b0f0d78eadb5529
+/deepseek-ai-dsh-experimental-security-profile/understand-the-implementation:
+  en: bcde8d0df1bb190d
+  zh: 27ec23c31254ca8c
+/deepseek-ai-dsh-experimental-security-profile/further-exploration:
+  en: 54f387159c7ef07f
+  zh: b4b5ffd6d11bbbec
+/deepseek-ai-dsh-experimental-security-profile/model-experience:
+  en: 215e7ba838619b7b
+  zh: a311da3843709f90
+/deepseek-ai-dsh-experimental-security-profile/model-experience/security-context:
+  en: 48465898d655ca11
+  zh: 5671fc2990940521
+/deepseek-ai-dsh-experimental-security-profile/model-experience/security-context/what-the-model-sees:
+  en: 2c505c66dc0787f2
+  zh: 3fd94f33e2a1b849
+/deepseek-ai-dsh-experimental-security-profile/model-experience/security-context/token-effect:
+  en: 930c9d66eb6286ee
+  zh: f6fea81e8d3900e3
+/deepseek-ai-dsh-experimental-security-profile/model-experience/security-context/kv-cache-effect:
+  en: e32ea73b1aa3ea35
+  zh: 7ad0a7a3aec9bc22
+/deepseek-ai-dsh-experimental-security-profile/known-limitations-and-deferred-work:
+  en: d9b0c33a1b907934
+  zh: 410ac5da630f1245
+/deepseek-ai-dsh-experimental-security-profile/known-limitations-and-deferred-work/dev-note:
+  en: 47f83e1859b04e11
+  zh: 5ff63007bdc1a3c4

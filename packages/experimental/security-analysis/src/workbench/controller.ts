@@ -648,7 +648,7 @@ export class SecurityController {
           }
           case 'import-legacy': {
             const imported = await this.artifacts.import(action.path, this.options.importRoots)
-            const archive = JSON.parse((await this.artifacts.read(imported.artifact)).toString('utf8')) as unknown
+            const archive: unknown = JSON.parse((await this.artifacts.read(imported.artifact)).toString('utf8'))
             z.object({ tables: z.object({ records: z.record(z.string(), z.json()) }).loose() })
               .loose()
               .parse(archive)

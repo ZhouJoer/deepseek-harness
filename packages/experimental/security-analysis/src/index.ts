@@ -47,6 +47,15 @@ import type { ToolboxDirectory, ToolboxConfiguration, ToolboxConfigurationResult
 import { operationSchema, childReportSchema, type WorkbenchView } from './workbench/model.ts'
 import { refineKnowledge, refinementPrompt } from './workbench/knowledge.ts'
 
+declare module '@deepseek-ai/dsh-llm' {
+  interface MessageSourceMap {
+    /** Security analysis reached its exploration allowance and requested a final summary.
+     * @persistenceAttribution
+     */
+    'plugin:security-analysis-budget': { kind: 'plugin:security-analysis-budget' }
+  }
+}
+
 /** Explicit host locations and operational limits. */
 export interface WorkbenchConfig {
   /** Optional absolute file containing imported definition packs. */
@@ -220,6 +229,7 @@ export default class SecurityWorkbench extends TypertRemoteService {
     private readonly config: WorkbenchConfig,
   ) {
     super(ctx, 'securityWorkbench')
+    ctx.jobs.attachController('security-analysis')
     if (config.toolCatalogPath && !isAbsolute(config.toolCatalogPath)) throw new Error('toolCatalogPath must be absolute')
     this.catalog = new ToolCatalog(config.toolCatalogPath)
     this.catalog.read(config.environments.flatMap(env => env.tools))
@@ -412,7 +422,7 @@ export default class SecurityWorkbench extends TypertRemoteService {
           const controller = await this.ready
           if (controller.binding(owner.id)?.role !== 'coordinator') throw new Error('Coordinator role required')
           const id = ctx.jobs.start({
-            owner,
+            owner: owner.id,
             kind: 'security-check',
             label: args.planId,
             outputLimitBytes: config.maxOutputBytes,
@@ -429,7 +439,7 @@ export default class SecurityWorkbench extends TypertRemoteService {
               this.pending.add(promise)
               const done = promise
                 .then(
-                  value => ({ status: 'completed' as const, output: JSON.stringify(modelPage({ ...value, records: value.records.filter(item => 'planId' in item.value && item.value.planId === args.planId) }, { offset: 0 }, config.modelResultBytes)) }),
+                  value => ({ status: 'completed' as const, result: JSON.stringify(modelPage({ ...value, records: value.records.filter(item => 'planId' in item.value && item.value.planId === args.planId) }, { offset: 0 }, config.modelResultBytes)) }),
                   (error: unknown) => ({
                     status: 'failed' as const,
                     detail: error instanceof Error ? error.message : String(error),
@@ -480,9 +490,10 @@ export default class SecurityWorkbench extends TypertRemoteService {
         output,
         execute: async (args, exec) => {
           if (!exec.agent) throw new Error('Security tools require a session')
+          const parameters: unknown = JSON.parse(args.parameters)
           const operation = operationSchema.parse({
             ...args,
-            parameters: JSON.parse(args.parameters) as unknown,
+            parameters,
             impact: 'observe',
           })
           const controller = await this.ready
@@ -604,7 +615,7 @@ export default class SecurityWorkbench extends TypertRemoteService {
           if (this.delegationCount >= config.maxConcurrentDelegations)
             throw new Error('Delegation concurrency limit reached')
           const jobId = ctx.jobs.start({
-            owner: parent,
+            owner: parent.id,
             kind: 'subagent',
             label: args.question,
             outputLimitBytes: config.maxOutputBytes,
@@ -668,7 +679,7 @@ export default class SecurityWorkbench extends TypertRemoteService {
                       throw new Error('Child report cites unavailable or foreign evidence')
                     }
                     await controller.saveChildReport(run.id, report)
-                    return { status: 'completed' as const, output: JSON.stringify({ childSessionId: run.id, report }) }
+                    return { status: 'completed' as const, result: JSON.stringify({ childSessionId: run.id, report }) }
                   } finally {
                     await run.dispose()
                   }

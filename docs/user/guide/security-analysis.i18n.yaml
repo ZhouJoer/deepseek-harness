@@ -1,6 +1,34 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
+# Bilingual-pair consistency record for security-analysis.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write docs/user/guide/security-analysis.md
-security-analysis.md: 71fc8db0010dd7a550767b76d7b5c937de53570c
-security-analysis.zh.md: d966678c71db927e3f857bfba052369428f3dc27
+/:
+  en: 715c9d73bf8cdca0
+  zh: 8a24721b26fc9cd3
+/reverse-analysis-workbench:
+  en: 8e979433b815f8d8
+  zh: 825ee35762f3fca7
+/reverse-analysis-workbench/1-prepare-the-profile:
+  en: cff57077e5d03222
+  zh: 3e4ea7357e49eb83
+/reverse-analysis-workbench/2-start-an-analysis:
+  en: f71df7c39f9accb0
+  zh: 282b6d2768c8822c
+/reverse-analysis-workbench/3-collect-and-evaluate-evidence:
+  en: 32ab28399c11fbf7
+  zh: 73735bb973f1a892
+/reverse-analysis-workbench/4-approve-and-stop-validation:
+  en: 13fab3d321877b29
+  zh: c718b7a6c33e212c
+/reverse-analysis-workbench/verify-without-an-android-device:
+  en: 9b515d24836c6ffc
+  zh: ed38c4eb4e5e580b
+/reverse-analysis-workbench/current-acceptance-limits:
+  en: 05637cc148e589a5
+  zh: b77c34c2d2d8116f
+/reverse-analysis-workbench/local-web-laboratory:
+  en: 71c5e663c4dc2080
+  zh: cc6640325722e4da
+/reverse-analysis-workbench/source-and-static-frontend-projects:
+  en: a6d24d35f960e337
+  zh: dc3dbd9161cfa6ee

@@ -1,6 +1,34 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
+# Bilingual-pair consistency record for security-architecture.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write docs/security-architecture.md
-security-architecture.md: 1d1858cb1daee5d2a63cf0aa032ffce89498ba9a
-security-architecture.zh.md: 8ac857727584238dfff57f1311438ab69b83b5d1
+/:
+  en: 10402aaa71b09ddd
+  zh: 51ad1f77e460dbb9
+/security-agent-architecture:
+  en: 2bac9b533aadb5d4
+  zh: 06d81940c2077599
+/security-agent-architecture/contents:
+  en: 972309812066b8e2
+  zh: 8567579361f89b3d
+/security-agent-architecture/composition:
+  en: 02ee3290d9584343
+  zh: 53264e1f9a19744f
+/security-agent-architecture/checks-and-evidence:
+  en: fc30d8bfde561152
+  zh: 6097139844c8bffc
+/security-agent-architecture/roles-and-authority:
+  en: 6f33a972a7bcd1cf
+  zh: eedc12cb541eef57
+/security-agent-architecture/execution-and-recovery:
+  en: 569b30653d7f43ee
+  zh: f084a003d739eee9
+/security-agent-architecture/extension-points:
+  en: ff78318229ad48ea
+  zh: d9dbc5ade55100cb
+/security-agent-architecture/web-targets-reviews-and-laboratories:
+  en: 94497702977d6671
+  zh: 1298cc10923b80a9
+/security-agent-architecture/source-analysis-and-isolated-simulation:
+  en: 6c7e3a3f7cd3ca79
+  zh: 22e10c3afb781ff6

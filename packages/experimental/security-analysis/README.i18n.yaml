@@ -1,6 +1,64 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/experimental/security-analysis/README.md
-README.md: ed1cbe64daddd0263bc2fe626d0a2cccccf9eb23
-README.zh.md: b437dc2ab885a68cd9323433b7f636320038031b
+/:
+  en: 2a377ac01f7abe0d
+  zh: 365867ed639f5bcc
+/deepseek-ai-dsh-experimental-security-analysis:
+  en: 7e94d401058e063f
+  zh: 5914bf07c0217908
+/deepseek-ai-dsh-experimental-security-analysis/summary:
+  en: 06ae1b0d15e1ccc2
+  zh: b524c17be8454ca7
+/deepseek-ai-dsh-experimental-security-analysis/table-of-contents:
+  en: eb68ca73b584a748
+  zh: 2d618bce316ba639
+/deepseek-ai-dsh-experimental-security-analysis/use-this-package:
+  en: a41c6687f516e6bb
+  zh: 5a0f54463ba609d7
+/deepseek-ai-dsh-experimental-security-analysis/use-this-package/configure-analysis-providers:
+  en: 4a54ff53364cbbdc
+  zh: 0e9b9081aacbb9c0
+/deepseek-ai-dsh-experimental-security-analysis/use-this-package/tool-inventory-and-acceptance:
+  en: d6ed0579df1031f9
+  zh: 355c9d6f88c6bb6c
+/deepseek-ai-dsh-experimental-security-analysis/use-this-package/roles-tasks-and-tool-management:
+  en: 91ad5fa415a71ae4
+  zh: 78fb4b9be4e6cec7
+/deepseek-ai-dsh-experimental-security-analysis/use-this-package/evidence-and-recovery:
+  en: 694141eb529a7587
+  zh: bf92fc6b56ec52ab
+/deepseek-ai-dsh-experimental-security-analysis/use-this-package/source-snapshots-and-offline-checks:
+  en: 576877c9199f7764
+  zh: 4784f21e203b3b49
+/deepseek-ai-dsh-experimental-security-analysis/understand-the-implementation:
+  en: 0548d2b56ffd5553
+  zh: b77e701c4f91090f
+/deepseek-ai-dsh-experimental-security-analysis/further-exploration:
+  en: 306ee4a96e79a204
+  zh: a63053e5c0f77dfd
+/deepseek-ai-dsh-experimental-security-analysis/web-laboratory-support:
+  en: 53fc4414c7694a14
+  zh: 8887c5215a825a7a
+/deepseek-ai-dsh-experimental-security-analysis/model-experience:
+  en: 215e7ba838619b7b
+  zh: a311da3843709f90
+/deepseek-ai-dsh-experimental-security-analysis/model-experience/security-context:
+  en: 48465898d655ca11
+  zh: 5671fc2990940521
+/deepseek-ai-dsh-experimental-security-analysis/model-experience/security-context/what-the-model-sees:
+  en: 3ff97e67fd306141
+  zh: e1d174df6bd7abff
+/deepseek-ai-dsh-experimental-security-analysis/model-experience/security-context/token-effect:
+  en: e5084a4efe7dc3c4
+  zh: af51bd41e51ca9e7
+/deepseek-ai-dsh-experimental-security-analysis/model-experience/security-context/kv-cache-effect:
+  en: a3623adc2b64df40
+  zh: d48df86714e73e8c
+/deepseek-ai-dsh-experimental-security-analysis/known-limitations-and-deferred-work:
+  en: 46d1ac35dec0b6bd
+  zh: 82e759e6d688119a
+/deepseek-ai-dsh-experimental-security-analysis/known-limitations-and-deferred-work/dev-note:
+  en: 47f83e1859b04e11
+  zh: 5ff63007bdc1a3c4

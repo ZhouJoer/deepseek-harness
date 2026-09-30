@@ -5,7 +5,7 @@ import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/c
 import { selectCoordinator } from '../src/client/session-selection.ts'
 it('prefers the current matching coordinator and falls back to the latest accessible one', () => {
   const ids = ['missing', 'archived', 'child', 'recent', 'current'] as SessionId[]
-  const directory: SessionListState = { ids: ids.slice(1), phase: 'ready', byId: {}, subagentsByParent: {}, jobsBySession: {} }
+  const directory: SessionListState = { ids: ids.slice(1), phase: 'ready', byId: {}, projectionsBySession: {} }
   for (const [index, id] of ids.entries()) directory.byId[id] = { id, displayTitle: id, blank: false, running: false,
     updatedAt: 100 - index, retainedBy: id === 'current' ? { mainView: 1 } : {}, ...(id === 'child' ? { origin: 'subagent' as const } : {}) }
   expect(selectCoordinator(ids, directory, ['archived' as SessionId])).toBe('current')

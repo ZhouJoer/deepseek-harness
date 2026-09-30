@@ -43,7 +43,7 @@ function harness(extra: object = {}) {
     ...extra,
   }
   // The fixture supplies only framework seats consumed by this component.
-  return { api, release, props: api as unknown as Parameters<typeof Dashboard>[0] }
+  return { api, release, props: api as Parameters<typeof Dashboard>[0] }
 }
 it('filters tasks and reads history without creating or binding a Session', async () => {
   const { api, props } = harness()

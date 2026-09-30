@@ -1,6 +1,6 @@
 /** Tool discovery preserves configured installations and separates runtime health. @module */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { Context } from '@deepseek-ai/cordis'
+import { Context } from '@deepseek-ai/cordis'
 import { inspectToolbox } from '../src/toolbox.ts'
 import { runProcess } from '../src/workbench/process.ts'
 import type { SecurityEnvironment } from '../src/workbench/providers.ts'
@@ -18,7 +18,7 @@ function fixture(available = ['python', 'radare2']) {
     return command
   })
   // The process runner is mocked; inventory uses only the executable resolver on this context.
-  const ctx = { subprocess: { resolveExecutable } } as unknown as Context
+  const ctx = Object.assign(new Context(), { subprocess: { resolveExecutable } })
   const inspect = (environment = env, signal = new AbortController().signal) => inspectToolbox(ctx, environment, limits, signal)
   return { inspect, resolveExecutable }
 }

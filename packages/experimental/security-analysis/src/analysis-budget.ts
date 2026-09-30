@@ -63,7 +63,7 @@ export function installAnalysisBudget(ctx: Context, config: BudgetConfig, hasTas
     return {
       ...decision,
       messages: [...decision.messages, createUserMessage({
-        source: { kind: 'plugin', plugin: 'security-analysis-budget' },
+        source: { kind: 'plugin:security-analysis-budget' },
         content: [{ type: 'text', text: 'Analysis exploration is ending for this turn. Counted usage: '
           + String(state.used) + ' / ' + String(config.analysisTurnTokens) + ' tokens (' + accounting + '). '
           + 'Another request comparable to the last would reach the allowance. '

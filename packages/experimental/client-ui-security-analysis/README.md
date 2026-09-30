@@ -40,7 +40,7 @@ Source file or directory assets provide file inventory, line reads and literal s
 <details>
 <summary>Implementation details</summary>
 
-This package composes capabilities through a profile patch or input dock slot. It changes neither default profiles nor agent-loop. The browser calls the domain through generated Remote methods and uses bilingual dictionaries. No invariant companion is published because this package owns disposable composition/UI registrations; the domain owns business state.
+This package composes capabilities through a profile patch or input dock slot. It changes neither default profiles nor agent-loop. The browser calls the domain through generated Remote methods and uses bilingual dictionaries. Security tool cards show preparation and execution as running; result details and error status appear only after a result is logged. No invariant companion is published because this package owns disposable composition/UI registrations; the domain owns business state.
 
 </details>
 

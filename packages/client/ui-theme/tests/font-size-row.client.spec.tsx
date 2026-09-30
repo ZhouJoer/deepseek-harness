@@ -28,12 +28,12 @@ const COPY: Record<string, string> = {
 /** Empty global standard-kit hooks (the row reads neither). */
 function emptySessions() {
   const store = createSnapshotStore<SessionListState>(
-    { ids: [], byId: {}, phase: 'ready', subagentsByParent: {}, jobsBySession: {} })
+    { ids: [], byId: {}, phase: 'ready', projectionsBySession: {} })
   return bindSnapshotSelector(store)
 }
 function emptyWorkspaces() {
   const store = createSnapshotStore<WorkspaceSnapshot>({
-    items: [], archivedSessionIds: [], state: 'idle', phase: 'ready', error: null,
+    items: [], archivedSessionIds: [], pinnedSessionIds: [], state: 'idle', phase: 'ready', error: null,
   })
   return bindSnapshotSelector(store)
 }
@@ -87,11 +87,19 @@ describe('FontSizeRow', () => {
   })
 
   it('disables the outward arrow at each bound', () => {
-    mount(17)
+    const b = mount(21)
+    fireEvent.click(arrow('Increase font size'))
+    expect(b.setFontSize).toHaveBeenCalledWith(22)
+    act(() => { b.store.actions.sync(22, 1) })
+    expect(screen.getByText('22')).toBeDefined()
     expect(arrow('Increase font size').disabled).toBe(true)
     expect(arrow('Decrease font size').disabled).toBe(false)
     cleanup()
-    mount(12)
+    const c = mount(11)
+    fireEvent.click(arrow('Decrease font size'))
+    expect(c.setFontSize).toHaveBeenCalledWith(10)
+    act(() => { c.store.actions.sync(10, 1) })
+    expect(screen.getByText('10')).toBeDefined()
     expect(arrow('Increase font size').disabled).toBe(false)
     expect(arrow('Decrease font size').disabled).toBe(true)
   })

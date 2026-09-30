@@ -14,7 +14,7 @@ export function analysisLog(events: readonly SessionEvent[], inherited: number, 
   const selected = new Set<number>()
   const pair = (id: string) => {
     const call = calls.find(event => event.data.callId === id)
-    const result = results.find(event => event.data.message.content[0].toolCallId === id)
+    const result = results.find(event => event.data.message.toolCallId === id)
     if (!call || !result || result.seq <= call.seq) throw new Error('Analysis call must have a committed result in this Session')
     if (!['bash', 'pwsh', 'job_output'].includes(call.data.name)) throw new Error('Only native shell and job output can be captured')
     selected.add(call.seq); selected.add(result.seq)
@@ -26,8 +26,8 @@ export function analysisLog(events: readonly SessionEvent[], inherited: number, 
       const { job_id: job } = z.object({ job_id: z.string().min(1) }).parse(JSON.parse(call.data.arguments))
       const start = calls.find((candidate) => {
         if (!['bash', 'pwsh'].includes(candidate.data.name) || candidate.seq >= call.seq) return false
-        const output = results.find(item => item.data.message.content[0].toolCallId === candidate.data.callId)
-        const blocks = output?.data.message.content[0].content
+        const output = results.find(item => item.data.message.toolCallId === candidate.data.callId)
+        const blocks = output?.data.message.content
         return blocks?.length === 1 && blocks[0]?.type === 'text' && blocks[0].text.trim() === 'started background job ' + job
       })
       if (!start) throw new Error('Background output requires its own recorded shell start')
@@ -38,7 +38,7 @@ export function analysisLog(events: readonly SessionEvent[], inherited: number, 
         if (args.success && args.data.job_id === job) pair(candidate.data.callId)
       }
     } else {
-      const blocks = result.data.message.content[0].content
+      const blocks = result.data.message.content
       const started = blocks.length === 1 && blocks[0]?.type === 'text'
         && blocks[0].text.trim().startsWith('started background job ')
       if (started && !callIds.some((other) => {

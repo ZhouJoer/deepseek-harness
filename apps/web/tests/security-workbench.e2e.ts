@@ -32,10 +32,10 @@ describe('Security workbench overlay', () => {
   it('uses an independent default port and preserves explicit CLI port selection', () => {
     const row = (profileEntries(WEB_PATCH) as { id?: string; config?: unknown }[]).find(entry => entry.id === 'webserver')
     expect(row).toBeDefined()
-    expect(interpolate({ ctx: { webStartup: {} } }, row?.config) as unknown)
+    expect(interpolate({ ctx: { webStartup: {} } }, row?.config))
       .toMatchObject({ host: '127.0.0.1', port: 3081, compression: 'gzip' })
     for (const port of [0, 4567])
-      expect(interpolate({ ctx: { webStartup: { port } } }, row?.config) as unknown).toMatchObject({ port })
+      expect(interpolate({ ctx: { webStartup: { port } } }, row?.config)).toMatchObject({ port })
   })
   it('matches the shipped Host and Web profile layers', () => {
     expect(profileEntries(OVERLAY)).toEqual([
