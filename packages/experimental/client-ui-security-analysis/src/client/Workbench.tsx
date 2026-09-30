@@ -358,11 +358,15 @@ export function Workbench(props: WorkbenchProps) {
                   <ul>{assets.map(item => <li key={item.value.id}>{item.value.label}</li>)}</ul>
                 </section>}
                 {tab === 'overview' && project?.kind === 'engagement' && <ProjectManagement key={project.value.id + project.value.title} t={t}
-                  title={project.value.title} disabled={busy > 0} manage={action => perform(async () => {
-                    await props.manageProject(project.value.id, JSON.stringify({
-                      operationId: randomUUID(), expectedRevision: view.revision, action }))
-                    if (activeSession.current === sessionId) { setDraft({}); await load() }
-                  })} />}
+                  title={project.value.title} disabled={busy > 0} manage={async (action) => {
+                    let saved = false
+                    await perform(async () => {
+                      await props.manageProject(project.value.id, JSON.stringify({
+                        operationId: randomUUID(), expectedRevision: view.revision, action }))
+                      if (activeSession.current === sessionId) { setDraft({}); await load(); saved = true }
+                    })
+                    return saved
+                  }} />}
                 {tab === 'overview' && (
                   <>
                     {project?.kind === 'engagement' && <ActivityPanel key={project.value.id} {...props} project={project.value.id} view={view}

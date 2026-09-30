@@ -38,6 +38,7 @@ import { importSource } from './source.ts'
 import { materialInputSchema, prepareMaterials } from './materials.ts'
 import { apkMembers } from './apk.ts'
 import { ArtifactStore } from './artifacts.ts'
+import { unsharedArtifacts, referencedArtifacts } from './purge.ts'
 import {
   ProviderRegistry,
   type AnalysisProvider,
@@ -165,6 +166,25 @@ export class SecurityController {
   }
   private readonly observations = new Map<string, { fingerprint: string; pending: Promise<SecurityRecord> }>()
   private readonly reports = new Map<string, { fingerprint: string; pending: Promise<WorkbenchView> }>()
+  private readonly artifactWriters = new Set<Promise<unknown>>()
+  private purging: Promise<void> | undefined
+  private async withArtifactWrite<T>(action: () => Promise<T>): Promise<T> {
+    while (this.purging) await this.purging
+    const pending = action()
+    this.artifactWriters.add(pending)
+    try { return await pending }
+    finally { this.artifactWriters.delete(pending) }
+  }
+  private async withArtifactCleanup<T>(action: () => Promise<T>): Promise<T> {
+    while (this.purging) await this.purging
+    const gate = Promise.withResolvers<void>()
+    this.purging = gate.promise
+    try {
+      // Writers remain registered until their journal references are committed.
+      await Promise.allSettled([...this.artifactWriters])
+      return await action()
+    } finally { this.purging = undefined; gate.resolve() }
+  }
   private readonly delegated = new Map<AbortController, { project: string; done: Promise<unknown> }>()
   private readonly active = new Map<
     string,
@@ -274,6 +294,10 @@ export class SecurityController {
    */
   async captureAnalysis(sessionId: string, assetId: string, callIds: string[], bytes: Uint8Array,
     signal: AbortSignal): Promise<SecurityRecord> {
+    return this.withArtifactWrite(() => this.captureAnalysisImpl(sessionId, assetId, callIds, bytes, signal))
+  }
+  private async captureAnalysisImpl(sessionId: string, assetId: string, callIds: string[], bytes: Uint8Array,
+    signal: AbortSignal): Promise<SecurityRecord> {
     const authorize = () => {
       const project = this.analysisProject(sessionId)
       const binding = this.binding(sessionId)
@@ -299,7 +323,8 @@ export class SecurityController {
       }) }]
     })
     const result = committed.records.find(item => item.kind === 'evidence' && item.value.source.sessionId === sessionId && item.value.requestHash === requestHash)
-    if (!result) throw new Error('Analysis evidence was not committed')
+    if (result?.kind !== 'evidence') throw new Error('Analysis evidence was not committed')
+    await this.activity?.attachEvidence(result.value.engagementId, sessionId, callIds, result.value.id)
     return result
   }
   /** Save a validated child summary without treating it as original evidence.
@@ -330,7 +355,7 @@ export class SecurityController {
   }
   /** Rename, remove or restore a project from an authenticated operator gesture.
    * @param projectId - existing project identity.
-   * @param input - revision-checked rename, archive or restore request.
+   * @param input - revision-checked rename, archive, restore or permanent deletion request.
    * @returns committed project list, including archived entries for recovery.
    */
   async manageProject(projectId: string, input: unknown): Promise<Engagement[]> {
@@ -339,8 +364,17 @@ export class SecurityController {
         z.object({ kind: z.literal('rename'), title: text }).strict(),
         z.object({ kind: z.literal('archive') }).strict(),
         z.object({ kind: z.literal('restore') }).strict(),
+        z.object({ kind: z.literal('purge') }).strict(),
       ]),
     }).strict().parse(input)
+    if (request.action.kind === 'purge') {
+      return this.withArtifactCleanup(async () => {
+        await this.journal.purge(request.operationId, request.expectedRevision, projectId,
+          (removed, retained) => unsharedArtifacts(this.artifacts, removed, retained))
+        await this.finishPurges()
+        return this.projects(true)
+      })
+    }
     await this.journal.commit(request.operationId, request.expectedRevision, { projectId, request }, (view) => {
       const project = this.project(view, projectId)
       if (request.action.kind === 'rename') return [{ kind: 'engagement', value: { ...project, title: request.action.title } }]
@@ -359,6 +393,9 @@ export class SecurityController {
    * @returns the committed Session scope with measured materials.
    */
   async importMaterials(sessionId: string, input: unknown): Promise<WorkbenchView> {
+    return this.withArtifactWrite(() => this.importMaterialsImpl(sessionId, input))
+  }
+  private async importMaterialsImpl(sessionId: string, input: unknown): Promise<WorkbenchView> {
     const request = z.object({ operationId: text, expectedRevision: z.number().int().nonnegative(),
       material: materialInputSchema.optional(),
       task: actions.options[0].omit({ kind: true }).optional(),
@@ -485,6 +522,10 @@ export class SecurityController {
    */
   async command(sessionId: string, input: unknown, operator: boolean = false,
     signal: AbortSignal = new AbortController().signal, onStopped?: (project: string) => void): Promise<WorkbenchView> {
+    return this.withArtifactWrite(() => this.commandImpl(sessionId, input, operator, signal, onStopped))
+  }
+  private async commandImpl(sessionId: string, input: unknown, operator: boolean,
+    signal: AbortSignal, onStopped?: (project: string) => void): Promise<WorkbenchView> {
     const command = commandSchema.parse(input)
     const action = command.action
     const operatorActions = ['create', 'select', 'leave', 'approve', 'publish', 'resume', 'web-target']
@@ -855,6 +896,14 @@ export class SecurityController {
         }
       },
     )
+    if (action.kind === 'checkpoint') {
+      const view = this.view(sessionId)
+      const checkpoints = view.records.filter(item => item.kind === 'checkpoint')
+      const first = checkpoints[0]
+      if (checkpoints.length === 1 && first?.kind === 'checkpoint') {
+        await this.activity?.assignInitialDirection(first.value.engagementId, sessionId, first.value.id)
+      }
+    }
     if (action.kind === 'stop' || action.kind === 'revoke') {
       const project = this.binding(sessionId)?.engagementId
       if (project) {
@@ -986,6 +1035,7 @@ export class SecurityController {
    * @returns completion after interrupted state is durable.
    */
   async recover(): Promise<void> {
+    await this.withArtifactCleanup(() => this.finishPurges())
     const view = this.journal.view()
     const records: SecurityRecord[] = view.records
       .filter(item => item.kind === 'check' && item.value.status === 'running')
@@ -1016,6 +1066,14 @@ export class SecurityController {
     }
     if (records.length)
       await this.journal.commit(randomUUID(), view.revision, { recovery: view.revision }, () => records)
+  }
+  private async finishPurges(): Promise<void> {
+    for (const purge of this.journal.pendingPurges()) {
+      await this.activity?.removeProject(purge.projectId)
+      const retained = await referencedArtifacts(this.artifacts, this.journal.view().records)
+      for (const hash of purge.artifacts) if (!retained.has(hash)) await this.artifacts.remove(hash)
+      await this.journal.finishPurge(purge.projectId)
+    }
   }
   /**
    * Publish a child role before a delegated session can receive tools.
@@ -1069,6 +1127,12 @@ export class SecurityController {
     expectedRevision: number,
     callId: string,
     signal: AbortSignal,
+  ): Promise<WorkbenchView> {
+    return this.withArtifactWrite(() => this.executeImpl(sessionId, planId, operationId, expectedRevision, callId, signal))
+  }
+  private async executeImpl(
+    sessionId: string, planId: string, operationId: string, expectedRevision: number,
+    callId: string, signal: AbortSignal,
   ): Promise<WorkbenchView> {
     const initial = this.journal.view()
     const binding = this.requireBinding(initial, sessionId)
@@ -1276,6 +1340,10 @@ export class SecurityController {
     callId: string,
     signal: AbortSignal,
   ): Promise<SecurityRecord> {
+    return this.withArtifactWrite(() => this.observeImpl(sessionId, operation, callId, signal))
+  }
+  private async observeImpl(sessionId: string, operation: AnalysisOperation, callId: string,
+    signal: AbortSignal): Promise<SecurityRecord> {
     const key = sessionId + ':' + callId
     const fingerprint = createHash('sha256').update(JSON.stringify(operation)).digest('hex')
     const existing = this.observations.get(key)

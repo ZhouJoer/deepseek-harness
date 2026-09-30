@@ -42,7 +42,7 @@ export function Projects(props: ProjectActions & PropsLocale<typeof NS>) {
   const generation = useRef(0)
   const perform = async (action: () => Promise<void>) => {
     setBusy(true); setError('')
-    try { await action() } catch (error) { setError(error instanceof Error ? error.message : String(error)) }
+    try { await action(); return true } catch (error) { setError(error instanceof Error ? error.message : String(error)); return false }
     finally { setBusy(false) }
   }
   const refresh = async () => {

@@ -236,7 +236,7 @@ export const laboratorySchema = z.object({
   tools: z.record(z.string(), z.string()), templates: z.record(z.string(), z.string()),
   createdAt: z.number().int().nonnegative(),
 }).strict()
-/** Tagged records form one append-only commit stream. */
+/** Tagged project records; permanent deletion removes their owned history. */
 export const recordSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('checkpoint'), value: checkpointSchema }).strict(),
   z

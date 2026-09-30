@@ -22,6 +22,11 @@ function answer(findings = [0, 1], excludedIndices: number[] = []) {
       location: 'parse_request', fix: '读取前校验实际剩余字节' })), excludedIndices,
     lessons: ['遇到可变长度字段，应沿输入到拷贝位置核对实际边界。'], uncovered: ['源码与 Web 未检查。'] })
 }
+it('requests Chinese prose when recorded summaries use English', () => {
+  const prompt = reportPrompt(fixture(), limits)
+  expect(prompt).toContain('Write every prose field in Chinese, even when the input summaries are in English')
+  expect(prompt).toContain('Preserve code identifiers, filenames and quoted source text')
+})
 
 it.each(['json', ''])('accepts a single %s code fence around an otherwise valid report', (language) => {
   const response = ' \r\n```' + language + '\r\n' + answer() + '\r\n```\r\n '

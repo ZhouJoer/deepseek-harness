@@ -35,6 +35,18 @@ async function harness() {
 const invocation = (callId: string, projectId = 'project', checkpointId = 'recon') => ({
   projectId, sessionId: 'session', callId, checkpointId, tools: ['ghidra'], verified: true, parameters: '{}',
 })
+it('removes deleted task calls and briefs durably without removing another task', async () => {
+  const { activity, reopen } = await harness()
+  await activity.start(invocation('first'))
+  await activity.start(invocation('other', 'other-project'))
+  await activity.updateBrief({ projectId: 'project', checkpointId: 'recon', text: '待清理摘要', next: '', updatedAt: 1 })
+  await activity.removeProject('project')
+  await activity.removeProject('project')
+  expect(activity.page('project', 'recon', 0, 10).items).toEqual([])
+  const recovered = await reopen()
+  expect(recovered.usage('project')).toEqual([])
+  expect(recovered.page('other-project', 'recon', 0, 10).items).toHaveLength(1)
+})
 
 it('keeps closing conclusions and next actions separate from model-declared tools', () => {
   expect(closingBrief('工具：source 999 次\n**结论**：两个入口仍待评估。\n下一步／阻碍：检查调用者。'))
@@ -86,6 +98,29 @@ it('paginates at a stable creation cutoff while older calls settle and new calls
   expect(second.items.map(item => item.callId)).toEqual(['1'])
   expect(second.items[0]?.status).toBe('cancelled')
   expect(second.next).toBeNull()
+})
+
+it('links initial calls and saved evidence without changing execution facts or other sessions', async () => {
+  const { activity, reopen } = await harness()
+  const first = await activity.start(invocation('first', 'project', ''))
+  await activity.start(invocation('second', 'project', ''))
+  await activity.start({ ...invocation('other-session', 'project', ''), sessionId: 'other' })
+  await activity.start(invocation('other-project', 'foreign', ''))
+  await activity.start(invocation('classified', 'project', 'prior'))
+  await activity.assignInitialDirection('project', 'session', 'initial')
+  await activity.assignInitialDirection('project', 'session', 'later')
+  await activity.attachEvidence('project', 'session', ['first', 'second', 'other-project', 'missing'], 'evidence')
+  await activity.attachEvidence('project', 'session', ['first', 'second'], 'evidence')
+  await activity.finish(first.id, { status: 'completed', incomplete: false, detail: 'completed after stage saved' })
+  const recovered = await reopen()
+  const rows = recovered.page('project', 'initial', 0, 10).items
+  expect(rows).toHaveLength(2)
+  expect(rows.every(row => row.evidenceIds.length === 1 && row.evidenceIds[0] === 'evidence')).toBe(true)
+  expect(rows.find(row => row.callId === 'first')).toMatchObject({ status: 'completed', incomplete: false })
+  expect(recovered.page('project', '', 0, 10).items.map(row => row.sessionId)).toEqual(['other'])
+  expect(recovered.page('foreign', '', 0, 10).items[0]?.evidenceIds).toEqual([])
+  expect(recovered.page('project', 'prior', 0, 10).items).toHaveLength(1)
+  expect(recovered.page('project', 'later', 0, 10).items).toHaveLength(0)
 })
 
 it('streams committed starts and results, reconnects with a baseline and closes idle followers', async () => {

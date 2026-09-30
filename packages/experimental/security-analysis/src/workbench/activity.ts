@@ -60,6 +60,8 @@ export class SecurityActivityStore {
     private readonly save: (id: string, value: SecurityActivity) => Promise<void>,
     private readonly release: () => Promise<void>,
     private readonly saveBrief: (id: string, value: SecurityActivityBrief) => Promise<void>,
+    private readonly removeInvocation: (id: string) => Promise<boolean>,
+    private readonly removeBrief: (id: string) => Promise<boolean>,
   ) {}
 
   /** Open persisted observations and mark unfinished work as unknown without replaying it.
@@ -71,7 +73,7 @@ export class SecurityActivityStore {
       tables: { invocations: domainTable(activitySchema), briefs: domainTable(briefSchema) } }))
     const table = domain.table('invocations')
     const store = new SecurityActivityStore(async (id, value) => { await table.put(id, value) }, () => domain.close(),
-      async (id, value) => { await domain.table('briefs').put(id, value) })
+      async (id, value) => { await domain.table('briefs').put(id, value) }, id => table.delete(id), id => domain.table('briefs').delete(id))
     try {
       for (const [id, value] of domain.table('briefs').entries()) store.briefs.set(id, value)
       for (const [id, value] of table.entries()) {
@@ -109,6 +111,20 @@ export class SecurityActivityStore {
    * @returns completion after the current write queue drains.
    */
   async flush(): Promise<void> { await this.chain }
+  /** Permanently remove a deleted task's observations and summaries.
+   * @param projectId - project already removed from the authority journal.
+   * @returns completion after serialized durable cleanup. */
+  removeProject(projectId: string): Promise<void> {
+    return this.enqueue(async () => {
+      for (const [id, value] of this.records) if (value.projectId === projectId) {
+        await this.removeInvocation(id); this.records.delete(id)
+      }
+      for (const [id, value] of this.briefs) if (value.projectId === projectId) {
+        await this.removeBrief(id); this.briefs.delete(id)
+      }
+      for (const listener of this.listeners) listener(projectId)
+    })
+  }
 
   /** Check whether the dispatcher already observed this request.
    * @param sessionId - owning Session.
@@ -162,6 +178,40 @@ export class SecurityActivityStore {
       if (!previous) throw new Error('Unknown security activity')
       if (previous.status !== 'running') return
       await this.commit({ ...previous, ...result, finishedAt: Date.now() })
+    })
+  }
+
+  /** Associate a Session's initial unclassified calls with its first saved research direction.
+   * @param projectId - project owning the committed checkpoint.
+   * @param sessionId - coordinator that saved the checkpoint.
+   * @param checkpointId - first checkpoint in that project.
+   * @returns completion after associations are persisted; existing directions are preserved.
+   */
+  assignInitialDirection(projectId: string, sessionId: string, checkpointId: string): Promise<void> {
+    return this.enqueue(async () => {
+      for (const value of this.records.values()) {
+        if (value.projectId === projectId && value.sessionId === sessionId && !value.checkpointId) {
+          await this.commit({ ...value, checkpointId })
+        }
+      }
+    })
+  }
+
+  /** Attach saved auxiliary evidence to every recorded call it contains.
+   * @param projectId - evidence project.
+   * @param sessionId - Session supplying the recorded calls.
+   * @param callIds - calls contained in the saved evidence.
+   * @param evidenceId - committed evidence identity.
+   * @returns completion after persisted links; retries do not duplicate references.
+   */
+  attachEvidence(projectId: string, sessionId: string, callIds: readonly string[], evidenceId: string): Promise<void> {
+    return this.enqueue(async () => {
+      for (const callId of callIds) {
+        const value = this.records.get(JSON.stringify([sessionId, callId]))
+        if (value?.projectId === projectId && !value.evidenceIds.includes(evidenceId)) {
+          await this.commit({ ...value, evidenceIds: [...value.evidenceIds, evidenceId] })
+        }
+      }
     })
   }
 

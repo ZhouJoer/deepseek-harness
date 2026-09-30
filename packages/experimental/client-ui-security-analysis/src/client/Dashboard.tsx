@@ -9,6 +9,7 @@ import type { PropsLocale, PropsRenderSlots, PropsRuntime } from '@deepseek-ai/d
 import type { WorkbenchView } from '@deepseek-ai/dsh-experimental-security-analysis/client'
 import { MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
 import { ProjectManagement } from './ProjectManagement.tsx'
+import { ProjectDeletion } from './ProjectDeletion.tsx'
 import type { ProjectActions } from './Projects.tsx'
 import { ProjectLaboratories } from './ProjectLaboratories.tsx'
 import { Toolbox } from './Toolbox.tsx'
@@ -63,6 +64,12 @@ export function Dashboard(props: Props) {
   const [report, setReport] = useState('')
   const [readEpoch, setReadEpoch] = useState(0)
   const [reading, setReading] = useState(false)
+  const [deleting, setDeleting] = useState('')
+  const [deletedProject, setDeletedProject] = useState<Project>()
+  const [purgedTitle, setPurgedTitle] = useState('')
+  const listHeading = useRef<HTMLHeadingElement>(null)
+  const deletedProjects = useRef<Project[]>([])
+  const purgeRequests = useRef(new Map<string, string>())
   const generation = useRef(0)
   const readGeneration = useRef(0)
   const refreshGeneration = useRef(0)
@@ -78,10 +85,11 @@ export function Dashboard(props: Props) {
   const perform = async (action: () => Promise<void>) => {
     const current = generation.current
     setBusy(true); setError('')
-    try { await action() } catch (error) {
+    try { await action(); return current === generation.current } catch (error) {
       if (current === generation.current) {
         setError(error instanceof Error ? error.message : String(error)); setLoading(false)
       }
+      return false
     }
     finally { if (current === generation.current) setBusy(false) }
   }
@@ -134,6 +142,33 @@ export function Dashboard(props: Props) {
     setSelected(id); setView({ revision: 0, records: [] }); setTab('overview'); setCreating(false)
     setSessionId(undefined); setReference(undefined); setAssistant(false); setAdvanced(false); setMissingSession(false)
     setEvidenceId(''); setEvidenceQuery(''); setReportId(''); setError(''); setBusy(false); setStopping(false)
+    setDeleting('')
+  }
+  const manageDeletion = async (item: Project, revision?: number) => {
+    let request = item.archived ? purgeRequests.current.get(item.id) : undefined
+    if (!request) {
+      const expectedRevision = revision ?? (await props.project(item.id)).revision
+      request = JSON.stringify({ operationId: randomUUID(), expectedRevision,
+        action: item.archived ? { kind: 'purge' } : { kind: 'archive' } })
+      if (item.archived) purgeRequests.current.set(item.id, request)
+    }
+    try {
+      const result = await props.manageProject(item.id, request)
+      purgeRequests.current.delete(item.id)
+      return result
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('Security state changed')) purgeRequests.current.delete(item.id)
+      throw error
+    }
+  }
+  const removeFromList = (item: Project) => perform(async () => {
+    const current = generation.current
+    const items = await manageDeletion(item)
+    if (current === generation.current) deletedProjects.current = JSON.parse(items) as Project[]
+  })
+  const finishRemoval = (item: Project) => {
+    setProjects(deletedProjects.current); setDeleting(''); setDeletedProject(item.archived ? undefined : item)
+    setPurgedTitle(item.archived ? item.title : ''); listHeading.current?.focus()
   }
   const connect = async (create: boolean, resume = false, showAdvanced = false) => {
     const current = generation.current
@@ -168,6 +203,14 @@ export function Dashboard(props: Props) {
       </header>
       <nav className={css.navigation} aria-label={t('dashboardNavigation')}>{(['tasks', 'removed', 'toolbox'] as const).map(key => <button key={key} aria-current={section === key ? 'page' : undefined} onClick={() => { navigate(); setSection(key) }}>{t(key === 'tasks' ? 'dashboardTasks' : key === 'removed' ? 'removedProjects' : 'toolbox')}</button>)}</nav>
       {error && <div className={css.error} role="alert">{error}<button disabled={busy} onClick={() => void perform(refresh)}>{t('dashboardRetry')}</button></div>}
+      {deletedProject && <div className={css.deletionNotice} role="status"><span>{t('deleteProjectDone')} · {deletedProject.title}</span>
+        <button disabled={busy} onClick={() => void perform(async () => {
+          const snapshot = await props.project(deletedProject.id)
+          const items = await props.manageProject(deletedProject.id, JSON.stringify({ operationId: randomUUID(),
+            expectedRevision: snapshot.revision, action: { kind: 'restore' } }))
+          setProjects(JSON.parse(items) as Project[]); setDeletedProject(undefined)
+        })}>{t('deleteProjectUndo')}</button><button onClick={() => { setDeletedProject(undefined) }}>{t('close')}</button></div>}
+      {purgedTitle && <div className={css.deletionNotice} role="status"><span>{t('purgeProjectDone')} · {purgedTitle}</span><button onClick={() => { setPurgedTitle('') }}>{t('close')}</button></div>}
       {section === 'toolbox' ? <Toolbox {...props} /> : creating ? <>
         <button className={css.back} onClick={() =>{  navigate() }}>{t('dashboardBack')}</button>
         {!sessionId && <section className={css.creation}><h2>{t('newAnalysis')}</h2>{workspacePicker}<button className={css.primary} disabled={busy || !selectedWorkspace} onClick={() => void perform(async () => {
@@ -178,9 +221,17 @@ export function Dashboard(props: Props) {
         })}>{t('dashboardUseWorkspace')}</button></section>}
       </> : !selected ? <>
         <div className={css.stats}>{([['dashboardTotal', projects.length], ['dashboardStopped', projects.filter(item => !item.archived && item.stopped).length], ['dashboardRemoved', projects.filter(item => item.archived).length]] as const).map(([label, count]) => <article key={label}><span>{t(label)}</span><strong>{count}</strong></article>)}</div>
-        <section className={css.panel}><div className={css.listHeader}><h2>{t(section === 'removed' ? 'removedProjects' : 'dashboardTasks')} <span>{visible.length}</span></h2><div className={css.filters}><input aria-label={t('dashboardSearch')} placeholder={t('dashboardSearch')} value={query} onChange={(event) => { setQuery(event.target.value) }} /><select aria-label={t('dashboardStatus')} value={status} onChange={(event) => { setStatus(event.target.value) }}><option value="all">{t('dashboardAll')}</option><option value="ready">{t('dashboardReady')}</option><option value="stopped">{t('dashboardStopped')}</option></select></div></div>
+        <section className={css.panel}><div className={css.listHeader}><h2 ref={listHeading} tabIndex={-1}>{t(section === 'removed' ? 'removedProjects' : 'dashboardTasks')} <span>{visible.length}</span></h2><div className={css.filters}><input aria-label={t('dashboardSearch')} placeholder={t('dashboardSearch')} value={query} onChange={(event) => { setQuery(event.target.value) }} /><select aria-label={t('dashboardStatus')} value={status} onChange={(event) => { setStatus(event.target.value) }}><option value="all">{t('dashboardAll')}</option><option value="ready">{t('dashboardReady')}</option><option value="stopped">{t('dashboardStopped')}</option></select></div></div>
           {loading ? <p className={css.empty} role="status">{t('dashboardLoading')}</p> : !visible.length ? <div className={css.empty}><span className={css.emptyIcon} aria-hidden="true">◇</span><h3>{t(query || status !== 'all' ? 'dashboardNoResults' : 'dashboardEmpty')}</h3><p>{t(query || status !== 'all' ? 'dashboardFilterHint' : 'dashboardEmptyHint')}</p></div> :
-            <div className={css.taskList}>{visible.map(item => <button className={css.taskRow} key={item.id} onClick={() =>{  navigate(item.id) }}><span className={css.taskIcon} aria-hidden="true">◇</span><span className={css.taskText}><strong>{item.title}</strong><span>{item.objective}</span></span><span className={item.stopped ? css.stopped : css.badge}>{t(item.archived ? 'dashboardRemoved' : item.stopped ? 'dashboardStopped' : 'dashboardReady')}</span><span aria-hidden="true">→</span></button>)}</div>}
+            <div className={css.taskList}>{visible.map(item => <article className={css.taskExit}
+              data-deleting={deleting === item.id} key={item.id}
+              onAnimationEnd={(event) => { if (event.target === event.currentTarget && deleting === item.id) finishRemoval(item) }}>
+              <div className={css.taskClip}><div className={css.taskCard}>
+                <button className={css.taskRow} disabled={deleting === item.id} onClick={() => { navigate(item.id) }}><span className={css.taskIcon} aria-hidden="true">◇</span><span className={css.taskText}><strong>{item.title}</strong><span>{item.objective}</span></span><span className={item.stopped ? css.stopped : css.badge}>{t(item.archived ? 'dashboardRemoved' : item.stopped ? 'dashboardStopped' : 'dashboardReady')}</span><span aria-hidden="true">→</span></button>
+                <ProjectDeletion t={t} title={item.title} disabled={busy || !!deleting} permanent={!!item.archived}
+                  remove={() => removeFromList(item)} deleted={() => { setDeleting(item.id) }} />
+              </div></div>
+            </article>)}</div>}
         </section>
       </> : <>
         <button className={css.back} onClick={() =>{  navigate() }}>{t('dashboardBack')}</button>
@@ -201,12 +252,24 @@ export function Dashboard(props: Props) {
           {project.stopped && !project.archived && <div className={css.notice}><p>{t('dashboardStoppedHint')}</p><button disabled={busy} onClick={() => void perform(() => connect(true, true))}>{t('resume')}</button></div>}
           {missingSession && <div className={css.notice}><p>{t('dashboardMissingSession')}</p>{workspacePicker}<button className={css.primary} disabled={busy || !selectedWorkspace} onClick={() => void perform(() => connect(true, project.stopped))}>{t('dashboardContinue')}</button></div>}
           <nav className={css.detailTabs} aria-label={t('dashboardDetailNavigation')}>{(['overview', 'activityEntry', 'assets', 'findings', 'evidence', 'reports'] as const).map(key => <button key={key} aria-pressed={tab === key} onClick={() => { setTab(key); setEvidenceId('') }}>{t(key === 'overview' ? 'dashboardOverview' : key === 'assets' ? 'dashboardMaterials' : key)}</button>)}<button aria-pressed={tab === 'laboratories'} onClick={() =>{  setTab('laboratories') }}>{t('laboratories')}</button></nav>
-          {tab === 'laboratories' && <ProjectLaboratories t={t} view={view} busy={busy} run={(action, id) => perform(async () => { const current = generation.current; const next = await props.laboratory(selected, action, id); if (current === generation.current) setView(next) })} />}
+          {tab === 'laboratories' && <ProjectLaboratories t={t} view={view} busy={busy} run={async (action, id) => { await perform(async () => { const current = generation.current; const next = await props.laboratory(selected, action, id); if (current === generation.current) setView(next) }) }} />}
           <div hidden={tab !== 'overview' && tab !== 'activityEntry'}><ActivityPanel key={project.id} {...props} project={project.id} view={view} changed={(next) =>{  setView(previous => next.revision >= previous.revision ? next : previous) }} /></div>
           {tab === 'overview' && <>
             <div className={css.stats}>{([['confirmedFindings', findings.filter(item => item.value.status === 'confirmed').length], ['pendingFindings', findings.filter(item => ['suspected', 'inconclusive'].includes(item.value.status)).length], ['evidence', evidence.length], ['blockedChecks', blocked.length]] as const).map(([label, count]) => <article key={label}><span>{t(label)}</span><strong>{count}</strong></article>)}</div>
             <div className={css.overviewGrid}><section className={css.panel}><h3>{t('findings')}</h3>{findings.length ? findings.slice(0, 5).map(item => <button className={css.summaryRow} key={item.value.id} onClick={() =>{  setTab('findings') }}><strong>{item.value.title}</strong><span className={css.badge}>{t(item.value.status)}</span></button>) : <p className={css.muted}>{t('dashboardNoFindings')}</p>}</section><section className={css.panel}><h3>{t('blockedChecks')}</h3>{blocked.length ? blocked.map(item => <article key={item.value.id}><h4>{item.value.title}</h4><p>{item.value.rationale}</p></article>) : <p className={css.muted}>{t('dashboardNoBlocks')}</p>}</section></div>
-            <div className={css.panel}><ProjectManagement key={project.id + project.title} t={t} title={project.title} archived={project.archived} disabled={busy} manage={action => perform(async () => { await props.manageProject(selected, JSON.stringify({ operationId: randomUUID(), expectedRevision: view.revision, action })); if (action.kind === 'archive') { setSessionId(undefined); setReference(undefined); setAssistant(false); setAdvanced(false) } await refresh() })} /></div>
+            <div className={css.panel}><ProjectManagement key={project.id + project.title} t={t} title={project.title}
+              archived={project.archived} disabled={busy} manage={action => perform(async () => {
+                const current = generation.current
+                const items = action.kind === 'purge' ? await manageDeletion(project, view.revision)
+                  : await props.manageProject(selected,
+                    JSON.stringify({ operationId: randomUUID(), expectedRevision: view.revision, action }))
+                if (current !== generation.current) return
+                if (action.kind === 'archive' || action.kind === 'purge') {
+                  setDeletedProject(action.kind === 'archive' ? project : undefined); setPurgedTitle(action.kind === 'purge' ? project.title : '')
+                  setProjects(JSON.parse(items) as Project[]); navigate()
+                }
+                else await refresh()
+              })} /></div>
           </>}
           {tab === 'assets' && <section className={css.panel}>{assets.length ? assets.map(item => <article className={css.record} key={item.value.id}><h3>{item.value.label}</h3><span className={css.muted}>{'format' in item.value ? item.value.format : item.value.kind}</span>{'artifact' in item.value && <details><summary>{t('advancedDetails')}</summary><code>{item.value.artifact.sha256}</code><p>{item.value.artifact.size} {t('dashboardBytes')}</p></details>}</article>) : <p className={css.empty}>{t('dashboardNoMaterials')}</p>}</section>}
           {tab === 'findings' && <section className={css.panel}>{findings.length ? findings.map(item => <article className={css.record} key={item.value.id}><span className={css.badge}>{t(item.value.status)}</span><h3>{item.value.title}</h3><p>{item.value.explanation}</p><details><summary>{t('advancedDetails')}</summary><p>{item.value.conditions}</p><p>{item.value.review}</p><div className={css.actions}>{item.value.evidenceIds.map(id => <button key={id} onClick={() => { setTab('evidence'); setEvidenceId(id) }}>{evidence.find(entry => entry.value.id === id)?.value.title ?? id}</button>)}</div></details></article>) : <p className={css.empty}>{t('dashboardNoFindings')}</p>}</section>}

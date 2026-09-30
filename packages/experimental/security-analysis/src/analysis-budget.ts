@@ -67,7 +67,7 @@ export function installAnalysisBudget(ctx: Context, config: BudgetConfig, hasTas
         content: [{ type: 'text', text: 'Analysis exploration is ending for this turn. Counted usage: '
           + String(state.used) + ' / ' + String(config.analysisTurnTokens) + ' tokens (' + accounting + '). '
           + 'Another request comparable to the last would reach the allowance. '
-          + 'Continue the current research direction without creating a new stage. Write three concise lines in the user\'s language: tools used, current conclusion, and next action or blocker. Use only existing results: what is established, '
+          + 'Continue the current research direction without creating a new stage. Write three concise lines in Simplified Chinese: current conclusion, key impact or limitation, and next action or blocker. Preserve code identifiers and paths. Include tools only when essential. Use only existing results: what is established, '
           + 'saved evidence or file locations, uncertainty and unfinished checks, and the next focused action. '
           + 'Explain that analysis can continue from these results in a follow-up; do not claim the investigation is complete. '
           + 'Do not call exploration tools. If structured_output is available, return the assigned report with uncertainty and nextSteps.' }],

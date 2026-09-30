@@ -1,0 +1,9 @@
+.root { display: contents; }
+.root .danger { color: var(--dsw-alias-label-error, #c7363d); border-color: var(--dsw-alias-border-l2); }
+.expansion { display: grid; grid-template-rows: 0fr; grid-column: 1 / -1; opacity: 0; transition: grid-template-rows .2s ease, opacity .2s ease; }
+.expansion[data-open="true"] { grid-template-rows: 1fr; opacity: 1; }
+.clip { min-height: 0; overflow: hidden; }
+.confirmation { padding: 16px; margin-bottom: 16px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 10px; background: var(--dsw-alias-bg-module-platform); overflow-wrap: anywhere; }
+.confirmation p { color: var(--dsw-alias-label-secondary); line-height: 1.6; margin: 8px 0 16px; }
+.actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+@media (prefers-reduced-motion: reduce) { .expansion { transition: none; } }

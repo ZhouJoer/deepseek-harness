@@ -57,6 +57,15 @@ export class ArtifactStore {
     }
     return bytes
   }
+  /** Remove an unshared artifact from a durable deletion plan.
+   * @param sha256 - validated content digest owned by the artifact store.
+   * @returns completion after unlinking; a missing file is already cleaned up. */
+  async remove(sha256: string): Promise<void> {
+    if (!/^[a-f0-9]{64}$/u.test(sha256)) throw new Error('Invalid artifact digest')
+    try { await unlink(join(this.root, 'artifacts', sha256)) } catch (error) {
+      if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) throw error
+    }
+  }
   /**
    * Import a regular file inside an operator-approved root.
    * @param path - absolute selected sample path.

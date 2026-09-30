@@ -105,7 +105,7 @@ class ScopeModel extends LlmAdapter {
       return
     }
     const refinement = options.messages.flatMap(message => message.content).filter(block => block.type === 'text').map(block => block.text).find(text => text.includes('\nNotes: '))
-    const report = options.messages.flatMap(message => message.content).filter(block => block.type === 'text').map(block => block.text).find(text => text.includes('Write a concise Chinese security brief'))
+    const report = options.messages.flatMap(message => message.content).filter(block => block.type === 'text').map(block => block.text).find(text => text.includes('\nData: '))
     if (report && this.reportFailure) {
       yield { type: 'finish', reason: { kind: 'error', failure: { message: 'Fixture model rejected report', code: 'UNKNOWN' } } }
       return
@@ -409,6 +409,18 @@ describe('security workbench Loader composition', () => {
     expect(controller.activity!.usage(activityProject)).toEqual([
       expect.objectContaining({ tool: 'script', verified: false, total: 1, completed: 1 }),
     ])
+    expect(controller.activity!.page(activityProject, '', 0, 10).items[0]?.evidenceIds).toEqual([evidence.value.id])
+    const checkpoint = { kind: 'checkpoint' as const, phase: 'recon' as const, title: 'Script result',
+      reason: 'Inspect the saved script output', summary: 'The fixture returned 42', next: 'Review the recorded output',
+      evidenceIds: [evidence.value.id], findingIds: [] }
+    await expect(send({ ...checkpoint, evidenceIds: ['foreign'] })).rejects.toThrow('foreign')
+    expect(controller.activity!.page(activityProject, '', 0, 10).items).toHaveLength(1)
+    await send(checkpoint)
+    const checkpointId = controller.checkpointId(agent.id)
+    expect(controller.activity!.page(activityProject, '', 0, 10).items).toHaveLength(0)
+    expect(controller.activity!.page(activityProject, checkpointId, 0, 10).items[0])
+      .toMatchObject({ callId: 'native-4', status: 'completed', evidenceIds: [evidence.value.id] })
+    expect(controller.view(agent.id).records.some(item => item.kind === 'finding')).toBe(false)
     expect(await readFile(join(directory, 'tmp', 'input.txt'), 'utf8')).toBe('owned fixture')
     expect((await readdir(root)).filter(name => !before.includes(name))).toEqual(['.dsh'])
     expect(JSON.stringify(model.requests[1]!.messages)).toContain('analysisDirectory')

@@ -4308,7 +4308,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ArtifactStore',
-    declaration: 'export class ArtifactStore {\n    constructor(private readonly root: string, private readonly maxBytes: number);\n    async put(bytes: Uint8Array, mediaType: string): Promise<Artifact>;\n    async read(artifact: Artifact): Promise<Buffer>;\n    async import(path: string, roots: readonly string[]): Promise<{\n        artifact: Artifact;\n        format: FileAsset[\'format\'];\n    }>;\n    async materialize(artifact: Artifact): Promise<string>;\n    async release(path: string): Promise<void>;\n}',
+    declaration: 'export class ArtifactStore {\n    constructor(private readonly root: string, private readonly maxBytes: number);\n    async put(bytes: Uint8Array, mediaType: string): Promise<Artifact>;\n    async read(artifact: Artifact): Promise<Buffer>;\n    async remove(sha256: string): Promise<void>;\n    async import(path: string, roots: readonly string[]): Promise<{\n        artifact: Artifact;\n        format: FileAsset[\'format\'];\n    }>;\n    async materialize(artifact: Artifact): Promise<string>;\n    async release(path: string): Promise<void>;\n}',
   },
   {
     name: 'AskUserQuestionAnswer',
@@ -5880,7 +5880,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SecurityActivityStore',
-    declaration: 'export class SecurityActivityStore {\n    static async open(ctx: Context): Promise<SecurityActivityStore>;\n    updateBrief(input: SecurityActivityBrief): Promise<void>;\n    async flush(): Promise<void>;\n    has(sessionId: string, callId: string): boolean;\n    start(input: Pick<SecurityActivity, \'projectId\' | \'sessionId\' | \'callId\' | \'checkpointId\' | \'tools\' | \'verified\' | \'parameters\'>): Promise<SecurityActivity>;\n    finish(id: SecurityActivityId, result: Pick<SecurityActivity, \'status\' | \'incomplete\' | \'detail\'> & {\n        evidenceIds?: string[];\n    }): Promise<void>;\n    usage(project: string): SecurityToolUsage[];\n    page(project: string, checkpointId: string, offset: number, limit: number, through = this.cursor): SecurityActivityPage;\n    async *follow(project: string, view: () => WorkbenchView, subscribeProject: (listener: () => void) => () => void, signal: AbortSignal): AsyncGenerator<SecurityActivityFrame, void>;\n    async close(): Promise<void>;\n}',
+    declaration: 'export class SecurityActivityStore {\n    static async open(ctx: Context): Promise<SecurityActivityStore>;\n    updateBrief(input: SecurityActivityBrief): Promise<void>;\n    async flush(): Promise<void>;\n    removeProject(projectId: string): Promise<void>;\n    has(sessionId: string, callId: string): boolean;\n    start(input: Pick<SecurityActivity, \'projectId\' | \'sessionId\' | \'callId\' | \'checkpointId\' | \'tools\' | \'verified\' | \'parameters\'>): Promise<SecurityActivity>;\n    finish(id: SecurityActivityId, result: Pick<SecurityActivity, \'status\' | \'incomplete\' | \'detail\'> & {\n        evidenceIds?: string[];\n    }): Promise<void>;\n    assignInitialDirection(projectId: string, sessionId: string, checkpointId: string): Promise<void>;\n    attachEvidence(projectId: string, sessionId: string, callIds: readonly string[], evidenceId: string): Promise<void>;\n    usage(project: string): SecurityToolUsage[];\n    page(project: string, checkpointId: string, offset: number, limit: number, through = this.cursor): SecurityActivityPage;\n    async *follow(project: string, view: () => WorkbenchView, subscribeProject: (listener: () => void) => () => void, signal: AbortSignal): AsyncGenerator<SecurityActivityFrame, void>;\n    async close(): Promise<void>;\n}',
   },
   {
     name: 'SecurityController',
@@ -5892,7 +5892,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SecurityJournal',
-    declaration: 'export interface SecurityJournal {\n    view(): WorkbenchView;\n    subscribe(project: string, listener: () => void): () => void;\n    subscribeSelection(session: string, listener: () => void): () => void;\n    replay(operationId: string, input: unknown): WorkbenchView | undefined;\n    commit(operationId: string, expectedRevision: number | undefined, input: unknown, produce: (view: WorkbenchView) => Promise<SecurityRecord[]> | SecurityRecord[]): Promise<WorkbenchView>;\n    close(): Promise<void>;\n}',
+    declaration: 'export interface SecurityJournal {\n    view(): WorkbenchView;\n    subscribe(project: string, listener: () => void): () => void;\n    subscribeSelection(session: string, listener: () => void): () => void;\n    replay(operationId: string, input: unknown): WorkbenchView | undefined;\n    commit(operationId: string, expectedRevision: number | undefined, input: unknown, produce: (view: WorkbenchView) => Promise<SecurityRecord[]> | SecurityRecord[]): Promise<WorkbenchView>;\n    purge(operationId: string, expectedRevision: number, projectId: string, plan: (removed: SecurityRecord[], retained: SecurityRecord[]) => Promise<string[]>): Promise<WorkbenchView>;\n    pendingPurges(): {\n        projectId: string;\n        artifacts: string[];\n    }[];\n    finishPurge(projectId: string): Promise<void>;\n    close(): Promise<void>;\n}',
   },
   {
     name: 'SecurityToolUsage',

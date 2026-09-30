@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /** Dashboard navigation does not create analysis state until an explicit action. @module */
 import { afterEach, expect, it, vi } from 'vitest'
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { en as common } from '@deepseek-ai/dsh-client-locale/src/locales/en.ts'
@@ -36,7 +36,7 @@ function harness(extra: object = {}) {
     createSession: vi.fn(async () => 'new'), associateSession: vi.fn(async () => {}), resumeProject: vi.fn(async () => {}),
     stopProject: vi.fn(async () => {}), createWorkspace: vi.fn(async () => 'workspace'),
     retainSession: vi.fn((id: string) => ({ sessionId: id, ready: Promise.resolve(), release })),
-    subscribeReset: () => () => {}, manageProject: vi.fn(async () => '[]'), laboratory: vi.fn(),
+    subscribeReset: () => () => {}, manageProject: vi.fn(async (_projectId: string, _input: string) => '[]'), laboratory: vi.fn(),
     t: makeTranslate(en, common), useWorkspaces: (select: (state: object) => unknown) => select({ items: [{ workspaceId: 'workspace', path: '/owned', title: 'Owned' }] }),
     SessionProvider: ({ children }: { children: ReactNode }) => <>{children}</>,
     renderSlot: () => <textarea aria-label="Assistant draft" defaultValue="" />,
@@ -152,4 +152,85 @@ it('retries a failed evidence read when its project revision has not changed', a
   fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))
   await screen.findByText('Recovered evidence')
   expect(read).toHaveBeenCalledTimes(2)
+})
+it('confirms deletion, waits for the exit animation and supports undo', async () => {
+  const saved = [{ ...alpha.value, archived: true, stopped: true }, beta.value]
+  const { api, props } = harness({ manageProject: vi.fn().mockResolvedValueOnce(JSON.stringify(saved))
+    .mockResolvedValueOnce(JSON.stringify([alpha.value, beta.value])) })
+  render(<Dashboard {...props} />)
+  const row = (await screen.findByRole('button', { name: /Alpha/ })).closest('article')!
+  fireEvent.click(within(row).getByRole('button', { name: 'Delete task' }))
+  expect(api.manageProject).not.toHaveBeenCalled()
+  fireEvent.click(within(row).getByRole('button', { name: 'Cancel' }))
+  expect(within(row).getByRole('button', { name: 'Delete task' })).toBe(document.activeElement)
+  fireEvent.click(within(row).getByRole('button', { name: 'Delete task' }))
+  fireEvent.click(within(row).getByRole('button', { name: 'Confirm deletion' }))
+  await waitFor(() => { expect(row.getAttribute('data-deleting')).toBe('true') })
+  expect(screen.getByRole('button', { name: /Alpha/ })).toBeTruthy()
+  fireEvent.animationEnd(row)
+  // jsdom lacks AnimationEvent; React registers the WebKit fallback for this environment.
+  fireEvent(row, new Event('webkitAnimationEnd', { bubbles: true }))
+  expect(screen.queryByRole('button', { name: /Alpha/ })).toBeNull()
+  expect(api.createSession).not.toHaveBeenCalled()
+  fireEvent.click(screen.getByRole('button', { name: 'Undo deletion' }))
+  await screen.findByRole('button', { name: /Alpha/ })
+  expect((JSON.parse(api.manageProject.mock.calls[1]![1]) as { action: unknown }).action).toEqual({ kind: 'restore' })
+})
+it('keeps failed deletions visible for retry instead of animating them away', async () => {
+  const deletion = Promise.withResolvers<string>()
+  const { api, props } = harness({ manageProject: vi.fn(() => deletion.promise) })
+  render(<Dashboard {...props} />)
+  const row = (await screen.findByRole('button', { name: /Alpha/ })).closest('article')!
+  fireEvent.click(within(row).getByRole('button', { name: 'Delete task' }))
+  fireEvent.click(within(row).getByRole('button', { name: 'Confirm deletion' }))
+  await waitFor(() => { expect(api.manageProject).toHaveBeenCalledTimes(1) })
+  expect(within(row).getByRole<HTMLButtonElement>('button', { name: 'Deleting…' }).disabled).toBe(true)
+  await act(async () => { deletion.reject(new Error('Deletion failed')); await deletion.promise.catch(() => {}) })
+  await screen.findByRole('alert')
+  expect(row.getAttribute('data-deleting')).toBe('false')
+  expect(within(row).getByRole<HTMLButtonElement>('button', { name: 'Confirm deletion' }).disabled).toBe(false)
+})
+it('requires a second confirmation for long project names and offers no undo afterward', async () => {
+  const archived = { ...alpha.value, title: 'Alpha ' + 'Long project name '.repeat(12), archived: true, stopped: true }
+  const { api, props } = harness({ projects: vi.fn(async () => JSON.stringify([archived, beta.value])),
+    manageProject: vi.fn(async () => JSON.stringify([beta.value])) })
+  render(<Dashboard {...props} />)
+  await screen.findByRole('button', { name: /Beta/ })
+  fireEvent.click(screen.getByRole('button', { name: 'Deleted tasks' }))
+  const row = (await screen.findByRole('button', { name: /Alpha/ })).closest('article')!
+  fireEvent.click(within(row).getByRole('button', { name: 'Delete permanently' }))
+  const confirm = within(row).getByRole<HTMLButtonElement>('button', { name: 'Confirm permanent deletion' })
+  expect(api.manageProject).not.toHaveBeenCalled()
+  expect(within(row).queryByRole('textbox')).toBeNull()
+  expect(confirm.disabled).toBe(false)
+  fireEvent.click(within(row).getByRole('button', { name: 'Cancel' }))
+  expect(api.manageProject).not.toHaveBeenCalled()
+  fireEvent.click(within(row).getByRole('button', { name: 'Delete permanently' }))
+  fireEvent.click(confirm)
+  await waitFor(() => { expect(row.getAttribute('data-deleting')).toBe('true') })
+  expect((JSON.parse(api.manageProject.mock.calls[0]![1]) as { action: unknown }).action).toEqual({ kind: 'purge' })
+  fireEvent.animationEnd(row)
+  fireEvent(row, new Event('webkitAnimationEnd', { bubbles: true }))
+  expect(screen.queryByRole('button', { name: /Alpha/ })).toBeNull()
+  expect(screen.queryByRole('button', { name: 'Undo deletion' })).toBeNull()
+  await screen.findByText('Task permanently deleted', { exact: false })
+})
+it('retries permanent cleanup with the original request after its task records were erased', async () => {
+  const archived = { ...alpha.value, archived: true, stopped: true }
+  const manageProject = vi.fn(async (_id: string, _input: string) => JSON.stringify([beta.value]))
+    .mockRejectedValueOnce(new Error('Cleanup interrupted'))
+  const { api, props } = harness({ projects: vi.fn(async () => JSON.stringify([archived, beta.value])), manageProject })
+  render(<Dashboard {...props} />)
+  await screen.findByRole('button', { name: /Beta/ })
+  fireEvent.click(screen.getByRole('button', { name: 'Deleted tasks' }))
+  const row = (await screen.findByRole('button', { name: /Alpha/ })).closest('article')!
+  fireEvent.click(within(row).getByRole('button', { name: 'Delete permanently' }))
+  fireEvent.click(within(row).getByRole('button', { name: 'Confirm permanent deletion' }))
+  await screen.findByRole('alert')
+  await waitFor(() => { expect(within(row).getByRole<HTMLButtonElement>('button', { name: 'Confirm permanent deletion' }).disabled).toBe(false) })
+  api.project.mockRejectedValue(new Error('Unknown project'))
+  fireEvent.click(within(row).getByRole('button', { name: 'Confirm permanent deletion' }))
+  await waitFor(() => { expect(row.getAttribute('data-deleting')).toBe('true') })
+  expect(manageProject.mock.calls[1]).toEqual(manageProject.mock.calls[0])
+  expect(api.project).toHaveBeenCalledTimes(1)
 })

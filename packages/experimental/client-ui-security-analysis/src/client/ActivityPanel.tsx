@@ -78,8 +78,16 @@ export function ActivityPanel(props: Props) {
     <div className={css.timelineHeader}><h3>{t('activityTitle')}</h3><span className={css.connection} data-live={connected} role="status">{t(connected ? 'activityLive' : 'activityDisconnected')}</span>
       {!connected && <button onClick={() => { setEpoch(value => value + 1) }}>{t('dashboardRetry')}</button>}</div>
     {error && <p role="alert" className={css.error}>{error}</p>}
+    <p className={css.emptyActivity}>{t('activityReferenceHint')}</p>
     {directions.map((direction, index) => {
-      const tools = usage.filter(item => item.checkpointId === direction.id)
+      const tools = new Map<string, SecurityToolUsage>()
+      for (const item of usage.filter(item => item.checkpointId === direction.id)) {
+        const previous = tools.get(item.tool)
+        tools.set(item.tool, previous ? { ...previous, total: previous.total + item.total,
+          running: previous.running + item.running, completed: previous.completed + item.completed,
+          failed: previous.failed + item.failed, cancelled: previous.cancelled + item.cancelled,
+          unknown: previous.unknown + item.unknown, incomplete: previous.incomplete + item.incomplete } : item)
+      }
       const page = pages[direction.id]
       const brief = briefs.find(item => item.checkpointId === direction.id)
       const summary = brief && brief.updatedAt > direction.updatedAt ? brief.text : direction.summary
@@ -89,10 +97,9 @@ export function ActivityPanel(props: Props) {
           {direction.phase && <span className={css.phase}>{t(direction.phase)}</span>}<h4>{direction.title}</h4>
         </div></header>
         <div className={css.toolGrid} aria-label={t('activityTools')}>
-          {tools.length ? tools.map(item => <div className={css.toolCard} key={item.tool + String(item.verified)} role="group"
+          {tools.size ? [...tools.values()].map(item => <div className={css.toolCard} key={item.tool} role="group"
             aria-label={`${item.tool === 'script' ? t('activityScriptShort') : item.tool} ×${item.total}`}>
             <div className={css.toolName}><strong>{item.tool === 'script' ? t('activityScriptShort') : item.tool}</strong><span className={css.toolCount}>×{item.total}</span></div>
-            <span className={css.verification} data-verified={item.verified}>{t(item.verified ? 'activityVerified' : 'activityUnverified')}</span>
             <div className={css.toolStates}>
               {item.running > 0 && <span data-state="running">{t('running')} <b>{item.running}</b></span>}
               {item.completed > 0 && <span data-state="completed">{t('completed')} <b>{item.completed}</b></span>}
@@ -112,18 +119,18 @@ export function ActivityPanel(props: Props) {
         <details onToggle={(event) => { if (event.currentTarget.open) void read(direction.id) }}>
           <summary>{t('activityDetails')}</summary>
           {direction.reason && <p>{t('activityReason')}: {direction.reason}</p>}
+          {!direction.evidenceIds.length && <p>{t('activityNoEvidence')}</p>}
           {direction.evidenceIds.map((id) => {
             const evidence = props.view.records.find(item => item.kind === 'evidence' && item.value.id === id)
             return <p key={id}>{id} · {evidence?.kind === 'evidence' ? evidence.value.summary : t('activityNoRecords')}</p>
           })}
           {page?.items.map(item => <article className={css.record} key={item.id}>
             <strong>{item.tools.join(', ')} · {t(item.status === 'cancelled' ? 'activityCancelled' : item.status === 'unknown' ? 'activityUnknown' : item.status)}</strong>
-            {!item.verified && <p>{t('activityUnverifiedHint')}</p>}
             {item.incomplete && <p>{t('activityIncomplete')}</p>}
             <pre className={css.artifact}>{item.parameters}</pre><pre className={css.artifact}>{item.detail}</pre>
             <p>{t('activityCall')}: {item.sessionId} / {item.callId}</p>
-            {props.view.records.filter(record => record.kind === 'evidence' && record.value.source.sessionId === item.sessionId
-              && record.value.source.callId === item.callId).map(record => record.kind === 'evidence'
+            {props.view.records.filter(record => record.kind === 'evidence' && (item.evidenceIds.includes(record.value.id)
+              || (record.value.source.sessionId === item.sessionId && record.value.source.callId === item.callId))).map(record => record.kind === 'evidence'
               ? <p key={record.value.id}>{record.value.id} · {record.value.summary}</p> : null)}
           </article>)}
           {loading === direction.id && <p role="status">{t('dashboardLoading')}</p>}

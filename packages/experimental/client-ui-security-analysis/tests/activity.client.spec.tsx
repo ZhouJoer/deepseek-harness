@@ -42,10 +42,31 @@ it('updates counts during a turn without adding a stage and preserves a return t
   await act(async () => { deliver({ type: 'activity', briefs: [], cursor: 2, usage: [{ ...usage, running: 0, failed: 1 }] }) })
   expect(screen.getByRole('group', { name: 'ghidra ×1' }).textContent).toContain('Failed 1')
   expect(screen.getAllByRole('heading', { level: 4 })).toHaveLength(3)
-  expect(screen.getAllByText(/Analyst observation, not a confirmed verdict/)).toHaveLength(3)
+  expect(screen.getAllByText('Analysis summary')).toHaveLength(3)
   fireEvent.click(screen.getAllByText('Inspect calls and evidence')[2]!)
   await waitFor(() =>{  expect(details).toHaveBeenCalledWith('project', 'third', 0, undefined) })
   expect(changed).toHaveBeenCalledTimes(1)
+})
+
+it('combines reference counts without verification badges and explains unsaved evidence', async () => {
+  const view: WorkbenchView = { revision: 1, records: [checkpoint('first', 'recon', 'Entry inventory')] }
+  const usage = { checkpointId: 'first', tool: 'radare2', verified: true, total: 1, running: 0,
+    completed: 1, failed: 0, cancelled: 0, unknown: 0, incomplete: 0 }
+  const followActivity = async function* () {
+    yield { type: 'snapshot' as const, briefs: [], view, cursor: 1, usage: [usage,
+      { ...usage, verified: false, total: 2, completed: 1, failed: 1 }] }
+  }
+  render(<ActivityPanel project="project" view={view} changed={() => {}} followActivity={followActivity}
+    activityDetails={async () => ({ items: [], next: null, through: 1 })}
+    subscribeReset={() => () => {}} t={makeTranslate(en, common)} />)
+  const card = await screen.findByRole('group', { name: 'radare2 ×3' })
+  expect(card.textContent).toContain('Completed 2')
+  expect(card.textContent).toContain('Failed 1')
+  expect(screen.queryByText('Unverified')).toBeNull()
+  expect(screen.queryByText('Observed call')).toBeNull()
+  expect(screen.getByText(/Tool names and counts are for reference/)).toBeTruthy()
+  fireEvent.click(screen.getByText('Inspect calls and evidence'))
+  expect(screen.getByText(/No saved evidence linked to this stage/)).toBeTruthy()
 })
 
 it('aborts an old project stream and ignores its late frames', async () => {

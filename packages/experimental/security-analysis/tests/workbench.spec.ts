@@ -164,6 +164,166 @@ describe('security workbench', () => {
     expect(controller.binding('parent')?.engagementId).toBe(id)
   })
 
+  it('permanently erases task history and unshared content while retaining shared samples', async () => {
+    const { controller, journal, artifacts, send, assetId, root, ctx } = await harness()
+    const id = controller.binding('parent')!.engagementId
+    const sample = controller.view('parent').records.find(item => item.kind === 'asset')!
+    if (sample.kind !== 'asset' || !('artifact' in sample.value)) throw new Error('Expected file asset')
+    const shared = sample.value.artifact
+    const evidence = await controller.captureAnalysis('parent', assetId, ['original'], Buffer.from('private observation'), new AbortController().signal)
+    if (evidence.kind !== 'evidence') throw new Error('Expected evidence')
+    await send({ kind: 'create', title: 'Other task', objective: 'Keep shared sample', environmentIds: ['local'], maxAttempts: 3 }, true, 'other')
+    await send({ kind: 'import', path: join(root, 'sample.exe'), label: 'shared' }, false, 'other')
+    const manage = (action: unknown) => controller.manageProject(id,
+      { operationId: randomUUID(), expectedRevision: journal.view().revision, action })
+    await expect(manage({ kind: 'purge' })).rejects.toThrow(/Delete the task/)
+    await manage({ kind: 'archive' })
+    await expect(controller.manageProject('unknown', { operationId: randomUUID(), expectedRevision: journal.view().revision,
+      action: { kind: 'purge' } })).rejects.toThrow(/Unknown project/)
+    await expect(controller.manageProject(id, { operationId: randomUUID(), expectedRevision: 0,
+      action: { kind: 'purge' } })).rejects.toThrow(/state changed/)
+    const request = { operationId: randomUUID(), expectedRevision: journal.view().revision, action: { kind: 'purge' } }
+    await controller.manageProject(id, request)
+    await controller.manageProject(id, request)
+    const stored = await readFile(join(root, 'security_workbench.json'), 'utf8')
+    expect(stored).not.toContain('private observation')
+    expect(stored).not.toContain('"title":"Lab"')
+    expect(controller.projects(true).map(item => item.title)).toEqual(['Other task'])
+    expect(controller.binding('parent')).toBeUndefined()
+    expect(() => controller.projectView(id)).toThrow(/Unknown/)
+    await expect(artifacts.read(evidence.value.artifact)).rejects.toMatchObject({ code: 'ENOENT' })
+    expect((await artifacts.read(shared)).toString()).toBe('MZ owned fixture')
+    expect(await readFile(join(root, 'sample.exe'), 'utf8')).toBe('MZ owned fixture')
+    await expect(manage({ kind: 'restore' })).rejects.toThrow(/Unknown/)
+    await journal.close()
+    const reopened = await openSecurityJournal(ctx)
+    try {
+      expect(reopened.view().records.some(item => item.kind === 'engagement' ? item.value.id === id : item.value.engagementId === id)).toBe(false)
+      expect(reopened.pendingPurges()).toEqual([])
+    } finally { await reopened.close() }
+  })
+  it('resumes pending permanent cleanup after reopening without restoring deleted records', async () => {
+    const { controller, journal, artifacts, ctx, assetId, root } = await harness()
+    const id = controller.binding('parent')!.engagementId
+    const sample = controller.view('parent').records.find(item => item.kind === 'asset')!
+    if (sample.kind !== 'asset' || !('artifact' in sample.value)) throw new Error('Expected file asset')
+    const artifact = sample.value.artifact
+    await controller.manageProject(id, { operationId: randomUUID(), expectedRevision: journal.view().revision, action: { kind: 'archive' } })
+    const remove = vi.spyOn(artifacts, 'remove').mockRejectedValueOnce(new Error('Cleanup interrupted'))
+    await expect(controller.manageProject(id, { operationId: randomUUID(), expectedRevision: journal.view().revision, action: { kind: 'purge' } })).rejects.toThrow('Cleanup interrupted')
+    expect(journal.pendingPurges()).toHaveLength(1)
+    expect(journal.view().records.some(item => item.kind === 'asset' && item.value.id === assetId)).toBe(false)
+    remove.mockRestore()
+    await journal.close()
+    const reopened = await openSecurityJournal(ctx)
+    try {
+      const recoveredStore = new ArtifactStore(root, 65536)
+      const recovered = new SecurityController(reopened, recoveredStore, controller.options)
+      await recovered.recover()
+      expect(recovered.projects(true)).toEqual([])
+      expect(reopened.pendingPurges()).toEqual([])
+      await expect(recoveredStore.read(artifact)).rejects.toMatchObject({ code: 'ENOENT' })
+    } finally { await reopened.close() }
+  })
+  it('keeps a pending cleanup artifact that another task imported before restart', async () => {
+    const { controller, journal, artifacts, ctx, root, send } = await harness()
+    const id = controller.binding('parent')!.engagementId
+    const sample = controller.view('parent').records.find(item => item.kind === 'asset')!
+    if (sample.kind !== 'asset' || !('artifact' in sample.value)) throw new Error('Expected file asset')
+    const shared = sample.value.artifact
+    await controller.manageProject(id, { operationId: randomUUID(), expectedRevision: journal.view().revision, action: { kind: 'archive' } })
+    const remove = vi.spyOn(artifacts, 'remove').mockRejectedValueOnce(new Error('Cleanup interrupted'))
+    await expect(controller.manageProject(id, { operationId: randomUUID(), expectedRevision: journal.view().revision, action: { kind: 'purge' } })).rejects.toThrow('Cleanup interrupted')
+    remove.mockRestore()
+    await send({ kind: 'create', title: 'New owner', objective: 'Reuse sample', environmentIds: ['local'], maxAttempts: 3 }, true, 'new-owner')
+    await send({ kind: 'import', path: join(root, 'sample.exe'), label: 'Reused' }, false, 'new-owner')
+    await journal.close()
+    const reopened = await openSecurityJournal(ctx)
+    try {
+      const store = new ArtifactStore(root, 65536)
+      const recovered = new SecurityController(reopened, store, controller.options)
+      await recovered.recover()
+      expect((await store.read(shared)).toString()).toBe('MZ owned fixture')
+      expect(reopened.pendingPurges()).toEqual([])
+    } finally { await reopened.close() }
+  })
+  it('waits for evidence publication before measuring unshared content', async () => {
+    const { controller, journal, artifacts, send, assetId } = await harness()
+    const id = controller.binding('parent')!.engagementId
+    const bytes = Buffer.from('shared evidence in flight')
+    const signal = new AbortController().signal
+    const original = await controller.captureAnalysis('parent', assetId, ['original'], bytes, signal)
+    if (original.kind !== 'evidence') throw new Error('Expected evidence')
+    await send({ kind: 'create', title: 'Other task', objective: 'Keep evidence', environmentIds: ['local'], maxAttempts: 3 }, true, 'other')
+    await send({ kind: 'import', path: join(controller.options.importRoots[0]!, 'sample.exe'), label: 'shared' }, false, 'other')
+    const otherAsset = controller.view('other').records.find(item => item.kind === 'asset')!
+    if (otherAsset.kind !== 'asset') throw new Error('Expected asset')
+    await controller.manageProject(id, { operationId: randomUUID(), expectedRevision: journal.view().revision, action: { kind: 'archive' } })
+    const entered = Promise.withResolvers<undefined>()
+    const release = Promise.withResolvers<undefined>()
+    const put = artifacts.put.bind(artifacts)
+    vi.spyOn(artifacts, 'put').mockImplementationOnce(async (...args) => {
+      const artifact = await put(...args)
+      entered.resolve(undefined)
+      await release.promise
+      return artifact
+    })
+    const publishing = controller.captureAnalysis('other', otherAsset.value.id, ['in-flight'], bytes, signal)
+    await entered.promise
+    const purge = vi.spyOn(journal, 'purge')
+    const deleting = controller.manageProject(id, { operationId: randomUUID(), expectedRevision: journal.view().revision + 1, action: { kind: 'purge' } })
+    try { expect(purge).not.toHaveBeenCalled() }
+    finally { release.resolve(undefined) }
+    const evidence = await publishing
+    await deleting
+    if (evidence.kind !== 'evidence') throw new Error('Expected evidence')
+    expect(await artifacts.read(evidence.value.artifact)).toEqual(bytes)
+    expect(controller.projects(true).map(item => item.title)).toEqual(['Other task'])
+  })
+  it('publishes later evidence only after permanent content cleanup settles', async () => {
+    const { controller, journal, artifacts, send, assetId } = await harness()
+    const id = controller.binding('parent')!.engagementId
+    const bytes = Buffer.from('recreated after cleanup')
+    const signal = new AbortController().signal
+    const original = await controller.captureAnalysis('parent', assetId, ['original'], bytes, signal)
+    if (original.kind !== 'evidence') throw new Error('Expected evidence')
+    await send({ kind: 'create', title: 'Other task', objective: 'Keep evidence', environmentIds: ['local'], maxAttempts: 3 }, true, 'other')
+    await send({ kind: 'import', path: join(controller.options.importRoots[0]!, 'sample.exe'), label: 'shared' }, false, 'other')
+    const otherAsset = controller.view('other').records.find(item => item.kind === 'asset')!
+    if (otherAsset.kind !== 'asset') throw new Error('Expected asset')
+    await controller.manageProject(id, { operationId: randomUUID(), expectedRevision: journal.view().revision, action: { kind: 'archive' } })
+    const entered = Promise.withResolvers<undefined>()
+    const release = Promise.withResolvers<undefined>()
+    const remove = artifacts.remove.bind(artifacts)
+    vi.spyOn(artifacts, 'remove').mockImplementationOnce(async (hash) => {
+      entered.resolve(undefined)
+      await release.promise
+      await remove(hash)
+    })
+    const deleting = controller.manageProject(id, { operationId: randomUUID(), expectedRevision: journal.view().revision, action: { kind: 'purge' } })
+    await entered.promise
+    const put = vi.spyOn(artifacts, 'put')
+    const publishing = controller.captureAnalysis('other', otherAsset.value.id, ['after-cleanup'], bytes, signal)
+    try { expect(put).not.toHaveBeenCalled() }
+    finally { release.resolve(undefined) }
+    await deleting
+    const evidence = await publishing
+    if (evidence.kind !== 'evidence') throw new Error('Expected evidence')
+    expect(await artifacts.read(evidence.value.artifact)).toEqual(bytes)
+  })
+  it('removes source members and the stored manifest while preserving the original input', async () => {
+    const { controller, journal, artifacts } = await harness()
+    const id = controller.binding('parent')!.engagementId
+    const imported = await controller.importMaterials('parent', { operationId: randomUUID(), expectedRevision: journal.view().revision,
+      material: { kind: 'text', name: 'owned.ts', text: 'export const owned = true\n' } })
+    const source = imported.records.find(item => item.kind === 'asset' && 'kind' in item.value && item.value.kind === 'source')!
+    if (source.kind !== 'asset' || !('kind' in source.value) || source.value.kind !== 'source') throw new Error('Expected source')
+    const manifest = sourceManifestSchema.parse(JSON.parse((await artifacts.read(source.value.artifact)).toString('utf8')))
+    await controller.manageProject(id, { operationId: randomUUID(), expectedRevision: journal.view().revision, action: { kind: 'archive' } })
+    await controller.manageProject(id, { operationId: randomUUID(), expectedRevision: journal.view().revision, action: { kind: 'purge' } })
+    await expect(artifacts.read(source.value.artifact)).rejects.toMatchObject({ code: 'ENOENT' })
+    for (const file of manifest.files) await expect(artifacts.read(file.artifact)).rejects.toMatchObject({ code: 'ENOENT' })
+  })
   it('imports pasted text into a new task without losing whitespace and rejects oversized input atomically', async () => {
     const { controller, journal, artifacts } = await harness()
     const task = { title: 'Notes', objective: 'Inspect notes', environmentIds: ['local'], maxAttempts: 3 }
