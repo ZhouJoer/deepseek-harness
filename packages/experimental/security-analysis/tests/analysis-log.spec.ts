@@ -2,7 +2,7 @@
 import { expect, it } from 'vitest'
 import { SessionSeq, type SessionEvent } from '@deepseek-ai/dsh-session'
 import { createToolResultMessage, ToolCallId } from '@deepseek-ai/dsh-llm'
-import { analysisLog } from '../src/analysis-log.ts'
+import { analysisCallPage, analysisLog } from '../src/analysis-log.ts'
 
 function call(seq: number, id: string, name = 'pwsh', args: object = {}): SessionEvent<'tool/call'> {
   return { type: 'tool/call', seq: SessionSeq(seq), time: 0,
@@ -32,4 +32,25 @@ it('captures background start and earlier output up to an immutable cutoff', () 
   expect(() => analysisLog(events, 0, ['other'])).toThrow('own recorded shell start')
   const failed = [call(0, 'failed', 'bash', { run_in_background: true }), result(1, 'failed', 'Execution denied', true)]
   expect(analysisLog(failed, 0, ['failed'])).toEqual(failed)
+})
+it('exposes capturable call IDs separately from background job identities', () => {
+  const events = [call(0, 'inherited'), result(1, 'inherited', 'parent output'),
+    call(2, 'start', 'pwsh'), result(3, 'start', 'started background job pwsh-13'),
+    call(4, 'opaque-output-id', 'job_output', { job_id: 'pwsh-13' }), result(5, 'opaque-output-id', 'output'),
+    call(6, 'pending'), call(7, 'foreign-job', 'job_output', { job_id: 'pwsh-14' }), result(8, 'foreign-job', 'output'),
+    call(9, 'failed'), result(10, 'failed', 'denied', true),
+    call(11, 'write', 'write'), result(12, 'write', 'ok')]
+  expect(analysisCallPage(events, 2, 0, 4096)).toEqual({ calls: [
+    { callId: 'opaque-output-id', tool: 'job_output', sequence: 4, isError: false, jobId: 'pwsh-13' },
+    { callId: 'failed', tool: 'pwsh', sequence: 9, isError: true },
+  ], nextOffset: null })
+  expect(analysisCallPage(events, 2, 0, 4096, 'pwsh-13').calls.map(item => item.callId)).toEqual(['opaque-output-id'])
+  expect(analysisCallPage(events, 4, 0, 4096, 'pwsh-13').calls).toEqual([])
+  expect(analysisCallPage(events, 2, 0, 4096, 'missing').calls).toEqual([])
+  const page = analysisCallPage(events, 2, 0, 160)
+  expect(page.calls.map(item => item.callId)).toEqual(['opaque-output-id'])
+  expect(page.nextOffset).toBe(1)
+  expect(analysisCallPage(events, 2, page.nextOffset!, 160).calls.map(item => item.callId)).toEqual(['failed'])
+  expect(() => analysisCallPage(events, 2, 0, 20)).toThrow('output budget')
+  expect(analysisCallPage(events, 2, 10, 4096)).toEqual({ calls: [], nextOffset: null })
 })

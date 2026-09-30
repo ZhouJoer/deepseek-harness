@@ -3,6 +3,7 @@ import { mkdtemp, mkdir, rm, writeFile, readFile, readdir } from 'node:fs/promis
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { randomUUID } from 'node:crypto'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
@@ -72,7 +73,8 @@ afterEach(async () => {
 })
 
 class ScopeModel extends LlmAdapter {
-  nativeCalls: { name: string; args: Record<string, unknown> }[] = []
+  nativeCalls: { name: string; args: Record<string, unknown> | ((request: GenerateOptions) => Record<string, unknown>) }[] = []
+  nativeCallId = (request: number) => 'native-' + String(request)
   readonly requests: GenerateOptions[] = []
   beforeResponse: ((request: number) => void) | undefined
   firstSkill: string | undefined
@@ -97,7 +99,8 @@ class ScopeModel extends LlmAdapter {
       ...(this.exactUsageTotal ? { totalTokens: this.usageTokens + this.cacheReadTokens } : {}) } }
     const native = this.nativeCalls[this.requests.length - 1]
     if (native) {
-      const call = { type: 'tool-call' as const, id: ToolCallId('native-' + String(this.requests.length)), name: native.name, arguments: JSON.stringify(native.args) }
+      const call = { type: 'tool-call' as const, id: ToolCallId(this.nativeCallId(this.requests.length)), name: native.name,
+        arguments: JSON.stringify(typeof native.args === 'function' ? native.args(options) : native.args) }
       yield { type: 'block-start', index: 0, blockType: 'tool-call' }
       yield { type: 'tool-call-delta', index: 0, id: call.id, name: call.name, argumentsDelta: call.arguments }
       yield { type: 'block-end', index: 0, block: call }
@@ -386,12 +389,22 @@ describe('security workbench Loader composition', () => {
       : 'const fs = require("node:fs")\nif (fs.readFileSync(' + inputPath + ', "utf8") !== "owned fixture") throw new Error("Missing input")\nfs.mkdirSync("outputs")\nfs.mkdirSync("tmp")\nfs.writeFileSync("outputs/result.txt", String(6 * 6))\nfs.writeFileSync("tmp/input.txt", "owned fixture")\nconsole.log(fs.readFileSync("outputs/result.txt", "utf8"))\n'
     const executable = python ?? process.execPath
     const quote = (value: string) => "'" + value.replaceAll("'", process.platform === 'win32' ? "''" : "'\\''") + "'"
+    let capturedCallId: string | undefined
+    model.nativeCallId = () => randomUUID()
     model.nativeCalls = [
       { name: 'security_capabilities', args: {} },
       { name: 'write', args: { file_path: script, content } },
       { name: 'edit', args: { file_path: script, old_string: '6 * 6', new_string: '6 * 7' } },
       { name: process.platform === 'win32' ? 'pwsh' : 'bash', args: { command: (process.platform === 'win32' ? '& ' : '') + quote(executable) + ' ' + quote(script), description: 'Run the owned analysis script', workdir: directory } },
-      { name: 'security_capture_analysis', args: { assetId: asset.value.id, callIds: ['native-4'] } },
+      { name: 'security_capture_analysis', args: { assetId: asset.value.id } },
+      { name: 'security_capture_analysis', args: (request) => {
+        const message = request.messages.at(-1)
+        if (message?.role !== 'tool' || message.content[0]?.type !== 'text') throw new Error('Missing call list')
+        const page = JSON.parse(message.content[0].text) as { calls: { callId: string }[] }
+        expect(page.calls).toHaveLength(1)
+        capturedCallId = page.calls[0]!.callId
+        return { assetId: asset.value.id, callIds: [capturedCallId] }
+      } },
     ]
     agent.followup(webPrompt('Write and run an analysis script, then save its evidence.'))
     await agent.whenIdle()
@@ -414,14 +427,24 @@ describe('security workbench Loader composition', () => {
     const checkpointId = controller.checkpointId(agent.id)
     expect(controller.activity!.page(activityProject, '', 0, 10).items).toHaveLength(0)
     expect(controller.activity!.page(activityProject, checkpointId, 0, 10).items[0])
-      .toMatchObject({ callId: 'native-4', status: 'completed', evidenceIds: [evidence.value.id] })
+      .toMatchObject({ callId: capturedCallId, status: 'completed', evidenceIds: [evidence.value.id] })
     expect(controller.view(agent.id).records.some(item => item.kind === 'finding')).toBe(false)
     expect(await readFile(join(directory, 'tmp', 'input.txt'), 'utf8')).toBe('owned fixture')
     expect((await readdir(root)).filter(name => !before.includes(name))).toEqual(['.dsh'])
     expect(JSON.stringify(model.requests[1]!.messages)).toContain('analysisDirectory')
     expect(ctx.tools.schemas().some(tool => tool.name === 'write')).toBe(false)
     expect(ctx.tools.schemas(agent).some(tool => tool.name === 'write')).toBe(true)
+    const revision = controller.view(agent.id).revision
+    const listed = await execute(ctx, agent, 'security_capture_analysis', { assetId: asset.value.id })
+    expect(listed.isError).toBe(false)
+    expect(controller.view(agent.id).revision).toBe(revision)
+    expect((await execute(ctx, agent, 'security_capture_analysis', { assetId: 'foreign' })).isError).toBe(true)
+    expect((await execute(ctx, agent, 'security_capture_analysis', { assetId: asset.value.id, offset: -1 })).isError).toBe(true)
+    expect((await execute(ctx, agent, 'security_capture_analysis', {
+      assetId: asset.value.id, callIds: [capturedCallId], jobId: 'pwsh-13',
+    })).isError).toBe(true)
     await send({ kind: 'stop' })
+    expect((await execute(ctx, agent, 'security_capture_analysis', { assetId: asset.value.id })).isError).toBe(true)
     expect((await execute(ctx, agent, process.platform === 'win32' ? 'pwsh' : 'bash', { command: 'echo blocked', description: 'Attempt stopped analysis' })).isError).toBe(true)
   })
   it('persists scoped child evidence reports without requiring or creating a finding review', async () => {
@@ -919,6 +942,10 @@ describe('security workbench Loader composition', () => {
       expect(visible).not.toContain('security_execute')
       expect(visible).not.toContain('security_delegate')
       expect(visible.includes('security_static')).toBe(['reconnaissance', 'reverse-analyst'].includes(role))
+      if (role === 'researcher' || role === 'reviewer') {
+        expect((await execute(ctx, child, 'security_capture_analysis', { assetId: asset.value.id })).isError).toBe(true)
+        expect(() => controller.analysisAsset(child.id, asset.value.id)).toThrow('Analysis collection role required')
+      } else expect(() => controller.analysisAsset(child.id, asset.value.id)).not.toThrow()
       for (const name of ['security_execute', 'security_delegate', 'security_command'])
         expect((await execute(ctx, child, name)).isError).toBe(true)
       const capabilities = await execute(ctx, child, 'security_capabilities', { providerId: 'binary', details: true })

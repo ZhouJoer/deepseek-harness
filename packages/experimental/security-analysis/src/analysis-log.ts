@@ -1,6 +1,61 @@
 /** Select committed native analysis interactions without trusting output as authority. @module */
+import assert from 'node:assert/strict'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
+import type { ToolCallId } from '@deepseek-ai/dsh-llm'
 import { z } from 'zod'
+
+/** Metadata for one caller-owned interaction that can be captured by itself. */
+interface AnalysisCall {
+  callId: ToolCallId
+  tool: string
+  sequence: number
+  isError: boolean
+  jobId?: string
+}
+
+/** List committed native interactions without disclosing command or output bodies.
+ * @param events - immutable Session observation.
+ * @param inherited - fork prefix excluded from caller-owned analysis.
+ * @param offset - continuation position within the filtered interactions.
+ * @param maxBytes - complete serialized response budget.
+ * @param jobId - optional background job identity used only to filter results.
+ * @returns capturable call IDs in log order and an explicit continuation.
+ */
+export function analysisCallPage(events: readonly SessionEvent[], inherited: number, offset: number,
+  maxBytes: number, jobId?: string): { calls: AnalysisCall[]; nextOffset: number | null } {
+  const calls: AnalysisCall[] = []
+  for (const event of events) {
+    if (event.type !== 'tool/call' || event.seq < inherited || !['bash', 'pwsh', 'job_output'].includes(event.data.name)) continue
+    const result = events.find(item => item.type === 'tool/result' && item.seq >= inherited
+      && item.seq > event.seq && item.data.message.toolCallId === event.data.callId)
+    if (result?.type !== 'tool/result') continue
+    try { analysisLog(events, inherited, [event.data.callId]) }
+    catch (error) {
+      // Capture validation rejects incomplete or malformed background interactions.
+      if (!(error instanceof Error)) throw error
+      continue
+    }
+    const job = event.data.name === 'job_output'
+      ? z.object({ job_id: z.string().min(1) }).parse(JSON.parse(event.data.arguments)).job_id : undefined
+    if (jobId !== undefined && job !== jobId) continue
+    calls.push({ callId: event.data.callId, tool: event.data.name, sequence: event.seq,
+      isError: result.data.message.isError ?? false, ...(job === undefined ? {} : { jobId: job }) })
+  }
+  const page: { calls: AnalysisCall[]; nextOffset: number | null } = { calls: [], nextOffset: null }
+  for (let index = offset; index < calls.length; index++) {
+    const call = calls[index]
+    assert(call, 'Page index must address an existing analysis call')
+    page.calls.push(call)
+    page.nextOffset = index + 1 < calls.length ? index + 1 : null
+    if (Buffer.byteLength(JSON.stringify(page)) > maxBytes) {
+      page.calls.pop()
+      if (!page.calls.length) throw new Error('One analysis call exceeds the output budget')
+      page.nextOffset = index
+      break
+    }
+  }
+  return page
+}
 
 /** Select complete local call/result pairs, including recorded background increments.
  * @param events - immutable Session observation.
@@ -15,7 +70,7 @@ export function analysisLog(events: readonly SessionEvent[], inherited: number, 
   const pair = (id: string) => {
     const call = calls.find(event => event.data.callId === id)
     const result = results.find(event => event.data.message.toolCallId === id)
-    if (!call || !result || result.seq <= call.seq) throw new Error('Analysis call must have a committed result in this Session')
+    if (!call || !result || result.seq <= call.seq) throw new Error('Analysis call must have a committed result in this Session; omit callIds to list capturable call IDs. Background job IDs are not call IDs')
     if (!['bash', 'pwsh', 'job_output'].includes(call.data.name)) throw new Error('Only native shell and job output can be captured')
     selected.add(call.seq); selected.add(result.seq)
     return { call, result }

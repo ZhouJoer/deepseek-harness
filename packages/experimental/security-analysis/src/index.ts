@@ -22,7 +22,7 @@ import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import type {} from '@deepseek-ai/dsh-system-prompt'
 import type {} from '@deepseek-ai/dsh-jobs'
 import type {} from '@deepseek-ai/dsh-session-query'
-import { analysisLog } from './analysis-log.ts'
+import { analysisCallPage, analysisLog } from './analysis-log.ts'
 import { installAnalysisBudget } from './analysis-budget.ts'
 import { closingBrief } from './turn-brief.ts'
 import { installNativeAnalysis } from './native-analysis.ts'
@@ -135,7 +135,7 @@ Use security_scope and security_capabilities when you need project state or tool
 
 Record findings only about target security behavior, with conditions, impact and uncertainty. Save reusable experience with remember only when it improves future vulnerability identification, validation or prevention. Tool errors, formatting repairs and command retries belong in operational state, not findings or experience. Only an operator can approve execution or publish shared knowledge. After a scope or operator-only denial, report the blocker once and stop actions requiring that missing authority until the user changes the configuration; do not retry equivalent requests through other commands.
 
-Collecting roles may use native file and shell tools to write and run Python, Bash or PowerShell analysis scripts in the workspace under existing DSH permissions. Discover executable paths and execution locations with security_environment. Container commands run through the Host Docker CLI in the selected running container. Collect background work with job_output. Save committed calls with security_capture_analysis to obtain auxiliary evidence IDs. Script logs alone do not establish complete implementation evidence or approved runtime validation. Research and reviewer roles cannot execute scripts. Missing capabilities do not authorize another target or environment. For external source code, find the actual file in the official repository before fetching its raw URL. An HTTP error page is a failed retrieval, not source evidence; inspect repository listings or saved search results instead of guessing nearby filenames.
+Collecting roles may use native file and shell tools to write and run Python, Bash or PowerShell analysis scripts in the workspace under existing DSH permissions. Discover executable paths and execution locations with security_environment. Container commands run through the Host Docker CLI in the selected running container. Collect background work with job_output. First call security_capture_analysis with assetId and no callIds to list capturable committed calls; use jobId to find collected background output. Then pass the returned callIds to save auxiliary evidence. Background job IDs are not call IDs. Script logs alone do not establish complete implementation evidence or approved runtime validation. Research and reviewer roles cannot execute scripts. Missing capabilities do not authorize another target or environment. For external source code, find the actual file in the official repository before fetching its raw URL. An HTTP error page is a failed retrieval, not source evidence; inspect repository listings or saved search results instead of guessing nearby filenames.
 
 ${TOOL_DISCOVERY_GUIDANCE}
 
@@ -266,17 +266,23 @@ export default class SecurityWorkbench extends TypertRemoteService {
     }
     ctx.tools.register(defineTool({
       name: 'security_capture_analysis',
-      description: 'Save your committed bash, pwsh or job_output calls as auxiliary target evidence. Supply call IDs, never output text. Background collection includes the recorded start and earlier output. These logs alone do not establish approved validation or complete implementation evidence.',
-      parameters: { assetId: { type: 'string', required: true }, callIds: { type: 'array', items: { type: 'string' }, required: true } },
+      description: 'Omit callIds to list your capturable committed bash, pwsh or job_output call IDs; use jobId to find collected background output and offset for continuation. Then supply returned callIds to save auxiliary target evidence, never output text or background job IDs. Background capture includes the recorded start and earlier output. These logs alone do not establish approved validation or complete implementation evidence.',
+      parameters: { assetId: { type: 'string', required: true }, callIds: { type: 'array', items: { type: 'string' } },
+        jobId: { type: 'string', description: 'Filter the call list by background job ID; collect job_output first.' },
+        offset: { type: 'integer', description: 'Call list continuation offset; default 0.' } },
       output,
       execute: async (args, exec) => {
         if (!exec.agent) throw new Error('Security tools require a session')
-        const request = z.object({ assetId: z.string().min(1), callIds: z.array(z.string().min(1)).min(1) }).parse(args)
+        const request = z.object({ assetId: z.string().min(1), callIds: z.array(z.string().min(1)).min(1).optional(),
+          jobId: z.string().min(1).optional(), offset: z.number().int().nonnegative().optional() }).parse(args)
+        if (request.callIds && (request.jobId !== undefined || request.offset !== undefined)) throw new Error('jobId and offset apply only when listing calls')
         const query = ctx.get('sessionQuery')
         if (!query) throw new Error('Analysis capture requires sessionQuery')
         const controller = await this.ready
-        controller.analysisProject(exec.agent.id)
+        controller.analysisAsset(exec.agent.id, request.assetId)
         using observation = await query.observeSession(exec.agent.id, { signal: exec.signal, projectionMode: 'none' })
+        if (!request.callIds) return json(analysisCallPage(observation.events, observation.inheritedEventCount,
+          request.offset ?? 0, config.modelResultBytes, request.jobId))
         const events = analysisLog(observation.events, observation.inheritedEventCount, request.callIds)
         const ids = events.filter(event => event.type === 'tool/call').map(event => event.data.callId)
         const record = await controller.captureAnalysis(exec.agent.id, request.assetId, ids,

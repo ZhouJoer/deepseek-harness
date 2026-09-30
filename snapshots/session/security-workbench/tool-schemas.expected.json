@@ -295,7 +295,7 @@
     },
     {
       "name": "security_capture_analysis",
-      "description": "Save your committed bash, pwsh or job_output calls as auxiliary target evidence. Supply call IDs, never output text. Background collection includes the recorded start and earlier output. These logs alone do not establish approved validation or complete implementation evidence.",
+      "description": "Omit callIds to list your capturable committed bash, pwsh or job_output call IDs; use jobId to find collected background output and offset for continuation. Then supply returned callIds to save auxiliary target evidence, never output text or background job IDs. Background capture includes the recorded start and earlier output. These logs alone do not establish approved validation or complete implementation evidence.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -307,11 +307,18 @@
             "items": {
               "type": "string"
             }
+          },
+          "jobId": {
+            "type": "string",
+            "description": "Filter the call list by background job ID; collect job_output first."
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Call list continuation offset; default 0."
           }
         },
         "required": [
-          "assetId",
-          "callIds"
+          "assetId"
         ]
       }
     },

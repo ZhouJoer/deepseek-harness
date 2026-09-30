@@ -284,6 +284,19 @@ export class SecurityController {
     return project.id
   }
 
+  /** Authorize analysis metadata and evidence for the collecting role's assigned asset.
+   * @param sessionId - collecting Session.
+   * @param assetId - target association within the Session's project scope.
+   * @returns active project identity.
+   */
+  analysisAsset(sessionId: string, assetId: string): string {
+    const project = this.analysisProject(sessionId)
+    const binding = this.binding(sessionId)
+    if (!project || !binding || !toolsForRole(binding.role).includes('security_capture_analysis')) throw new Error('Analysis collection role required')
+    if (!this.view(sessionId).records.some(item => item.kind === 'asset' && item.value.id === assetId)) throw new Error('Asset is outside the session scope')
+    return project
+  }
+
   /** Save caller-owned committed analysis logs as auxiliary evidence.
    * @param sessionId - collecting Session.
    * @param assetId - assigned target association, not an assertion that the script measured it.
@@ -298,13 +311,7 @@ export class SecurityController {
   }
   private async captureAnalysisImpl(sessionId: string, assetId: string, callIds: string[], bytes: Uint8Array,
     signal: AbortSignal): Promise<SecurityRecord> {
-    const authorize = () => {
-      const project = this.analysisProject(sessionId)
-      const binding = this.binding(sessionId)
-      if (!project || !binding || !toolsForRole(binding.role).includes('security_capture_analysis')) throw new Error('Analysis collection role required')
-      if (!this.view(sessionId).records.some(item => item.kind === 'asset' && item.value.id === assetId)) throw new Error('Asset is outside the session scope')
-      return project
-    }
+    const authorize = () => this.analysisAsset(sessionId, assetId)
     authorize()
     signal.throwIfAborted()
     const requestHash = createHash('sha256').update(JSON.stringify({ assetId, callIds })).digest('hex')
