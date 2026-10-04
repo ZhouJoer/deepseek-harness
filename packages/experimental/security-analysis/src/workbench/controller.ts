@@ -19,6 +19,7 @@ import {
   evidenceSchema,
   bindingSchema,
   childReportSchema,
+  delegationSchema,
   knowledgeEntrySchema,
   operationSchema,
   type AnalysisOperation,
@@ -28,10 +29,12 @@ import {
   type Engagement,
   type SessionBinding,
   type WorkbenchView,
+  type SecurityDelegation,
+  type SecurityDelegationId,
 } from './model.ts'
 import type { SecurityJournal } from './journal.ts'
 import type { SecurityActivityStore } from './activity.ts'
-import { canObserve, toolsForRole, type DelegatedRole } from './roles.ts'
+import { canObserve, toolsForRole, resolveTask, type DelegatedRole } from './roles.ts'
 import { findingHash } from './assessment.ts'
 import { reportPrompt, renderReport, type ReportLimits } from './report.ts'
 import { importSource } from './source.ts'
@@ -80,6 +83,8 @@ const actions = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('web-target'), environmentId: text, label: text, pathPrefix: text.default('/') }).strict(),
   z.object({ kind: z.literal('revise-finding'), findingId: text, title: text, explanation: text, conditions: text, evidenceIds: z.array(text).min(1) }).strict(),
   z.object({ kind: z.literal('conclude'), reviewId: text }).strict(),
+  z.object({ kind: z.literal('delegation-disposition'), delegationId: text,
+    decision: z.enum(['accepted', 'needs-more', 'rejected']), reason: text }).strict(),
   z.object({ kind: z.literal('report') }).strict(),
   z.object({ kind: z.literal('template'), assetId: text }).strict(),
   z.object({ kind: z.literal('finish'), checkId: text, evidenceIds: z.array(text), rationale: text }).strict(),
@@ -334,7 +339,122 @@ export class SecurityController {
     await this.activity?.attachEvidence(result.value.engagementId, sessionId, callIds, result.value.id)
     return result
   }
-  /** Save a validated child summary without treating it as original evidence.
+  /** Find the assignment already admitted for a logged coordinator call.
+   * @param sessionId - original coordinator Session.
+   * @param callId - stable logged tool call.
+   * @returns the saved assignment, including settlements from previous Host lifetimes.
+   */
+  delegationForCall(sessionId: string, callId: string): SecurityDelegation | undefined {
+    const record = this.journal.view().records.find(item => item.kind === 'delegation'
+      && item.value.parentSessionId === sessionId && item.value.callId === callId)
+    return record?.kind === 'delegation' ? record.value : undefined
+  }
+
+  /** Save a bounded assignment before starting its worker.
+   * @param sessionId - coordinating Session whose scope is captured now.
+   * @param callId - logged tool call used for admission idempotency.
+   * @param input - question, completion criterion, compatible role/task and optional retry.
+   * @returns the committed assignment; a repeated call retains its original identity.
+   */
+  async admitDelegation(sessionId: string, callId: string, input: Pick<SecurityDelegation,
+    'assetId' | 'role' | 'task' | 'question' | 'criterion'> & { reason?: string; retryOf?: string }): Promise<SecurityDelegation> {
+    const snapshot = this.journal.view()
+    const binding = this.requireBinding(snapshot, sessionId)
+    if (binding.role !== 'coordinator') throw new Error('Coordinator role required')
+    const assignment = delegationSchema.parse({ ...input, id: randomUUID(), engagementId: binding.engagementId,
+      checkpointId: this.checkpointId(sessionId), parentSessionId: sessionId, callId, createdAt: Date.now(), status: 'pending' })
+    resolveTask(assignment.role, assignment.task)
+    await this.journal.commit('delegation:' + JSON.stringify([sessionId, callId]), undefined, { sessionId, callId, input }, (view) => {
+      const current = this.requireBinding(view, sessionId)
+      const project = this.project(view, assignment.engagementId)
+      if (current.role !== 'coordinator' || current.engagementId !== assignment.engagementId)
+        throw new Error('Coordinator project changed before delegation admission')
+      if (project.stopped || project.archived) throw new Error('Project is inactive or stopped')
+      if (!view.records.some(item => item.kind === 'asset' && item.value.id === assignment.assetId
+        && item.value.engagementId === assignment.engagementId)) throw new Error('Asset is outside project scope')
+      if (assignment.retryOf) {
+        const previous = view.records.find(item => item.kind === 'delegation' && item.value.id === assignment.retryOf)
+        if (previous?.kind !== 'delegation' || previous.value.engagementId !== assignment.engagementId
+          || previous.value.assetId !== assignment.assetId) throw new Error('Retry must reference an assignment for the same project asset')
+        if (previous.value.status === 'pending' || previous.value.status === 'running')
+          throw new Error('Wait for the previous assignment to settle before retrying')
+      }
+      return [{ kind: 'delegation', value: assignment }]
+    })
+    const saved = this.delegationForCall(sessionId, callId)
+    if (!saved) throw new Error('Delegation admission was not committed')
+    return saved
+  }
+
+  /** Link the live job identity without changing its execution state.
+   * @param id - committed assignment.
+   * @param jobId - job registry identity.
+   * @returns completion after the link is durable.
+   */
+  async attachDelegationJob(id: SecurityDelegationId, jobId: string): Promise<void> {
+    await this.journal.commit(randomUUID(), undefined, { id, jobId }, (view) => {
+      const record = this.requireDelegation(view, id)
+      return [{ kind: 'delegation', value: delegationSchema.parse({ ...record, jobId }) }]
+    })
+  }
+
+  /** Bind a fresh child to the assignment's captured project and direction.
+   * @param id - committed assignment, independent of the parent's later project selection.
+   * @param childSessionId - exact child published by the subagent provider.
+   * @returns completion after role admission and the child link are durable.
+   */
+  async bindDelegationChild(id: SecurityDelegationId, childSessionId: string): Promise<void> {
+    await this.journal.commit(randomUUID(), undefined, { id, childSessionId }, (view) => {
+      const assignment = this.requireDelegation(view, id)
+      const project = this.project(view, assignment.engagementId)
+      if (project.stopped || project.archived) throw new Error('Project is inactive or stopped')
+      if (assignment.status !== 'pending') throw new Error('Assignment is no longer awaiting a worker')
+      return [{ kind: 'binding', value: bindingSchema.parse({ sessionId: childSessionId,
+        engagementId: assignment.engagementId, assetIds: [assignment.assetId], role: assignment.role,
+        checkpointId: assignment.checkpointId }) }, { kind: 'delegation', value: delegationSchema.parse({
+        ...assignment, status: 'running', startedAt: Date.now(),
+        child: { parentSessionId: assignment.parentSessionId, childSessionId, mode: 'one-shot' },
+      }) }]
+    })
+  }
+
+  /** Persist the worker outcome after its resources have reached quiescence.
+   * @param id - admitted assignment.
+   * @param outcome - terminal execution facts and, on completion, its structured report.
+   * @param signal - worker cancellation checked before committing successful completion.
+   * @returns completion after terminal state is durable.
+   */
+  async settleDelegation(id: SecurityDelegationId, outcome: {
+    status: 'completed' | 'failed' | 'cancelled' | 'interrupted'
+    detail?: string
+    timedOut?: boolean
+    report?: SecurityDelegation['report']
+  }, signal?: AbortSignal): Promise<void> {
+    await this.journal.commit(randomUUID(), undefined, { id, outcome }, (view) => {
+      const assignment = this.requireDelegation(view, id)
+      if (assignment.status !== 'pending' && assignment.status !== 'running') return [{ kind: 'delegation', value: assignment }]
+      if (outcome.status === 'completed') {
+        signal?.throwIfAborted()
+        if (!assignment.child || !outcome.report) throw new Error('Completed assignment requires a child report')
+        const project = this.project(view, assignment.engagementId)
+        if (project.stopped || project.archived) throw new Error('Project is inactive or stopped')
+        for (const evidenceId of outcome.report.evidenceIds) {
+          if (!view.records.some(item => item.kind === 'evidence' && item.value.id === evidenceId
+            && item.value.engagementId === assignment.engagementId && item.value.assetId === assignment.assetId))
+            throw new Error('Child report cites unavailable or foreign evidence')
+        }
+      }
+      return [{ kind: 'delegation', value: delegationSchema.parse({ ...assignment, ...outcome, settledAt: Date.now() }) }]
+    })
+  }
+
+  private requireDelegation(view: WorkbenchView, id: SecurityDelegationId): SecurityDelegation {
+    const record = view.records.find(item => item.kind === 'delegation' && item.value.id === id)
+    if (record?.kind !== 'delegation') throw new Error('Unknown delegation')
+    return record.value
+  }
+
+  /** Save a legacy child summary without treating it as original evidence.
    * @param sessionId - child Session bound by the Host.
    * @param input - structured report returned by the child.
    * @returns completion after the summary is persisted. */
@@ -652,6 +772,15 @@ export class SecurityController {
               })) throw new Error('Conclusions require a completed validation plan')
             }
             return [{ kind: 'finding', value: { ...item.value, status: review.value.verdict, review: review.value.id } }]
+          }
+          case 'delegation-disposition': {
+            const item = scoped('delegation', action.delegationId)
+            if (item.kind !== 'delegation') throw new Error('Delegation required')
+            if (item.value.status === 'pending' || item.value.status === 'running') throw new Error('Wait for the assignment to settle')
+            if (action.decision === 'accepted' && (item.value.status !== 'completed' || !item.value.report))
+              throw new Error('Only a completed structured report can be accepted')
+            return [{ kind: 'delegation', value: delegationSchema.parse({ ...item.value,
+              disposition: { decision: action.decision, reason: action.reason, sessionId, createdAt: Date.now() } }) }]
           }
           case 'import-legacy': {
             const imported = await this.artifacts.import(action.path, this.options.importRoots)
@@ -1059,6 +1188,9 @@ export class SecurityController {
           : item,
       )
     for (const item of view.records) {
+      if (item.kind === 'delegation' && (item.value.status === 'pending' || item.value.status === 'running'))
+        records.push({ kind: 'delegation', value: { ...item.value, status: 'interrupted', settledAt: Date.now(),
+          detail: 'Host restarted before the worker settled; review saved evidence before dispatching another assignment' } })
       if (item.kind === 'plan' && item.value.status === 'approved')
         records.push({ kind: 'plan', value: { ...item.value, status: 'revoked', approvedUntil: 0 } })
       if (item.kind === 'execution' && item.value.status === 'running')

@@ -17,6 +17,7 @@ const project = (id: string): WorkbenchView => ({ revision: 1, records: [recordS
 
 it('replaces the loading message with a retryable error when the Host stream is unavailable', async () => {
   render(<ConversationProgress sessionId={SessionId('session')} t={makeTranslate(en, common)}
+    openChild={vi.fn()}
     subscribeReset={() => () => {}} openDashboard={() => {}}
     followSessionView={vi.fn(() => { throw new Error('Remote method unavailable') })}
     followActivity={async function* () {}} activityDetails={async () => ({ items: [], next: null, through: 0 })} />)
@@ -30,6 +31,7 @@ it('shows newly linked task activity in the sidebar without extra conversation c
   let selectionSignal: AbortSignal | undefined
   let activitySignal: AbortSignal | undefined
   const api = {
+    openChild: vi.fn(),
     t: makeTranslate(en, common), sessionId: SessionId('session'), subscribeReset: () => () => {},
     followSessionView: async function* (_id: SessionId, signal: AbortSignal) {
       selectionSignal = signal
@@ -93,6 +95,7 @@ it('reconnects the selection stream and switches to the newly selected project',
   const signals: AbortSignal[] = []
   const followed: string[] = []
   const props = {
+    openChild: vi.fn(),
     sessionId: SessionId('session'), t: makeTranslate(en, common),
     subscribeReset: (listener: () => void) => { resets.add(listener); return () => { resets.delete(listener) } },
     followSessionView: async function* (_id: SessionId, signal: AbortSignal) {
@@ -117,4 +120,24 @@ it('reconnects the selection stream and switches to the newly selected project',
   expect(screen.queryByText('Alpha')).toBeNull()
   mounted.unmount()
   expect(signals.every(signal => signal.aborted)).toBe(true)
+})
+
+it('keeps the running indicator visible for a child without counting it as a tool invocation', async () => {
+  const view = project('Alpha')
+  view.records.push(recordSchema.parse({ kind: 'delegation', value: {
+    id: 'child-task', engagementId: 'Alpha', assetId: 'sample', checkpointId: '', parentSessionId: 'session',
+    callId: 'delegate', role: 'researcher', task: 'assessment', question: 'Check the documentation',
+    criterion: 'Return evidence references', createdAt: 1, status: 'running',
+  } }))
+  render(<ConversationProgressEntry sessionId={SessionId('session')} t={makeTranslate(en, common)}
+    subscribeReset={() => () => {}} openProgress={vi.fn()} openDashboard={vi.fn()}
+    followSessionView={async function* (_id, signal) {
+      yield view
+      if (!signal.aborted) await new Promise<void>((resolve) => { signal.addEventListener('abort', () => { resolve() }, { once: true }) })
+    }} followActivity={async function* (_id, signal) {
+      yield { type: 'snapshot', cursor: 0, briefs: [], usage: [], view }
+      if (!signal.aborted) await new Promise<void>((resolve) => { signal.addEventListener('abort', () => { resolve() }, { once: true }) })
+    }} />)
+  await screen.findByRole('img', { name: 'Running' })
+  await waitFor(() => { expect(screen.getByTitle('Tools & progress').textContent).toContain('0') })
 })

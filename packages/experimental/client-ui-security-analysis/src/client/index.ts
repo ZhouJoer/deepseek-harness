@@ -36,7 +36,7 @@ declare module '@deepseek-ai/dsh-api-session-controller/client' {
   interface SessionReferenceSourceMap { securityWorkbench: unknown }
 }
 /** Services required to mount security RPC and the input dock. */
-export const inject = ['remote', 'slots', 'locale', 'sessions', 'layout', 'workspaces', 'sidebarRight', 'sidebarRightTabs']
+export const inject = ['remote', 'slots', 'locale', 'sessions', 'layout', 'workspaces', 'uiWorkspace', 'sidebarRight', 'sidebarRightTabs']
 
 async function unwrap<T>(pending: Promise<RemoteResult<T>>): Promise<T> {
   const result = await pending
@@ -74,6 +74,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     const panel = 'security-projects' as MainPanelId
     scoped.slots.inject('sidebar.panellist', () => scoped.slots.register({ name: 'sidebar.panellist', id: panel, order: 30, label: () => scoped.locale.bind(NS)('title'), locale: NS }, ProjectIcon))
     const actions: WorkbenchActions = {
+      openChild: (address) => { scoped.uiWorkspace.openSession(address) },
       toolCatalog: projectActions.toolCatalog,
       toolPreferences: (id, input) => unwrap(remote.toolPreferences(id, input)),
       followActivity: (id, signal) => remote.followActivity(id, signal),
@@ -100,6 +101,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     }
     const dashboardActions: DashboardActions = {
       ...projectActions,
+      openChild: actions.openChild,
       followActivity: (id, signal) => remote.followActivity(id, signal),
       activityDetails: (id, checkpoint, offset, through) => unwrap(remote.activityDetails(id, checkpoint, offset, through)),
       projectArtifact: (id, hash) => unwrap(remote.projectArtifact(id, hash)),

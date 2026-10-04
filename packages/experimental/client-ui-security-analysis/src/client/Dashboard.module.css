@@ -128,3 +128,19 @@
 .emptyActivity { color: var(--dsw-alias-label-secondary); font-size: 11px; line-height: 1.6; }
 .nextAction { background: var(--dsw-alias-bg-module-platform); border-radius: 7px; padding: 9px 11px; line-height: 1.6; margin-bottom: 10px; }
 .stage > details > summary { padding: 4px 0; font-size: 11px; color: var(--dsw-alias-label-secondary); cursor: pointer; }
+.delegations { margin: 12px 0; }
+.delegations > .briefLabel { font-weight: 500; }
+.delegation { border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; padding: 10px; margin-top: 8px; font-size: 13px; line-height: 1.65; overflow-wrap: anywhere; }
+.delegation p { white-space: pre-wrap; margin: 6px 0; }
+.delegationHeader { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px; }
+.delegationHeader strong { font-weight: 500; }
+.delegationState,.delegationRole { color: var(--dsw-alias-label-secondary); font-size: 12px; }
+.delegationState[data-state='running'] { color: var(--dsw-alias-link); }
+.delegationState[data-state='failed'] { color: var(--dsw-alias-state-error-primary); }
+.delegationDecision { border-left: 2px solid var(--dsw-alias-border-l2); padding-left: 8px; margin-top: 8px; }
+.delegationDecision > span { font-weight: 500; }
+.delegation summary { color: var(--dsw-alias-label-secondary); cursor: pointer; padding: 4px 0; }
+.delegationFacts { margin: 8px 0; }
+.delegationFacts dt { color: var(--dsw-alias-label-secondary); margin-top: 8px; }
+.delegationFacts dd { margin: 2px 0 0; white-space: pre-wrap; }
+.delegationFacts ul { margin: 0; padding-left: 18px; }

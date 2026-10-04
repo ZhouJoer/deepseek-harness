@@ -31,3 +31,14 @@ it('shows a short static result while keeping its raw record collapsed', () => {
   fireEvent.click(view.getByText('技术详情'))
   expect(raw.closest('details')?.open).toBe(true)
 })
+
+it.each([false, true])('distinguishes dispatch from completion and preserves dispatch errors (error=%s)', (isError) => {
+  const block: ToolResultNode = { kind: 'tool-result', seq: 1, time: 1, callId: 'delegate',
+    call: { name: 'security_delegate', argsRaw: '{}' }, callTime: 0, isError, subCalls: [],
+    content: [{ type: 'text', text: JSON.stringify(isError ? { error: 'Capacity reached' } : { jobId: 'job' }) }] }
+  const props = { phase: 'result', block, callId: 'delegate', toolName: 'security_delegate', openFile: vi.fn(), loadImage: vi.fn(),
+    t: makeTranslate(zh) } as Parameters<typeof SecurityToolRow>[0]
+  const view = render(<SecurityToolRow {...props} />)
+  expect(view.getByText(isError ? zh.toolFailed : zh.toolDispatched)).toBeTruthy()
+  expect(view.queryByText(zh.toolDone)).toBeNull()
+})

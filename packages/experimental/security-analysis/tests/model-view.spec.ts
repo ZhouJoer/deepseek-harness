@@ -1,7 +1,7 @@
 /** Model pages preserve durable identities without repeating source bodies. @module */
 import { expect, it } from 'vitest'
 import { modelPage, recordDetail, commandReceipt, sourceEvidenceLines } from '../src/workbench/model-view.ts'
-import { evidenceSchema, type WorkbenchView } from '../src/workbench/model.ts'
+import { delegationSchema, evidenceSchema, type WorkbenchView } from '../src/workbench/model.ts'
 function fixture(): WorkbenchView {
   return { revision: 7, records: Array.from({ length: 20 }, (_, index) => ({ kind: 'evidence' as const,
     value: evidenceSchema.parse({ id: 'e' + String(index), engagementId: 'project', assetId: 'source', title: 'read',
@@ -9,6 +9,20 @@ function fixture(): WorkbenchView {
       provider: 'source', operation: 'read', toolVersion: 'fixture', request: {}, source: { sessionId: 'owner', callId: 'c' + String(index) },
       incomplete: false, createdAt: 1 }) })) }
 }
+it('lists assignment questions and dispositions while paging the full report separately', () => {
+  const assignment = delegationSchema.parse({ id: 'assignment', engagementId: 'project', assetId: 'asset', checkpointId: 'direction',
+    parentSessionId: 'parent', callId: 'call', role: 'web-analyst', task: 'assessment', question: 'Inspect authorization',
+    criterion: 'Resolve the entry check', createdAt: 1, status: 'completed',
+    report: { summary: '中文😀'.repeat(3000), evidenceIds: [], uncertainty: 'Caller unknown', nextSteps: [] },
+    disposition: { decision: 'needs-more', reason: 'Read the caller', sessionId: 'parent', createdAt: 2 } })
+  const view: WorkbenchView = { revision: 1, records: [{ kind: 'delegation', value: assignment }] }
+  const page = modelPage(view, { kind: 'delegation', offset: 0 }, 1024)
+  expect(page.records[0]?.value).toMatchObject({ id: 'assignment', title: 'Inspect authorization', role: 'web-analyst',
+    status: 'completed', disposition: 'needs-more', checkpointId: 'direction' })
+  expect(JSON.stringify(page)).not.toContain(assignment.report?.summary)
+  expect(Buffer.byteLength(JSON.stringify(page))).toBeLessThanOrEqual(1024)
+  expect(recordDetail(view, 'delegation', assignment.id, 0, 1, 1024).hasMore).toBe(true)
+})
 it('paginates large evidence projects within the byte budget without losing identities', () => {
   const view = fixture()
   const ids: string[] = []

@@ -53,7 +53,7 @@ flowchart TD
 <a id="checks-and-evidence"></a>
 ## Checks and evidence
 
-Each asset follows reconnaissance → surface analysis → assessment → controlled validation. Check dependencies, attempts, completion evidence and interruption status are domain records. Project completion cannot be inferred from one successful observation. Reopening a check records a reason.
+Research directions use reconnaissance, surface analysis, assessment and controlled validation to describe the current question. The coordinator chooses the next useful observation from the evidence and available resources, combines methods for mixed targets, and revisits earlier questions when needed. A reviewed static conclusion does not require an unnecessary runtime experiment. Check dependencies, attempts, completion evidence and interruption status are domain records. Project completion cannot be inferred from one successful observation. Reopening a check records a reason.
 
 Raw artifacts are persisted before their evidence references. Evidence links observations to the sample identity, tool invocation and completeness state; hypotheses and knowledge remain distinct records. SQLite stores append-only commands with operation IDs and expected revisions. The FTS index is derived and rebuildable. The [domain API reference](subsystems/security-workbench.md) owns record and Remote details.
 
@@ -66,12 +66,12 @@ The Session log stores model interaction and tool results. The domain journal st
 |---|---|---|
 | Coordinator | Decompose checks, delegate and assemble conclusions | Domain commands, observations, jobs and execution of approved plans |
 | Reconnaissance | Inventory one assigned asset | Binary observations and restricted Ghidra/Android inventory |
-| Reverse analyst | Examine entry points and weakness hypotheses | Approved static query operations, including decompilation |
-| Web analyst | Analyze assigned HTTP evidence and entry points | Evidence reads; request plans are executed by the coordinator after approval |
+| Reverse analyst | Examine entry points and weakness hypotheses | Static queries, including decompilation, and focused public research |
+| Web analyst | Analyze assigned source, HTTP evidence and entry points | Source and evidence reads, native scripts and focused public research; approved validation stays with the coordinator |
 | Researcher | Retrieve project evidence and public references | Evidence retrieval and Web research; no provider execution |
 | Reviewer | Check supporting and opposing evidence | Read existing evidence and return a structured assessment |
 
-Roles are bound to a project, Session and allowed assets. Children use fresh Sessions and return a summary, evidence references, uncertainty and next steps. Detailed interaction remains in the child Session. [Role/tool assignments and task prompts](../packages/experimental/security-analysis/src/workbench/roles.ts) define the current fixed roles; configurable role registration is future work.
+Roles are bound to a project, Session and allowed assets. The coordinator delegates independent questions when parallel work, context isolation or independent scrutiny justifies the handoff. Children use fresh Sessions and return a summary, evidence references, uncertainty and next steps. Detailed interaction remains in the child Session. Materials do not determine a fixed team: Web, firmware and Android investigations combine the [method skills](../packages/experimental/security-analysis/README.md#use-this-package) as needed. [Role/tool assignments and task prompts](../packages/experimental/security-analysis/src/workbench/roles.ts) define the current roles.
 
 Tool restrictions and `tools.guard()` complement checks at the domain execution entry. Children cannot approve plans, change environments or delegate again. The security composition disables general shell and PTC entry points; hidden tool cards alone are not authorization. Driver-owned `structured_output` is admitted in the child scope without adding it to the inherited-tool restriction list.
 

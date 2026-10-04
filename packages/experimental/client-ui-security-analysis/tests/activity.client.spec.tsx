@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /** Real-time research briefs stay concise and isolate subscription generations. @module */
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { en as common } from '@deepseek-ai/dsh-client-locale/src/locales/en.ts'
@@ -33,6 +33,7 @@ it('updates counts during a turn without adding a stage and preserves a return t
   }
   const details = vi.fn(async () => ({ items: [], next: null, through: 1 }))
   render(<ActivityPanel project="project" view={view} changed={changed} followActivity={followActivity}
+    openChild={vi.fn()}
     activityDetails={details} subscribeReset={() => () => {}} t={makeTranslate(en, common)} />)
   await screen.findByText('Live updates')
   const usage = { checkpointId: 'third', tool: 'ghidra', verified: true, total: 1, running: 1,
@@ -57,6 +58,7 @@ it('combines reference counts without verification badges and explains unsaved e
       { ...usage, verified: false, total: 2, completed: 1, failed: 1 }] }
   }
   render(<ActivityPanel project="project" view={view} changed={() => {}} followActivity={followActivity}
+    openChild={vi.fn()}
     activityDetails={async () => ({ items: [], next: null, through: 1 })}
     subscribeReset={() => () => {}} t={makeTranslate(en, common)} />)
   const card = await screen.findByRole('group', { name: 'radare2 ×3' })
@@ -77,6 +79,7 @@ it('aborts an old project stream and ignores its late frames', async () => {
     yield await done.promise
   }
   const props = { view: { revision: 0, records: [] }, changed: vi.fn(), followActivity,
+    openChild: vi.fn(),
     activityDetails: vi.fn(async () => ({ items: [], next: null, through: 0 })),
     subscribeReset: () => () => {}, t: makeTranslate(en, common) }
   const mounted = render(<ActivityPanel {...props} project="first" />)
@@ -89,4 +92,25 @@ it('aborts an old project stream and ignores its late frames', async () => {
     waits[1]!.done.resolve({ type: 'snapshot', briefs: [], cursor: 2, usage: [], view: { revision: 2, records: [] } })
   })
   expect(props.changed).toHaveBeenCalledExactlyOnceWith({ revision: 2, records: [] })
+})
+
+it('keeps question-scoped child work in its captured direction and sorts it by dispatch time', async () => {
+  const child = (id: string, checkpointId: string, createdAt: number) => recordSchema.parse({ kind: 'delegation', value: {
+    id, engagementId: 'project', assetId: 'sample', checkpointId, parentSessionId: 'parent', callId: id,
+    role: 'researcher', task: 'assessment', question: id, criterion: 'Cite the assigned evidence', createdAt, status: 'pending',
+  } })
+  const view: WorkbenchView = { revision: 1, records: [checkpoint('first', 'recon', 'Entry inventory'),
+    checkpoint('second', 'assessment', 'Access checks'), child('Later parser question', 'first', 2),
+    child('Initial parser question', 'first', 1), child('Caller question', 'second', 3), child('Unclassified question', '', 0)] }
+  render(<ActivityPanel project="project" view={view} changed={vi.fn()} openChild={vi.fn()}
+    followActivity={async function* () {}} activityDetails={async () => ({ items: [], next: null, through: 0 })}
+    subscribeReset={() => () => {}} t={makeTranslate(en, common)} />)
+  const first = screen.getByRole('heading', { name: 'Entry inventory' }).closest('article')!
+  const second = screen.getByRole('heading', { name: 'Access checks' }).closest('article')!
+  expect(within(first).getAllByRole('article').map(row => row.getAttribute('aria-label')))
+    .toEqual(['Initial parser question', 'Later parser question'])
+  expect(within(second).getByRole('article', { name: 'Caller question' })).toBeTruthy()
+  expect(within(first).queryByText('Caller question')).toBeNull()
+  expect(screen.getByRole('heading', { name: 'Unclassified records' }).closest('article')?.textContent).toContain('Unclassified question')
+  await waitFor(() => { expect(screen.getByText('Disconnected')).toBeTruthy() })
 })

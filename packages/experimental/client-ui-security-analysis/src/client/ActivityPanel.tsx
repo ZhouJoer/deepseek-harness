@@ -2,12 +2,17 @@
 import { useEffect, useRef, useState } from 'react'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import { MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { SecurityActivityBrief, SecurityActivityFrame, SecurityActivityPage, SecurityToolUsage, WorkbenchView } from '@deepseek-ai/dsh-experimental-security-analysis/client'
+import type { SecurityActivityBrief, SecurityActivityFrame, SecurityActivityPage, SecurityDelegation, SecurityToolUsage, WorkbenchView } from '@deepseek-ai/dsh-experimental-security-analysis/client'
 import type { NS } from './locales.ts'
+import { DelegationList } from './DelegationList.tsx'
 import css from './Dashboard.module.css'
 
-/** Project-scoped activity reads shared by the dashboard and embedded workbench. */
+/** Project-scoped activity reads and child-history navigation shared by progress views. */
 export interface ActivityActions {
+  /** Open the recorded one-shot child without continuing it.
+   * @param address - committed direct-parent history address.
+   */
+  openChild(this: void, address: NonNullable<SecurityDelegation['child']>): void
   followActivity(project: string, signal: AbortSignal): AsyncIterable<SecurityActivityFrame>
   activityDetails(project: string, checkpoint: string, offset: number, through?: number): Promise<SecurityActivityPage>
   subscribeReset(this: void, listener: () => void): () => void
@@ -69,9 +74,12 @@ export function ActivityPanel(props: Props) {
     finally { if (token === generation.current) setLoading(undefined) }
   }
   const checkpoints = props.view.records.filter(item => item.kind === 'checkpoint').map(item => item.value)
+  const delegations = props.view.records.filter(item => item.kind === 'delegation').map(item => item.value)
+    .sort((left, right) => left.createdAt - right.createdAt)
   const directions = [
-    ...(!checkpoints.length || usage.some(item => !item.checkpointId) || briefs.some(item => !item.checkpointId) ? [{ id: '', title: t('activityCurrent'), phase: undefined,
-      updatedAt: 0, reason: '', summary: '', next: '', evidenceIds: [] as string[], findings: [] as (typeof checkpoints)[number]['findings'] }] : []),
+    ...(!checkpoints.length || usage.some(item => !item.checkpointId) || briefs.some(item => !item.checkpointId)
+      || delegations.some(item => !item.checkpointId) ? [{ id: '', title: t('activityCurrent'), phase: undefined,
+        updatedAt: 0, reason: '', summary: '', next: '', evidenceIds: [] as string[], findings: [] as (typeof checkpoints)[number]['findings'] }] : []),
     ...checkpoints,
   ]
   return <section className={css.timeline} aria-label={t('activityTitle')}>
@@ -116,6 +124,8 @@ export function ActivityPanel(props: Props) {
             : summary ? <><span className={css.observation}>{t('activityObservation')}</span><MarkdownText text={summary} labels={markdownLabels} /></> : <p className={css.emptyActivity}>{t('activityNoConclusion')}</p>}
         </div>
         <div className={css.nextAction}><span className={css.briefLabel}>{t('activityNext')}</span><MarkdownText text={next || t('activityPending')} labels={markdownLabels} /></div>
+        <DelegationList items={delegations.filter(item => item.checkpointId === direction.id)} view={props.view}
+          openChild={props.openChild} t={t} />
         <details onToggle={(event) => { if (event.currentTarget.open) void read(direction.id) }}>
           <summary>{t('activityDetails')}</summary>
           {direction.reason && <p>{t('activityReason')}: {direction.reason}</p>}

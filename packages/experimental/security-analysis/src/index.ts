@@ -20,7 +20,7 @@ import { installModelSelection, type Agent } from '@deepseek-ai/dsh-agent'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import type {} from '@deepseek-ai/dsh-system-prompt'
-import type {} from '@deepseek-ai/dsh-jobs'
+import type { JobId } from '@deepseek-ai/dsh-jobs'
 import type {} from '@deepseek-ai/dsh-session-query'
 import { analysisCallPage, analysisLog } from './analysis-log.ts'
 import { installAnalysisBudget } from './analysis-budget.ts'
@@ -37,14 +37,14 @@ import { standaloneTool } from './local-tools.ts'
 import { modelPage, recordDetail, commandReceipt, sourceEvidenceLines } from './workbench/model-view.ts'
 import { SourceProvider } from './workbench/source.ts'
 import { BinaryProvider } from './workbench/binary.ts'
-import { toolsForRole, canObserve, delegationPrompt, resolveTask, taskKinds, type DelegatedRole } from './workbench/roles.ts'
+import { toolsForRole, canObserve, delegationPrompt, resolveTask, taskKinds } from './workbench/roles.ts'
 import { ArtifactStore } from './workbench/artifacts.ts'
 import { openSecurityJournal, type SecurityJournal } from './workbench/journal.ts'
 import { SecurityController, commandSchema } from './workbench/controller.ts'
 import { SecuritySearchIndex } from './workbench/search.ts'
 import type { SecurityEnvironment } from './workbench/providers.ts'
 import type { ToolboxDirectory, ToolboxConfiguration, ToolboxConfigurationResult, ToolboxFiles } from './toolbox-types.ts'
-import { operationSchema, childReportSchema, type WorkbenchView } from './workbench/model.ts'
+import { operationSchema, childReportSchema, type WorkbenchView, type SecurityDelegation, type SecurityDelegationId } from './workbench/model.ts'
 import { refineKnowledge, refinementPrompt } from './workbench/knowledge.ts'
 
 declare module '@deepseek-ai/dsh-llm' {
@@ -133,6 +133,8 @@ A security project is the saved analysis task containing materials, evidence and
 
 Use security_scope and security_capabilities when you need project state or tool details. Read long records and original observations in pages. Delegate a bounded asset question when independent analysis helps; obtain independent review before applying a conclusive finding. Static implementation evidence can support a reviewed conclusion without runtime execution. Identity, version and strings alone cannot. Runtime validation still requires an approved plan and security_execute. Reconcile interrupted checks before retrying; do not duplicate work to bypass recovery.
 
+Choose methods by the current materials and uncertainty; combine Web, firmware, Android and IoT methods as needed. Keep small or tightly dependent questions with the coordinator. Delegate only when time or context savings, additional evidence or independent review justify the handoff; explain that benefit with reason, give one question and a completion criterion, and keep shared mutable resources ordered. Stages do not require separate workers. Use security_scope kind delegation to inspect assignments and reports. After each worker settles, record security_command action delegation-disposition with delegationId, decision (accepted, needs-more or rejected) and reason. Acceptance records how the report informs the plan, never confirms a finding. Request more work with a new bounded security_delegate call using retryOf; workers are not resumed automatically. Reconcile contradictory reports against original evidence. Child reports are summaries, not original evidence or execution approval.
+
 Record findings only about target security behavior, with conditions, impact and uncertainty. Save reusable experience with remember only when it improves future vulnerability identification, validation or prevention. Tool errors, formatting repairs and command retries belong in operational state, not findings or experience. Only an operator can approve execution or publish shared knowledge. After a scope or operator-only denial, report the blocker once and stop actions requiring that missing authority until the user changes the configuration; do not retry equivalent requests through other commands.
 
 Collecting roles may use native file and shell tools to write and run Python, Bash or PowerShell analysis scripts in the workspace under existing DSH permissions. Discover executable paths and execution locations with security_environment. Container commands run through the Host Docker CLI in the selected running container. Collect background work with job_output. First call security_capture_analysis with assetId and no callIds to list capturable committed calls; use jobId to find collected background output. Then pass the returned callIds to save auxiliary evidence. Background job IDs are not call IDs. Script logs alone do not establish complete implementation evidence or approved runtime validation. Research and reviewer roles cannot execute scripts. Missing capabilities do not authorize another target or environment. For external source code, find the actual file in the official repository before fetching its raw URL. An HTTP error page is a failed retrieval, not source evidence; inspect repository listings or saved search results instead of guessing nearby filenames.
@@ -204,7 +206,10 @@ export default class SecurityWorkbench extends TypertRemoteService {
     maxOutputBytes: Schema.number().step(1).min(4096).default(1048576),
     maxDurationMs: Schema.number().step(1).min(1).max(2147483647).default(60000),
   })
-  private readonly creating = new Map<string, { assetId: string; role: DelegatedRole; preferences: ToolPreferences }>()
+  private readonly creating = new Map<string, { delegationId: SecurityDelegationId; preferences: ToolPreferences }>()
+  private readonly delegationAdmissions = new Map<string, { input: string
+    result: Promise<{ delegationId: SecurityDelegationId; jobId?: string }> }>()
+  private readonly delegationJobs = new WeakMap<Agent, Map<SecurityDelegationId, JobId>>()
   private readonly preferences = new Map<SessionId, ToolPreferences>()
   private readonly catalog: ToolCatalog
   private readonly toolConfiguration: LocalToolConfiguration | undefined
@@ -603,113 +608,19 @@ export default class SecurityWorkbench extends TypertRemoteService {
           assetId: { type: 'string', required: true },
           question: { type: 'string', required: true },
           criterion: { type: 'string', required: true },
+          reason: { type: 'string', description: 'Why independent work improves evidence quality, elapsed time or context use for this question.' },
+          retryOf: { type: 'string', description: 'Settled assignment to retry or supplement. Starts a fresh child; never resumes the previous worker.' },
           role: { type: 'string', required: true, enum: ['reconnaissance', 'reverse-analyst', 'web-analyst', 'researcher', 'reviewer'] },
           task: { type: 'string', enum: [...taskKinds], description: 'inventory for reconnaissance; surface or assessment for reverse-analyst; assessment for researcher; review for reviewer. Omission uses the role default.' },
         },
         output,
         execute: async (args, exec) => {
-          const parent = exec.agent
-          if (!parent) throw new Error('Security delegation requires a session')
-          const checkTask = resolveTask(args.role, args.task)
-          const controller = await this.ready
-          const binding = controller.binding(parent.id)
-          if (binding?.role !== 'coordinator') throw new Error('Coordinator role required')
-          if (
-            !controller.view(parent.id).records.some(item => item.kind === 'asset' && item.value.id === args.assetId)
-          )
-            throw new Error('Asset is outside project scope')
-          if (this.delegationCount >= config.maxConcurrentDelegations)
-            throw new Error('Delegation concurrency limit reached')
-          const jobId = ctx.jobs.start({
-            owner: parent.id,
-            kind: 'subagent',
-            label: args.question,
-            outputLimitBytes: config.maxOutputBytes,
-            run: () => {
-              const abort = new AbortController()
-              this.delegationCount++
-              const signal = AbortSignal.any([
-                abort.signal,
-                this.shutdown.signal,
-                AbortSignal.timeout(config.delegationTimeoutMs),
-              ])
-              const create = this.creationQueue.then(async () => {
-                this.creating.set(parent.id, { assetId: args.assetId, role: args.role,
-                  preferences: structuredClone(this.preferences.get(parent.id) ?? { toolIds: [], tags: [], collectionIds: [] }) })
-                try {
-                  return await ctx.subagents.start('spawn', {
-                    parent,
-                    signal,
-                    maxDepth: 1,
-                    label: args.question,
-                    prompt: [{ type: 'text', text: delegationPrompt({
-                      role: args.role, task: checkTask, assetId: args.assetId, question: args.question,
-                      criterion: args.criterion, durationMs: config.delegationTimeoutMs, maxOutputBytes: config.maxOutputBytes,
-                    }) }],
-                    outputSchema: {
-                      type: 'object',
-                      additionalProperties: false,
-                      properties: {
-                        summary: { type: 'string' },
-                        evidenceIds: { type: 'array', items: { type: 'string' } },
-                        uncertainty: { type: 'string' },
-                        nextSteps: { type: 'array', items: { type: 'string' } },
-                      },
-                      required: ['summary', 'evidenceIds', 'uncertainty', 'nextSteps'],
-                    },
-                  })
-                } finally {
-                  this.creating.delete(parent.id)
-                }
-              })
-              this.creationQueue = create.then(
-                () => {},
-                () => {},
-              )
-              const task = create
-                .then(async (run) => {
-                  try {
-                    const result = await run.result
-                    if (result.stopReason !== 'completed') throw new Error(`Delegated check ended: ${result.stopReason}`)
-                    const report = childReportSchema.parse(result.structured)
-                    const records = controller.view(parent.id).records
-                    if (
-                      report.evidenceIds.some(
-                        id =>
-                          !records.some(
-                            item =>
-                              item.kind === 'evidence' && item.value.id === id && item.value.assetId === args.assetId,
-                          ),
-                      )
-                    ) {
-                      throw new Error('Child report cites unavailable or foreign evidence')
-                    }
-                    await controller.saveChildReport(run.id, report)
-                    return { status: 'completed' as const, result: JSON.stringify({ childSessionId: run.id, report }) }
-                  } finally {
-                    await run.dispose()
-                  }
-                })
-                .catch((error: unknown) => ({
-                  status: signal.aborted ? ('killed' as const) : ('failed' as const),
-                  detail: error instanceof Error ? error.message : String(error),
-                }))
-              const release = controller.trackDelegation(binding.engagementId, abort, task)
-              this.pending.add(task)
-              const done = task.finally(() => {
-                release()
-                this.pending.delete(task)
-                this.delegationCount--
-              })
-              return {
-                cancel: () => {
-                  abort.abort(new Error('Delegation cancelled'))
-                },
-                done,
-              }
-            },
-          })
-          return json({ jobId })
+          if (!exec.agent) throw new Error('Security delegation requires a session')
+          return json(await this.delegate(exec.agent, exec.callId, {
+            ...args, task: resolveTask(args.role, args.task), question: args.question.trim(), criterion: args.criterion.trim(),
+            ...(args.reason === undefined ? {} : { reason: args.reason.trim() }),
+            ...(args.retryOf === undefined ? {} : { retryOf: args.retryOf.trim() }),
+          }, exec.signal))
         },
       }),
     )
@@ -741,7 +652,7 @@ export default class SecurityWorkbench extends TypertRemoteService {
       const pending = parent === undefined ? undefined : this.creating.get(parent)
       if (parent !== undefined && pending) {
         this.preferences.set(agent.id, structuredClone(pending.preferences))
-        await (await this.ready).bindChild(parent, agent.id, [pending.assetId], pending.role)
+        await (await this.ready).bindDelegationChild(pending.delegationId, agent.id)
       }
       const names = ctx.tools
         .schemas(agent)
@@ -825,6 +736,20 @@ export default class SecurityWorkbench extends TypertRemoteService {
           + JSON.stringify({ ...preferences, unavailableReferences: missing })
       },
     })
+    ctx.systemPrompt.context({ name: 'security:delegations', order: ctx.systemPrompt.getContextOrder('SANDBOX_POLICY'),
+      text: ({ agent }) => {
+        if (!agent || this.controller?.binding(agent.id)?.role !== 'coordinator') return ''
+        const assignments = this.controller.view(agent.id).records.filter(item => item.kind === 'delegation').map(item => item.value)
+        if (!assignments.length) return ''
+        const active = assignments.filter(item => item.status === 'pending' || item.status === 'running').length
+        const awaitingDisposition = assignments.filter(item => item.status !== 'pending' && item.status !== 'running' && !item.disposition).length
+        const retried = new Set(assignments.map(item => item.retryOf))
+        const needsMore = assignments.filter(item => item.disposition?.decision === 'needs-more' && !retried.has(item.id)).length
+        const interrupted = assignments.filter(item => item.status === 'interrupted' && !item.disposition).length
+        return 'Saved assignments for the selected project: ' + JSON.stringify({ active, awaitingDisposition, needsMore, interrupted })
+          + '. Read security_scope with kind delegation for questions, reports and failures. Record a coordinator disposition after evaluating each settled result.'
+      },
+    })
     ctx.effect(() => async () => {
       this.preferences.clear()
       this.shutdown.abort(new Error('Security service disposed'))
@@ -840,6 +765,109 @@ export default class SecurityWorkbench extends TypertRemoteService {
       }
     })
   }
+  private async delegate(parent: Agent, callId: string, input: Pick<SecurityDelegation,
+    'assetId' | 'role' | 'task' | 'question' | 'criterion'> & { reason?: string; retryOf?: string }, callerSignal: AbortSignal,
+  ): Promise<{ delegationId: SecurityDelegationId; jobId?: string }> {
+    const controller = await this.ready
+    const key = JSON.stringify([parent.id, callId])
+    const fingerprint = JSON.stringify([input.assetId, input.role, input.task,
+      input.question, input.criterion, input.reason, input.retryOf])
+    const pending = this.delegationAdmissions.get(key)
+    if (pending) {
+      if (pending.input !== fingerprint) throw new Error('Delegation call was reused for different input')
+      return pending.result
+    }
+    const previous = controller.delegationForCall(parent.id, callId)
+    if (previous) {
+      if (fingerprint !== JSON.stringify([previous.assetId, previous.role, previous.task, previous.question,
+        previous.criterion, previous.reason, previous.retryOf])) throw new Error('Delegation call was reused for different input')
+      const jobId = this.delegationJobs.get(parent)?.get(previous.id)
+      return { delegationId: previous.id, ...(jobId && this.ctx.jobs.list(parent.id).some(job => job.id === jobId) ? { jobId } : {}) }
+    }
+    callerSignal.throwIfAborted()
+    this.shutdown.signal.throwIfAborted()
+    if (this.delegationCount >= this.config.maxConcurrentDelegations) throw new Error('Delegation concurrency limit reached')
+    this.delegationCount++
+    const preferences = structuredClone(this.preferences.get(parent.id) ?? { toolIds: [], tags: [], collectionIds: [] })
+    const admit = async (): Promise<{ delegationId: SecurityDelegationId; jobId?: string }> => {
+      let assignment: SecurityDelegation | undefined
+      const ownership = { transferred: false }
+      try {
+        assignment = await controller.admitDelegation(parent.id, callId, input)
+        callerSignal.throwIfAborted()
+        this.shutdown.signal.throwIfAborted()
+        const captured = assignment
+        let attached = Promise.resolve()
+        const jobId = this.ctx.jobs.start({ owner: parent.id, kind: 'subagent', label: input.question,
+          outputLimitBytes: this.config.maxOutputBytes,
+          run: (job) => {
+            const abort = new AbortController()
+            const deadline = AbortSignal.timeout(this.config.delegationTimeoutMs)
+            const signal = AbortSignal.any([abort.signal, this.shutdown.signal, deadline])
+            attached = controller.attachDelegationJob(captured.id, job.id)
+            const create = this.creationQueue.then(async () => {
+              await attached
+              signal.throwIfAborted()
+              this.creating.set(parent.id, { delegationId: captured.id, preferences })
+              try {
+                return await this.ctx.subagents.start('spawn', { parent, signal, maxDepth: 1, label: input.question,
+                  prompt: [{ type: 'text', text: delegationPrompt({ ...input,
+                    durationMs: this.config.delegationTimeoutMs, maxOutputBytes: this.config.maxOutputBytes }) }],
+                  outputSchema: { type: 'object', additionalProperties: false,
+                    properties: { summary: { type: 'string' }, evidenceIds: { type: 'array', items: { type: 'string' } },
+                      uncertainty: { type: 'string' }, nextSteps: { type: 'array', items: { type: 'string' } } },
+                    required: ['summary', 'evidenceIds', 'uncertainty', 'nextSteps'] },
+                })
+              } finally { this.creating.delete(parent.id) }
+            })
+            this.creationQueue = create.then(() => {}, () => {})
+            const task = create.then(async (run) => {
+              let report: SecurityDelegation['report']
+              let output: string
+              try {
+                const result = await run.result
+                if (result.stopReason !== 'completed') throw new Error(`Delegated check ended: ${result.stopReason}`)
+                report = childReportSchema.parse(result.structured)
+                output = JSON.stringify({ delegationId: captured.id, childSessionId: run.id, report })
+                if (Buffer.byteLength(output, 'utf8') > this.config.maxOutputBytes)
+                  throw new Error('Delegated report exceeds maxOutputBytes; narrow the question')
+              } finally { await run.dispose() }
+              signal.throwIfAborted()
+              await controller.settleDelegation(captured.id, { status: 'completed', report }, signal)
+              return { status: 'completed' as const, result: output }
+            }).catch(async (error: unknown) => {
+              const detail = error instanceof Error ? error.message : String(error)
+              const status = signal.aborted ? 'cancelled' as const : 'failed' as const
+              await controller.settleDelegation(captured.id, { status, detail, timedOut: deadline.aborted })
+              return { status: signal.aborted ? 'killed' as const : 'failed' as const, detail }
+            })
+            const release = controller.trackDelegation(captured.engagementId, abort, task)
+            this.pending.add(task)
+            ownership.transferred = true
+            const done = task.finally(() => { release(); this.pending.delete(task); this.delegationCount-- })
+            return { cancel: () => { abort.abort(new Error('Delegation cancelled')) }, done }
+          },
+        })
+        const jobs = this.delegationJobs.get(parent) ?? new Map<SecurityDelegationId, JobId>()
+        jobs.set(captured.id, jobId)
+        this.delegationJobs.set(parent, jobs)
+        await attached
+        return { delegationId: captured.id, jobId }
+      } catch (error) {
+        if (assignment && !ownership.transferred) await controller.settleDelegation(assignment.id, {
+          status: callerSignal.aborted || this.shutdown.signal.aborted ? 'cancelled' : 'failed',
+          detail: error instanceof Error ? error.message : String(error),
+        })
+        throw error
+      } finally { if (!ownership.transferred) this.delegationCount-- }
+    }
+    const result = admit()
+    this.delegationAdmissions.set(key, { input: fingerprint, result })
+    this.pending.add(result)
+    try { return await result }
+    finally { this.delegationAdmissions.delete(key); this.pending.delete(result) }
+  }
+
   private intakeConfig(cwd: string | undefined): TaskIntakeConfig | undefined {
     const saved = cwd === undefined ? undefined : this.workspaceIntake?.get(cwd)
     if (saved && cwd !== undefined) return {

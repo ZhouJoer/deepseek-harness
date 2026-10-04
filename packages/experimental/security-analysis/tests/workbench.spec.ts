@@ -1016,3 +1016,62 @@ it('persists scoped child summaries and keeps legacy file assets readable on reo
     expect(reopened.view().records.find(item => item.kind === 'asset')?.value).toMatchObject({ id: assetId, format: 'pe' })
   } finally { await reopened.close() }
 })
+
+it('retains assignment scope across parent project changes and records coordinator disposition separately from findings', async () => {
+  const { controller, send, assetId, journal } = await harness()
+  const originalProject = controller.binding('parent')!.engagementId
+  await send({ kind: 'checkpoint', phase: 'assessment', title: 'Length handling', reason: 'Inspect a plausible path',
+    summary: '', next: 'Read the parser', evidenceIds: [], findingIds: [] })
+  const checkpointId = controller.checkpointId('parent')
+  const input = { assetId, role: 'reverse-analyst' as const, task: 'assessment' as const,
+    question: 'Does the parser check the declared length?', criterion: 'Identify validation or the missing check', reason: 'Inspect an independent parser' }
+  const assignment = await controller.admitDelegation('parent', 'parser-call', input)
+  expect(await controller.admitDelegation('parent', 'parser-call', input)).toEqual(assignment)
+  await expect(controller.admitDelegation('parent', 'parser-call', { ...input, question: 'Another question' })).rejects.toThrow('different input')
+  await expect(send({ kind: 'delegation-disposition', delegationId: assignment.id, decision: 'accepted', reason: 'Still running' })).rejects.toThrow('settle')
+  await expect(controller.admitDelegation('parent', 'early-retry', { ...input, retryOf: assignment.id })).rejects.toThrow('settle')
+  await send({ kind: 'create', title: 'Other task', objective: 'Inspect other data', environmentIds: ['local'], maxAttempts: 1 }, true)
+  await controller.bindDelegationChild(assignment.id, 'parser-child')
+  expect(controller.binding('parser-child')).toMatchObject({ engagementId: originalProject, checkpointId, role: 'reverse-analyst', assetIds: [assetId] })
+  const report = { summary: 'The parser needs a closer read.', evidenceIds: [], uncertainty: 'Caller conditions unknown', nextSteps: ['Read caller'] }
+  await controller.settleDelegation(assignment.id, { status: 'completed', report })
+  expect(controller.view('parent').records.some(item => item.kind === 'delegation')).toBe(false)
+  await expect(send({ kind: 'delegation-disposition', delegationId: assignment.id, decision: 'accepted', reason: 'Outside scope' })).rejects.toThrow('foreign')
+  await send({ kind: 'select', engagementId: originalProject }, true)
+  await expect(send({ kind: 'delegation-disposition', delegationId: assignment.id, decision: 'accepted', reason: 'Child cannot accept' }, false, 'parser-child')).rejects.toThrow('role')
+  await send({ kind: 'delegation-disposition', delegationId: assignment.id, decision: 'needs-more', reason: 'Caller conditions are unresolved' })
+  const retry = await controller.admitDelegation('parent', 'caller-call', { ...input, question: 'Who supplies the length?', retryOf: assignment.id })
+  expect(retry.id).not.toBe(assignment.id)
+  expect(retry.retryOf).toBe(assignment.id)
+  await send({ kind: 'delegation-disposition', delegationId: assignment.id, decision: 'accepted', reason: 'Use the limitation in planning' })
+  expect(journal.view().records.filter(item => item.kind === 'delegation').map(item => item.value)).toMatchObject([
+    { id: assignment.id, status: 'completed', report, disposition: { decision: 'accepted' } },
+    { id: retry.id, status: 'pending' },
+  ])
+  expect(controller.view('parent').records.some(item => item.kind === 'finding' || item.kind === 'review')).toBe(false)
+  expect(controller.binding('parser-child')?.report).toBeUndefined()
+})
+
+it('rejects foreign evidence and keeps failed and interrupted assignments available after reopening', async () => {
+  const { controller, send, assetId, journal, ctx } = await harness()
+  const input = { assetId, role: 'reconnaissance' as const, task: 'inventory' as const, question: 'List entry points', criterion: 'Return observed names' }
+  const failed = await controller.admitDelegation('parent', 'failed-call', input)
+  await controller.bindDelegationChild(failed.id, 'failed-child')
+  await expect(controller.settleDelegation(failed.id, { status: 'completed', report: {
+    summary: 'Foreign observation', evidenceIds: ['outside'], uncertainty: '', nextSteps: [],
+  } })).rejects.toThrow('foreign')
+  await controller.settleDelegation(failed.id, { status: 'failed', detail: 'Provider cleanup failed' })
+  await expect(send({ kind: 'delegation-disposition', delegationId: failed.id, decision: 'accepted', reason: 'Invalid acceptance' })).rejects.toThrow('completed structured report')
+  await send({ kind: 'delegation-disposition', delegationId: failed.id, decision: 'rejected', reason: 'No usable result' })
+  const pending = await controller.admitDelegation('parent', 'pending-call', input)
+  const running = await controller.admitDelegation('parent', 'running-call', input)
+  await controller.bindDelegationChild(running.id, 'running-child')
+  await controller.recover()
+  expect(controller.delegationForCall('parent', 'pending-call')).toMatchObject({ id: pending.id, status: 'interrupted' })
+  expect(controller.delegationForCall('parent', 'running-call')).toMatchObject({ id: running.id, status: 'interrupted', child: { childSessionId: 'running-child' } })
+  expect(controller.delegationForCall('parent', 'failed-call')).toMatchObject({ status: 'failed', disposition: { decision: 'rejected' } })
+  const saved = journal.view()
+  await journal.close()
+  const reopened = await openSecurityJournal(ctx)
+  try { expect(reopened.view()).toEqual(saved) } finally { await reopened.close() }
+})

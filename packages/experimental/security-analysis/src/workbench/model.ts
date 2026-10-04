@@ -2,6 +2,8 @@
 import { z } from 'zod'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import { brandString, type Branded } from '@deepseek-ai/dsh-brand'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import type { JobId } from '@deepseek-ai/dsh-jobs/brand'
 
 /** Identifies an assessment project. */
 export type EngagementId = Branded<'SecurityEngagement'>
@@ -17,6 +19,8 @@ export type SecurityCheckpointId = Branded<'SecurityCheckpoint'>
 export type EvidenceId = Branded<'SecurityEvidence'>
 /** Identifies one immutable validation plan. */
 export type ValidationPlanId = Branded<'SecurityValidationPlan'>
+/** Identifies one bounded assignment and its coordinator disposition. */
+export type SecurityDelegationId = Branded<'SecurityDelegation'>
 
 const text = z.string().trim().min(1)
 const id = text.max(128)
@@ -188,6 +192,23 @@ export const validationPlanSchema = z
 export const childReportSchema = z.object({
   summary: z.string(), evidenceIds: z.array(id), uncertainty: z.string(), nextSteps: z.array(z.string()),
 }).strict()
+/** Saved assignment and settlement; jobs retain ownership of live cancellation. */
+export const delegationSchema = z.object({
+  id: id.transform(brandString<SecurityDelegationId>), engagementId: id, assetId: id, checkpointId: z.string(),
+  parentSessionId: id.transform(brandString<SessionId>), callId: id,
+  role: roleSchema.exclude(['coordinator']), task: z.enum(['inventory', 'surface', 'assessment', 'review']),
+  question: text, criterion: text, reason: text.optional(), retryOf: id.transform(brandString<SecurityDelegationId>).optional(),
+  createdAt: z.number().int().nonnegative(), startedAt: z.number().int().nonnegative().optional(),
+  settledAt: z.number().int().nonnegative().optional(), jobId: id.transform(brandString<JobId>).optional(),
+  child: z.object({ parentSessionId: id.transform(brandString<SessionId>), childSessionId: id.transform(brandString<SessionId>),
+    mode: z.literal('one-shot') }).strict().optional(),
+  status: z.enum(['pending', 'running', 'completed', 'failed', 'cancelled', 'interrupted']),
+  detail: z.string().optional(), timedOut: z.boolean().optional(), report: childReportSchema.optional(),
+  disposition: z.object({ decision: z.enum(['accepted', 'needs-more', 'rejected']), reason: text,
+    sessionId: id.transform(brandString<SessionId>), createdAt: z.number().int().nonnegative() }).strict().optional(),
+}).strict()
+/** Durable work dispatched for one asset question, separate from finding verdicts. */
+export type SecurityDelegation = z.infer<typeof delegationSchema>
 /** A durable session selection; inactive bindings retain history without granting authority. */
 export const bindingSchema = z
   .object({
@@ -238,6 +259,7 @@ export const laboratorySchema = z.object({
 }).strict()
 /** Tagged project records; permanent deletion removes their owned history. */
 export const recordSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('delegation'), value: delegationSchema }).strict(),
   z.object({ kind: z.literal('checkpoint'), value: checkpointSchema }).strict(),
   z
     .object({

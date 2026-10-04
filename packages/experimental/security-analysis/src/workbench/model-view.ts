@@ -24,6 +24,10 @@ interface RecordSummary {
     startLine?: number
     limit?: number
     incomplete?: boolean
+    role?: string
+    task?: string
+    checkpointId?: string
+    disposition?: string
     hasDetails: true
   }
 }
@@ -62,6 +66,10 @@ export function modelPage(view: WorkbenchView, query: RecordQuery, maxBytes: num
       ...('label' in item.value ? { label: item.value.label.slice(0, 120) } : {}),
       ...('status' in item.value ? { status: item.value.status } : {}),
       ...(item.kind === 'finding' ? { findingHash: findingHash(item.value) } : {}),
+      ...(item.kind === 'delegation' ? { title: item.value.question.slice(0, 120), role: item.value.role,
+        task: item.value.task, assetId: item.value.assetId, checkpointId: item.value.checkpointId,
+        ...(item.value.disposition ? { disposition: item.value.disposition.decision } : { disposition: 'pending' }),
+      } : {}),
       ...(item.kind === 'evidence' ? {
         assetId: item.value.assetId, provider: item.value.provider,
         operation: item.value.operation, incomplete: item.value.incomplete,

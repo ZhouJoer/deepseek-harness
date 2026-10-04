@@ -32,7 +32,7 @@ Open **Security analysis** from the sidebar or the compact **Security workspace*
 
 -----
 
-Source file or directory assets provide file inventory, line reads and literal searches from the conversation workbench. Evidence cards label static observations, offline simulations and device validation, with failure and cleanup details. Project overviews and reports retain completed child Session summaries; original child interaction remains in Session navigation.
+Source file or directory assets provide file inventory, line reads and literal searches from the conversation workbench. Evidence cards label static observations, offline simulations and device validation, with failure and cleanup details. Each research direction lists recorded child questions, roles, execution states, returned summaries and the coordinator's report decisions. Expand a child task for its dispatch reason, completion criterion, evidence references, uncertainty and suggested next steps; **Open child conversation** opens its original one-shot history. Accepting a child report does not confirm a finding. Directions without saved assignments say that no child tasks are recorded; older child summaries remain in the advanced workbench history.
 
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
@@ -40,7 +40,7 @@ Source file or directory assets provide file inventory, line reads and literal s
 <details>
 <summary>Implementation details</summary>
 
-This package composes capabilities through a profile patch or input dock slot. It changes neither default profiles nor agent-loop. The browser calls the domain through generated Remote methods and uses bilingual dictionaries. Security tool cards show preparation and execution as running; result details and error status appear only after a result is logged. No invariant companion is published because this package owns disposable composition/UI registrations; the domain owns business state.
+This package composes capabilities through a profile patch or input dock slot. It changes neither default profiles nor agent-loop. The browser calls the domain through generated Remote methods and uses bilingual dictionaries. Security tool cards show preparation and execution as running; result details and error status appear only after a result is logged. A successful delegation receipt says **Dispatched**; the activity view follows the child's saved execution and report decisions. No invariant companion is published because this package owns disposable composition/UI registrations; the domain owns business state.
 
 </details>
 

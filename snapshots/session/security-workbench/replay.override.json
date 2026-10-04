@@ -51,6 +51,21 @@
         }
       },
       {
+        "type": "block-start",
+        "index": 1,
+        "blockType": "tool-call"
+      },
+      {
+        "type": "block-end",
+        "index": 1,
+        "block": {
+          "type": "tool-call",
+          "id": "load-android-method",
+          "arguments": "{\"name\":\"security-android\"}",
+          "name": "skill"
+        }
+      },
+      {
         "type": "usage",
         "usage": {
           "inputTokens": 3,

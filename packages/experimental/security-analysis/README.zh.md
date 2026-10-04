@@ -28,7 +28,7 @@ kind: "package-reference"
 
 在专用 `dsh` profile 中使用 [security-profile](../security-profile/README.zh.md)，添加 [security-web-profile](../security-web-profile/README.zh.md) 即可打开会话内工作台。默认通用 profile 不加载这些组合。
 
-通过常规 `skill` 工具加载 `security-investigation`，再按材料与问题组合 `security-web`、`security-firmware` 和 `security-iot-offline`。这些 [skill（技能）方法](src/methods.ts) 指导根据证据提出假设、设计可区分假设的检查、选择工具和限定委派范围。它们不安装工具，也不授予权限：现有角色检查、项目范围和执行审批仍决定执行权限。skill 指令提供方法指引，不承担安全隔离。
+通过常规 `skill` 工具加载 `security-investigation`，再按材料与问题组合 `security-web`、`security-firmware`、`security-android` 和 `security-iot-offline`。这些 [skill（技能）方法](src/methods.ts) 指导根据证据提出假设、设计可区分假设的检查、选择工具和限定委派范围。Web 调查追踪身份、输入和处理入口；固件调查连接提取组件与可达的使用方；Android 调查区分 APK/DEX 检查与明确选择的 adb 设备观察。无法访问设备时，设备行为保持未验证，不妨碍有价值的静态工作。方法不安装工具，也不授予权限：现有角色检查、项目范围和执行审批仍决定执行权限。
 
 1. 在已配置工作区的 Web 对话中描述任务，或创建项目并指定目标和已配置环境。从部署的 `importRoots` 导入 PE、ELF、APK、DEX 文件，或不可变源码文件或目录。
 2. 根据每项资产的研究问题选择下一步分析和 provider。APK 导入会分别测量 DEX 和 native 库，并保存父子关系。
@@ -72,14 +72,18 @@ JADX 接受 APK/DEX，并明确标记不完整反编译。adb 只操作指定设
 |---|---|---|
 | `coordinator` | 规划、汇总与验证 | 领域工具、原生脚本、网页资料、jobs/goal/todo；执行已批准的验证计划 |
 | `reconnaissance` | `inventory` | 原生脚本、二进制身份/十六进制/字符串、Ghidra 清单、固定 adb 查询、环境检查、证据检索 |
-| `reverse-analyst` | `surface`、`assessment` | 原生脚本、二进制检查、只读 Ghidra 查询、JADX 和固定 adb 查询、环境检查、证据检索 |
-| `web-analyst` | `surface`、`assessment` | 原生脚本、已分配的 HTTP 证据、不可变源码读取/搜索及环境检查 |
+| `reverse-analyst` | `surface`、`assessment` | 原生脚本、二进制检查、只读 Ghidra 查询、JADX 和固定 adb 查询、环境检查、证据检索与公开资料研究 |
+| `web-analyst` | `surface`、`assessment` | 原生脚本、已分配的 HTTP 证据、不可变源码读取/搜索、环境检查与公开资料研究 |
 | `researcher` | `assessment` | 项目证据、已审核知识、公开网页搜索与读取；不能执行样本或调用静态 provider |
 | `reviewer` | `review` | 指定资产的证据与知识检索；不能采集、访问网页或执行验证 |
 
 角色过滤在子 preset 初始化后执行，涵盖继承的原生工具和子会话局部的 `structured_output` 报告工具。Reviewer Session 保留专属 `security_review` 工具。
 
 每个子 agent 使用 fresh Session，接收角色提示词及兼容任务。[提示词与权限定义](src/workbench/roles.ts) 要求明确单一资产、问题、完成条件、时间/输出限额、证据引用、不确定性及下一步。每次工具执行都会检查角色，领域静态采集入口再次检查；仅隐藏 schema 不构成授权。子 agent 不能继续委派、执行计划、批准或共享。协调者依据报告提交候选记录。研究提示词禁止将私有样本内容发送到公共查询；尚未实现网络数据防泄漏机制。
+
+协调者自行处理简短或紧密依赖的问题，在并行推进、节省上下文或独立检查足以抵偿交接成本时委派。Web 和逆向分析员可以直接解决小的公开知识缺口；较大的独立资料研究适合交给 `researcher`。`security_delegate.reason` 保存预期收益。每个委派保留问题、完成条件、原始项目和资产、研究方向、子会话地址及执行结果。`security_scope` 的 `kind: "delegation"` 返回有界摘要和详情；已记录的运行时上下文提示未处理工作。协调者通过 `delegation-disposition` 记录 `accepted`、`needs-more` 或 `rejected` 及理由。采纳报告不代表确认发现。`retryOf` 将新的有界任务关联到已终结任务，不恢复原子会话。
+
+Job 负责取消并等待子任务清理。成功取得 job ID 只代表已派出，不代表完成；有效且未超限的报告在清理结束后才记为完成。停止或归档会取消活动委派并等待终结。Host 重启后，未完成委派标记为中断，不自动重跑。原始 Session 日志和证据仍可访问。历史 `binding.report` 摘要保持可读，不补造派工元数据；新报告归属于委派记录。
 
 尚无发现记录时，reviewer 可以检查已有证据，并返回包含证据引用和不确定性的结构化报告。该报告既不创建发现，也不记录对发现的正式裁决。需要正式裁决时，协调者先保存带证据的疑似发现，再由 reviewer 使用真实发现 ID 和当前哈希调用 `security_review`。
 

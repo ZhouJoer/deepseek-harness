@@ -58,6 +58,7 @@ export function ConversationProgressEntry(props: EntryProps) {
   const project = view.records.find(item => item.kind === 'engagement')?.value.id
   const [count, setCount] = useState<number>()
   const [running, setRunning] = useState(false)
+  const childRunning = view.records.some(item => item.kind === 'delegation' && (item.value.status === 'pending' || item.value.status === 'running'))
   const current = useRef(props)
   current.current = props
   useEffect(() => {
@@ -80,7 +81,7 @@ export function ConversationProgressEntry(props: EntryProps) {
     <button title={props.t('activityEntry')} onClick={() => { props.openProgress() }}>
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3 12V8m5 4V3m5 9V6" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" /></svg>
       {props.t('activityTools')} <span className={css.countBadge}>{error ? '—' : count ?? '—'}</span>
-      {running && <span className={css.runningDot} role="img" aria-label={props.t('running')} />}
+      {(running || childRunning) && <span className={css.runningDot} role="img" aria-label={props.t('running')} />}
     </button>
     <button onClick={() => { props.openDashboard() }}>{props.t('dashboardEntry')} ↗</button>
   </div>

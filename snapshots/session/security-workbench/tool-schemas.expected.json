@@ -353,6 +353,14 @@
           "criterion": {
             "type": "string"
           },
+          "reason": {
+            "type": "string",
+            "description": "Why independent work improves evidence quality, elapsed time or context use for this question."
+          },
+          "retryOf": {
+            "type": "string",
+            "description": "Settled assignment to retry or supplement. Starts a fresh child; never resumes the previous worker."
+          },
           "role": {
             "type": "string",
             "enum": [

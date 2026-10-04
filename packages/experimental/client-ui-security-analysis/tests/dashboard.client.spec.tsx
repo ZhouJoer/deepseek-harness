@@ -30,7 +30,7 @@ function harness(extra: object = {}) {
       yield { type: 'snapshot' as const, briefs: [], cursor: 0, view: { revision: 1, records: id === 'Alpha' ? [alpha, evidence] : [beta] }, usage: [] }
       if (!signal.aborted) await new Promise<void>((resolve) =>{  signal.addEventListener('abort', () =>{  resolve() }, { once: true }) })
     },
-    activityDetails: vi.fn(async () => ({ items: [], next: null, through: 0 })),
+    activityDetails: vi.fn(async () => ({ items: [], next: null, through: 0 })), openChild: vi.fn(),
     projectArtifact: vi.fn(async () => JSON.stringify({ text: 'Owned evidence', size: 14, truncated: false })),
     report: vi.fn(async () => '# Report'), findSession: vi.fn(async () => 's1'),
     createSession: vi.fn(async () => 'new'), associateSession: vi.fn(async () => {}), resumeProject: vi.fn(async () => {}),

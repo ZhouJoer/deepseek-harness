@@ -177,7 +177,7 @@ function independentTool(ctx: Context, name: string, execute = vi.fn(async () =>
 }
 
 async function load(inheritJobTool = false, knowledgeIntervalMs = 0,
-  options: { installations?: ToolInstallation[]; dedicatedModel?: boolean; analysisTurnTokens?: number; analysisCountCacheReads?: boolean; skills?: boolean; native?: boolean; taskIntake?: 'current' | 'other' | 'default' } = {}) {
+  options: { installations?: ToolInstallation[]; dedicatedModel?: boolean; analysisTurnTokens?: number; analysisCountCacheReads?: boolean; skills?: boolean; native?: boolean; taskIntake?: 'current' | 'other' | 'default'; maxConcurrentDelegations?: number; maxOutputBytes?: number; delegationTimeoutMs?: number } = {}) {
   const root = await mkdtemp(join(tmpdir(), 'dsh-workbench-loader-'))
   roots.push(root)
   const model = new ScopeModel()
@@ -254,6 +254,10 @@ async function load(inheritJobTool = false, knowledgeIntervalMs = 0,
                   : name === 'security'
                     ? { knowledgeIntervalMs, ...(options.dedicatedModel === false ? {} : { knowledgeProvider: 'fixture', knowledgeModel: 'fixture' }),
                       ...(options.analysisTurnTokens === undefined ? {} : { analysisTurnTokens: options.analysisTurnTokens }),
+                      ...(options.maxConcurrentDelegations === undefined ? {}
+                        : { maxConcurrentDelegations: options.maxConcurrentDelegations }),
+                      ...(options.maxOutputBytes === undefined ? {} : { maxOutputBytes: options.maxOutputBytes }),
+                      ...(options.delegationTimeoutMs === undefined ? {} : { delegationTimeoutMs: options.delegationTimeoutMs }),
                       ...(options.analysisCountCacheReads === undefined ? {}
                         : { analysisCountCacheReads: options.analysisCountCacheReads }),
                       ...(options.taskIntake ? { taskIntake: { maxAttempts: 3,
@@ -300,12 +304,12 @@ async function load(inheritJobTool = false, knowledgeIntervalMs = 0,
   })
   return { ctx, agent, controller, model, shell }
 }
-function execute(ctx: Context, agent: Agent, name: string, args: Record<string, unknown> = {}) {
+function execute(ctx: Context, agent: Agent, name: string, args: Record<string, unknown> = {}, callId = 'call-' + name) {
   return ctx.tools.execute({
     agent,
     name,
     arguments: args,
-    callId: ToolCallId('call-' + name),
+    callId: ToolCallId(callId),
     signal: new AbortController().signal,
   })
 }
@@ -475,13 +479,13 @@ describe('security workbench Loader composition', () => {
     for (const role of ['reconnaissance', 'reviewer'] as const) {
       const result = await execute(ctx, agent, 'security_delegate', {
         assetId: asset.value.id, role, question: 'Inspect the assigned scope.', criterion: 'Return a scoped structured report.',
-      })
+      }, 'delegation-' + role)
       expect(result.isError, JSON.stringify(result)).toBe(false)
       const { jobId } = JSON.parse(result.content.filter(block => block.type === 'text').map(block => block.text).join('')) as { jobId: string }
       const job = await ctx.jobs.wait(JobId(jobId), 10000, agent.id)
       expect(job.status, JSON.stringify(job)).toBe('completed')
       expect(ctx.jobs.read(JobId(jobId), agent.id).result).toContain('Assigned evidence review completed.')
-      expect(controller.view(agent.id).records.filter(item => item.kind === 'binding').filter(item => item.value.role === role)
+      expect(controller.view(agent.id).records.filter(item => item.kind === 'delegation').filter(item => item.value.role === role)
         .map(item => item.value.report)).toContainEqual(model.childReport)
       expect(controller.view(agent.id).records.filter(item => item.kind === 'finding' || item.kind === 'review')).toEqual([])
       const child = model.requests.at(-1)!
@@ -889,7 +893,7 @@ describe('security workbench Loader composition', () => {
     const catalog = events.find(event => event.type === 'user/message' && event.data.source.kind === 'skill-catalog')
     if (catalog?.type !== 'user/message' || catalog.data.source.kind !== 'skill-catalog') throw new Error('Missing skill catalog')
     expect(catalog.data.source.entries.map(entry => entry.name).sort()).toEqual([
-      'security-firmware', 'security-investigation', 'security-iot-offline', 'security-web',
+      'security-android', 'security-firmware', 'security-investigation', 'security-iot-offline', 'security-web',
     ])
     const loaded = events.find(event => event.type === 'tool/result')
     if (loaded?.type !== 'tool/result') throw new Error('Missing loaded skill result')
@@ -924,6 +928,8 @@ describe('security workbench Loader composition', () => {
   })
   it('enforces durable child roles even when a caller bypasses schema filtering', async () => {
     const { ctx, agent, controller } = await load(false, 0, { skills: true })
+    independentTool(ctx, 'web_search')
+    independentTool(ctx, 'web_fetch')
     const root = roots[roots.length - 1]!
     await writeFile(join(root, 'sample.bin'), 'sample strings')
     const send = operator(controller, agent)
@@ -931,7 +937,7 @@ describe('security workbench Loader composition', () => {
     await send({ kind: 'import', path: join(root, 'sample.bin'), label: 'sample' })
     const asset = controller.view(agent.id).records.find(item => item.kind === 'asset')!
     if (asset.kind !== 'asset') throw new Error('Missing asset')
-    for (const role of ['reconnaissance', 'reverse-analyst', 'researcher', 'reviewer'] as const) {
+    for (const role of ['reconnaissance', 'reverse-analyst', 'web-analyst', 'researcher', 'reviewer'] as const) {
       const id = SessionId('child-' + role)
       await controller.bindChild(agent.id, id, [asset.value.id], role)
       const { agent: child } = await ctx.agents.create({ sessionId: id, parentAgent: agent,
@@ -941,7 +947,9 @@ describe('security workbench Loader composition', () => {
       expect((await execute(ctx, child, 'skill', { name: 'security-investigation' })).isError).toBe(false)
       expect(visible).not.toContain('security_execute')
       expect(visible).not.toContain('security_delegate')
-      expect(visible.includes('security_static')).toBe(['reconnaissance', 'reverse-analyst'].includes(role))
+      expect(visible.includes('security_static')).toBe(['reconnaissance', 'reverse-analyst', 'web-analyst'].includes(role))
+      for (const name of ['web_search', 'web_fetch'])
+        expect(visible.includes(name)).toBe(['reverse-analyst', 'web-analyst', 'researcher'].includes(role))
       if (role === 'researcher' || role === 'reviewer') {
         expect((await execute(ctx, child, 'security_capture_analysis', { assetId: asset.value.id })).isError).toBe(true)
         expect(() => controller.analysisAsset(child.id, asset.value.id)).toThrow('Analysis collection role required')
@@ -1220,7 +1228,156 @@ it('keeps a delegated structured report available during budget wrap-up', async 
   expect(model.requests).toHaveLength(2)
   expect(model.requests[1]!.tools?.map(tool => tool.name)).toEqual(['structured_output'])
   expect(JSON.stringify(model.requests[1]!.messages)).toContain('security-analysis-budget')
-  expect(controller.view(agent.id).records.filter(item => item.kind === 'binding').map(item => item.value.report)).toContainEqual(model.childReport)
+  expect(controller.view(agent.id).records.filter(item => item.kind === 'delegation').map(item => item.value.report)).toContainEqual(model.childReport)
+})
+
+async function delegationFixture(
+  options: { maxConcurrentDelegations?: number; maxOutputBytes?: number; delegationTimeoutMs?: number } = {},
+) {
+  const fixture = await load(true, 0, options)
+  const { ctx, agent, controller } = fixture
+  ctx.jobs.attachController('delegation-test')
+  const root = roots[roots.length - 1]!
+  await writeFile(join(root, 'delegation.bin'), 'owned fixture')
+  const send = operator(controller, agent)
+  await send({ kind: 'create', title: 'Bounded work', objective: 'Inspect independent parser paths', environmentIds: ['local'], maxAttempts: 1 })
+  await send({ kind: 'import', path: join(root, 'delegation.bin'), label: 'sample' })
+  const asset = controller.view(agent.id).records.find(item => item.kind === 'asset')!
+  if (asset.kind !== 'asset') throw new Error('Missing asset')
+  const args = { assetId: asset.value.id, role: 'reverse-analyst' as const, task: 'assessment' as const,
+    question: 'Inspect length checks', criterion: 'Return implementation observations', reason: 'Independent parser inspection' }
+  return { ...fixture, send, args }
+}
+
+it('reserves worker capacity before asynchronous admission and replays one logged call without another child', async () => {
+  const { ctx, agent, controller, args } = await delegationFixture({ maxConcurrentDelegations: 1 })
+  args.question = '  ' + args.question + '  '
+  args.criterion = '  ' + args.criterion + '  '
+  args.reason = '  ' + args.reason + '  '
+  const provider = vi.fn((request: Parameters<typeof startInProcessRun>[0]) => startInProcessRun(request, {}))
+  ctx.effect(() => ctx.subagents.registerProvider({ name: 'spawn', inheritsParentContext: false,
+    capabilities: { agentOptions: true, outputSchema: true, depthLimit: true, toolFilter: true, persona: true }, start: provider }))
+  const entered = Promise.withResolvers<undefined>()
+  const continueAdmission = Promise.withResolvers<undefined>()
+  const original = controller.admitDelegation.bind(controller)
+  const admission = vi.spyOn(controller, 'admitDelegation').mockImplementation(async (...input) => {
+    entered.resolve(undefined); await continueAdmission.promise; return original(...input)
+  })
+  const first = execute(ctx, agent, 'security_delegate', args, 'first-assignment')
+  try {
+    await entered.promise
+    const replay = execute(ctx, agent, 'security_delegate', args, 'first-assignment')
+    const excess = await execute(ctx, agent, 'security_delegate', args, 'excess-assignment')
+    expect(excess.isError).toBe(true)
+    expect(JSON.stringify(excess)).toContain('concurrency limit')
+    continueAdmission.resolve(undefined)
+    const [result, repeated] = await Promise.all([first, replay])
+    expect(result.isError, JSON.stringify(result)).toBe(false)
+    expect(repeated.value).toEqual(result.value)
+    const receipt = result.value as { delegationId: string; jobId: string }
+    expect((await ctx.jobs.wait(JobId(receipt.jobId), 10000, agent.id)).status).toBe('completed')
+    expect(provider).toHaveBeenCalledTimes(1)
+    expect(admission).toHaveBeenCalledTimes(1)
+    expect((await execute(ctx, agent, 'security_delegate', args, 'first-assignment')).value).toEqual(receipt)
+    expect((await execute(ctx, agent, 'security_delegate', { ...args, question: 'Changed request' }, 'first-assignment')).isError).toBe(true)
+    agent.followup(webPrompt('Inspect settled work before continuing.'))
+    await agent.whenIdle()
+    expect(JSON.stringify(agent.session.snapshotEvents())).toContain('awaitingDisposition')
+    await execute(ctx, agent, 'security_command', { command: JSON.stringify({ operationId: 'accept-report',
+      expectedRevision: controller.view(agent.id).revision,
+      action: { kind: 'delegation-disposition', delegationId: receipt.delegationId, decision: 'accepted', reason: 'Use these observations to plan the next question' } }) })
+    const scope = scopeOf(agent.ctx)
+    if (!scope) throw new Error('Expected agent scope')
+    expect((await ctx.systemPrompt.assemble({ agent, scope })).contexts.find(item => item.name === 'security:delegations')?.text).toContain('"awaitingDisposition":0')
+  } finally { continueAdmission.resolve(undefined); admission.mockRestore(); await first }
+})
+
+it('replays saved assignments without returning job identities from another Host lifetime', async () => {
+  const { ctx, agent, controller, args } = await delegationFixture()
+  const assignment = await controller.admitDelegation(agent.id, 'historical-call', args)
+  const unrelated = ctx.jobs.start({ kind: 'subagent', owner: agent.id, label: 'Unrelated task',
+    run: () => ({ cancel() {}, done: Promise.resolve({ status: 'completed', result: 'Unrelated result' }) }) })
+  await controller.attachDelegationJob(assignment.id, unrelated)
+  await controller.settleDelegation(assignment.id, { status: 'interrupted', detail: 'Previous Host ended' })
+  const replay = await execute(ctx, agent, 'security_delegate', args, 'historical-call')
+  expect(replay.value).toEqual({ delegationId: assignment.id })
+  expect(ctx.jobs.read(unrelated, agent.id).result).toBe('Unrelated result')
+})
+
+it('persists worker creation failure and admits a fresh retry after its reservation is released', async () => {
+  const { ctx, agent, controller, args } = await delegationFixture({ maxConcurrentDelegations: 1 })
+  const result = await execute(ctx, agent, 'security_delegate', args, 'missing-provider')
+  const receipt = result.value as { jobId: string }
+  expect((await ctx.jobs.wait(JobId(receipt.jobId), 10000, agent.id)).status).toBe('failed')
+  expect(controller.delegationForCall(agent.id, 'missing-provider')).toMatchObject({ status: 'failed' })
+  ctx.effect(() => ctx.subagents.registerProvider({ name: 'spawn', inheritsParentContext: false,
+    capabilities: { agentOptions: true, outputSchema: true, depthLimit: true, toolFilter: true, persona: true },
+    start: request => startInProcessRun(request, {}) }))
+  const retry = await execute(ctx, agent, 'security_delegate', { ...args, retryOf: controller.delegationForCall(agent.id, 'missing-provider')!.id }, 'available-provider')
+  expect(retry.isError, JSON.stringify(retry)).toBe(false)
+  expect((await ctx.jobs.wait(JobId((retry.value as { jobId: string }).jobId), 10000, agent.id)).status).toBe('completed')
+})
+
+it('records a worker deadline separately from its cancelled execution status', async () => {
+  const { ctx, agent, controller, args } = await delegationFixture({ delegationTimeoutMs: 25 })
+  ctx.effect(() => ctx.subagents.registerProvider({ name: 'spawn', inheritsParentContext: false,
+    capabilities: { agentOptions: true, outputSchema: true, depthLimit: true, toolFilter: true, persona: true },
+    start: request => new Promise((_resolve, reject) => {
+      if (request.signal.aborted) reject(new Error('Worker deadline'))
+      else request.signal.addEventListener('abort', () => { reject(new Error('Worker deadline')) }, { once: true })
+    }) }))
+  const result = await execute(ctx, agent, 'security_delegate', args, 'deadline')
+  expect((await ctx.jobs.wait(JobId((result.value as { jobId: string }).jobId), 10000, agent.id)).status).toBe('killed')
+  expect(controller.delegationForCall(agent.id, 'deadline')).toMatchObject({ status: 'cancelled', timedOut: true })
+})
+
+it.each(['completed', 'cancelled', 'cleanup-failed'] as const)('settles %s only after child disposal', async (outcome) => {
+  const { ctx, agent, controller, args, send } = await delegationFixture()
+  const disposing = Promise.withResolvers<undefined>()
+  const released = Promise.withResolvers<undefined>()
+  ctx.effect(() => ctx.subagents.registerProvider({ name: 'spawn', inheritsParentContext: false,
+    capabilities: { agentOptions: true, outputSchema: true, depthLimit: true, toolFilter: true, persona: true },
+    start: async (request) => {
+      const run = await startInProcessRun(request, {})
+      return { ...run, dispose: async () => {
+        disposing.resolve(undefined); await released.promise; await run.dispose()
+        if (outcome === 'cleanup-failed') throw new Error('Fixture cleanup failed')
+      } }
+    } }))
+  const result = await execute(ctx, agent, 'security_delegate', args, 'cleanup-assignment')
+  expect(result.isError, JSON.stringify(result)).toBe(false)
+  const receipt = result.value as { jobId: string }
+  let stopping: Promise<WorkbenchView> | undefined
+  try {
+    await disposing.promise
+    expect(controller.delegationForCall(agent.id, 'cleanup-assignment')).toMatchObject({ status: 'running' })
+    expect(controller.delegationForCall(agent.id, 'cleanup-assignment')?.report).toBeUndefined()
+    if (outcome === 'cancelled') {
+      stopping = send({ kind: 'stop' })
+      await vi.waitFor(() => { expect(controller.view(agent.id).records.find(item => item.kind === 'engagement')?.value).toMatchObject({ stopped: true }) })
+    }
+  } finally { released.resolve(undefined); await stopping }
+  expect((await ctx.jobs.wait(JobId(receipt.jobId), 10000, agent.id)).status).toBe(outcome === 'completed' ? 'completed' : outcome === 'cancelled' ? 'killed' : 'failed')
+  expect(controller.delegationForCall(agent.id, 'cleanup-assignment')).toMatchObject({ status: outcome === 'cleanup-failed' ? 'failed' : outcome })
+  expect(controller.delegationForCall(agent.id, 'cleanup-assignment')?.report !== undefined).toBe(outcome === 'completed')
+})
+
+it.each(['oversized', 'foreign-evidence'] as const)('rejects %s child reports and releases their worker slot', async (failure) => {
+  const { ctx, agent, controller, model, args } = await delegationFixture({ maxConcurrentDelegations: 1, maxOutputBytes: 4096 })
+  ctx.effect(() => ctx.subagents.registerProvider({ name: 'spawn', inheritsParentContext: false,
+    capabilities: { agentOptions: true, outputSchema: true, depthLimit: true, toolFilter: true, persona: true },
+    start: request => startInProcessRun(request, {}) }))
+  const ordinary = model.childReport
+  model.childReport = failure === 'oversized' ? { ...ordinary, summary: '中文😀'.repeat(1024) } : { ...ordinary, evidenceIds: ['foreign'] }
+  const result = await execute(ctx, agent, 'security_delegate', args, 'invalid-report')
+  const receipt = result.value as { jobId: string }
+  expect((await ctx.jobs.wait(JobId(receipt.jobId), 10000, agent.id)).status).toBe('failed')
+  expect(controller.delegationForCall(agent.id, 'invalid-report')).toMatchObject({ status: 'failed' })
+  expect(controller.delegationForCall(agent.id, 'invalid-report')?.report).toBeUndefined()
+  model.childReport = ordinary
+  const retried = await execute(ctx, agent, 'security_delegate', { ...args, retryOf: controller.delegationForCall(agent.id, 'invalid-report')!.id }, 'retry-report')
+  expect(retried.isError, JSON.stringify(retried)).toBe(false)
+  expect((await ctx.jobs.wait(JobId((retried.value as { jobId: string }).jobId), 10000, agent.id)).status).toBe('completed')
 })
 
 it('periodically refines changed notes and stops its timer when unloaded', async () => {

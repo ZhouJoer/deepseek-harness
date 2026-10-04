@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { installSecurityMethods } from '../src/methods.ts'
 
 const contexts: Context[] = []
-const names = ['security-firmware', 'security-investigation', 'security-iot-offline', 'security-web']
+const names = ['security-android', 'security-firmware', 'security-investigation', 'security-iot-offline', 'security-web']
 
 afterEach(async () => {
   await Promise.all(contexts.splice(0).map(ctx => ctx.fiber.dispose()))

@@ -8,7 +8,7 @@
 
 `ToolboxDirectory` 包含已配置的环境选项和一份实测或显式未检测的 `ToolboxInventory`。其中的 `ToolboxTool` 条目分别描述可用性、调用方式和可选 provider 集成。这些只读观察不属于项目证据或执行权限；字段定义见[工具箱类型](../../packages/experimental/security-analysis/src/toolbox-types.ts)。
 
-[记录 schema](../../packages/experimental/security-analysis/src/workbench/model.ts)定义项目、资产、检查、证据、发现、计划、执行和已审核经验。每个命令向 storage-domain 日志追加一个修订，制品字节先于引用发布。Session 日志保留模型可见的工具结果；领域日志负责检查恢复。
+[记录 schema](../../packages/experimental/security-analysis/src/workbench/model.ts)定义项目、资产、检查、证据、发现、计划、执行、委派和已审核经验。每个命令向 storage-domain 日志追加一个修订，制品字节先于引用发布。Session 日志保留模型可见的工具结果；领域日志负责检查和委派恢复。`SecurityDelegation` 记录分配的问题、固定的项目和资产范围、执行结果、子报告及协调者处理意见。Jobs 管理运行中的执行；采纳报告不代表确认发现。
 
 `ToolCatalogSnapshot` 保存解析后的工具定义、集合、工具包与导入修订版本。`ToolPackPreview` 在显式导入前列出冲突。`ToolPreferences` 包含活跃会话的软偏好，会记录到模型上下文，但不写入项目持久化记录。导入、检测和生命周期语义见[工具配置](../../packages/experimental/security-analysis/README.zh.md)。
 

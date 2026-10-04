@@ -33,7 +33,8 @@ export function SecurityToolRow(props: ToolCallViewProps & PropsLocale<typeof NS
     if (!(error instanceof SyntaxError)) throw error
     // Non-JSON output stays available in the technical details.
   }
-  const state = props.phase !== 'result' ? t('toolRunning') : props.block.isError ? t('toolFailed') : t('toolDone')
+  const state = props.phase !== 'result' ? t('toolRunning') : props.block.isError ? t('toolFailed')
+    : t(toolName === 'security_delegate' ? 'toolDispatched' : 'toolDone')
   return <div className={css.row} data-tool={toolName}>
     <strong>{t(labels[toolName] ?? 'toolSecurity')}</strong><span>{state}</span>{summary && <span>{summary}</span>}
     {output && <details><summary>{t('toolDetails')}</summary><pre>{output}</pre></details>}

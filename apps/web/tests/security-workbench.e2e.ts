@@ -52,7 +52,8 @@ describe('web e2e: Security workbench', () => {
   let tripwire: ReturnType<typeof watchConsole>
 
   beforeAll(async () => {
-    scaffold = await launchWebScaffold({ extraOverlayPath: OVERLAY, extraInstallAnchors: INSTALL_ANCHORS })
+    scaffold = await launchWebScaffold({ extraOverlayPath: OVERLAY, extraInstallAnchors: INSTALL_ANCHORS,
+      agentPresets: { default: 'security' } })
     const executablePath = process.env.DSH_PLAYWRIGHT_EXECUTABLE_PATH
     browser = await chromium.launch(executablePath === undefined ? {} : { executablePath })
     page = await newEnglishPage(browser)
@@ -127,6 +128,23 @@ describe('web e2e: Security workbench', () => {
     expect(await activity.getByRole('heading', { level: 4 }).count()).toBe(3)
     await activity.getByText('Inspect calls and evidence', { exact: true }).last().click()
     await activity.getByText(/web-live-observation/).waitFor()
+    const assignment = await controller.admitDelegation(agent.id, 'web-delegation', {
+      assetId: asset.id, role: 'reviewer', task: 'review', question: 'Check the ownership evidence',
+      criterion: 'Identify what the saved observation establishes', reason: 'Independent evidence assessment',
+    })
+    const childWork = activity.getByRole('article', { name: 'Check the ownership evidence' })
+    await childWork.getByText('Awaiting start', { exact: true }).waitFor()
+    await controller.bindDelegationChild(assignment.id, 'web-review-child')
+    await childWork.getByText('Running', { exact: true }).waitFor()
+    await controller.settleDelegation(assignment.id, { status: 'completed', report: {
+      summary: 'The observation does not establish an authorization failure.', evidenceIds: [observed.value.id],
+      uncertainty: 'The caller has not been inspected.', nextSteps: ['Inspect the calling implementation.'],
+    } })
+    await childWork.getByText('The observation does not establish an authorization failure.', { exact: true }).waitFor()
+    await controller.command(agent.id, { operationId: 'web-delegation-decision', expectedRevision: controller.view(agent.id).revision,
+      action: { kind: 'delegation-disposition', delegationId: assignment.id, decision: 'needs-more', reason: 'Need caller evidence before concluding.' } })
+    await childWork.getByText('Need caller evidence before concluding.', { exact: true }).waitFor()
+    expect(controller.projectView(task.id).records.filter(item => item.kind === 'finding').map(item => item.value.status)).toEqual(['suspected'])
     await dashboard.getByRole('button', { name: 'Findings', exact: true }).click()
     await dashboard.getByRole('heading', { name: 'Input requires validation' }).waitFor()
     await dashboard.getByRole('button', { name: 'Evidence', exact: true }).click()
