@@ -182,6 +182,7 @@ export const builtinToolPack = parseToolPack({
       },
       'guide': 'Python bindings for Frida; module availability does not prove target access. Load the dedicated provider input guide for approved instrumentation and preserve role and execution permissions.',
       'skills': [
+        'security-dynamic',
         'security-firmware',
       ],
     },
@@ -347,6 +348,7 @@ export const builtinToolPack = parseToolPack({
     },
     {
       'id': 'tshark',
+      'skills': ['security-packet-analysis', 'security-mqtt'],
       'label': 'tshark',
       'description': 'Packet analysis and capture, USBPcap extcap / 抓包 USB 网络',
       'category': 'utility',

@@ -23,6 +23,43 @@ Resolve Android API, platform-version or library uncertainty with public primary
 </skill_content>"
 `;
 
+exports[`security method skills > discovers summaries and loads the requested instruction bodies > security-dynamic 1`] = `
+"<skill_content name="security-dynamic">
+<skill_resources>
+Base directory for this skill: <analysis-scripts>
+Resolve relative paths mentioned by this skill against the base directory before using them. Load referenced resources only as needed.
+</skill_resources>
+
+<skill_instructions>
+# security-dynamic
+
+Establish the exact executable, PID, process name and start identity using the existing Frida workflow. Use module_watch.js to distinguish initial modules from subsequent load/unload events; use function_trace.js for named exported functions and accurate backtraces. The module must already be loaded for function tracing. Run dynamic/prepare.py with explicit parameters to create final script bytes in the task scripts directory. Read that file and submit its exact content through the existing plan action with provider frida and operation script, explicit target, duration, output limit and cleanup. Execute only the immutable approved plan. These templates do not approve themselves, attach through shell, change arguments or return values, or support Android Java. Event limits mark evidence incomplete; call counts cover only the observation window. The provider unloads the script and detaches; a missing target, symbol or Frida installation blocks this check.
+
+Read security_capabilities for analysisDirectory and inspect the selected environment's tool installation before execution. Resolve resource paths against this skill's base directory. Bundled files are read-only; create task scripts/, outputs/ and tmp/ as needed and use analysisDirectory as the shell workdir. Inputs, outputs and the selected TShark executable use absolute paths. Use a new output path per run; scripts refuse overwrites. Choose limits for the task; example limits are illustrative. Offline scripts return bounded JSON to both the output file and the tool log, including input/script hashes, parameters, tool version and incomplete reasons. A failure exits nonzero; do not cite it as a completed observation. Keep decoded-output limits sufficient for PDML metadata, or narrow the input/filter. Save committed native calls through security_capture_analysis before citing their evidence. Research and reviewer roles may read these methods but cannot execute scripts. Installed package resources run on the native host; do not assume they exist in a container.
+
+## dynamic.module-watch
+
+Resource: dynamic/module_watch.js
+Dependencies: python, frida
+Parameters: --output <new absolute script path> (required); --max-events <event limit> (required)
+
+\`\`\`text
+python "<resourceBase>/dynamic/prepare.py" module-watch --output "<analysisDirectory>/scripts/<run>.js" --max-events 100
+\`\`\`
+
+## dynamic.function-trace
+
+Resource: dynamic/function_trace.js
+Dependencies: python, frida
+Parameters: --output <new absolute script path> (required); --max-events <event limit> (required); --module <loaded module name> (required); --symbol <exported function; repeatable> (required); --stack-depth <1..16> (required)
+
+\`\`\`text
+python "<resourceBase>/dynamic/prepare.py" function-trace --output "<analysisDirectory>/scripts/<run>.js" --max-events 100 --module "<module>" --symbol "<export>" --stack-depth 8
+\`\`\`
+</skill_instructions>
+</skill_content>"
+`;
+
 exports[`security method skills > discovers summaries and loads the requested instruction bodies > security-firmware 1`] = `
 "<skill_content name="security-firmware">
 <skill_resources>
@@ -58,6 +95,8 @@ Use these methods as guidance for the current question, not a mandatory checklis
 
 Choose methods from the available material and the unresolved question: security-web for source, captured requests or a permitted running application; security-firmware for images, extracted filesystems and native code; security-android for APK/DEX or an explicitly selected adb environment; security-iot-offline for captures, logs and protocol documents. Combine methods when a data flow crosses components. A role defines responsibility and permissions, not a required sequence of methods. Do not force every task through reconnaissance, analysis, design and runtime validation.
 
+Before writing analysis code, load security-packet-analysis for offline captures, security-mqtt for MQTT captures, or security-dynamic for native-process observations. Prefer an applicable bundled script with explicit parameters; write new analysis logic only when the library cannot answer the question.
+
 For each useful lead, distinguish observed facts, a testable hypothesis, plausible alternative explanations, and the evidence that would distinguish them. Choose the smallest appropriate check that can resolve the current uncertainty. Preserve the original observation, target identity, conditions, and limitations with the conclusion.
 
 Select tools by the missing evidence and their supported inputs, prerequisites, side effects, and output meaning. Inspect capabilities when uncertain. A successful exit, scanner match, version, or string alone does not confirm a vulnerability. Correlate implementation or behavior with the claimed impact. Classify a failed check as contrary evidence, an unsuitable method, or unavailable resources before choosing another action; do not repeat a failed invocation without new information.
@@ -90,6 +129,80 @@ For each protocol concern, name the property at issue and compare the available 
 Choose parsers and offline analysis tools that match the material and question. Preserve original captures and record decoding assumptions; distinguish parser errors from malformed traffic. Delegate independent protocol layers or a bounded cross-check against firmware when useful. Share evidence references and reconcile inconsistent interpretations.
 
 Offline material does not authorize discovering, connecting to, replaying traffic against, or changing devices. Any live validation needs an available resource within the current task scope and its execution permissions. When those conditions are absent, describe the exact remaining question and required observation, report the offline evidence and its limits, and finish without presenting a device-level claim as confirmed.
+</skill_instructions>
+</skill_content>"
+`;
+
+exports[`security method skills > discovers summaries and loads the requested instruction bodies > security-mqtt 1`] = `
+"<skill_content name="security-mqtt">
+<skill_resources>
+Base directory for this skill: <analysis-scripts>
+Resolve relative paths mentioned by this skill against the base directory before using them. Load referenced resources only as needed.
+</skill_resources>
+
+<skill_instructions>
+# security-mqtt
+
+Use sessions.py to correlate CONNECT, CONNACK, disconnects and repeated client IDs across TCP streams. Use topics.py for publish/subscription observations and topic counts. Pass --mqtt-port for an explicitly identified nonstandard plaintext MQTT TCP port. TShark owns decoding and TCP reassembly; multiple MQTT PDUs retain their frame and pduIndex. Missing handshakes, encrypted traffic, topic aliases and incomplete captures limit conclusions. Credentials and message payloads are excluded. Captured flags or successful connections do not establish broker authorization, replay acceptance or a vulnerability. No script connects to a broker.
+
+Read security_capabilities for analysisDirectory and inspect the selected environment's tool installation before execution. Resolve resource paths against this skill's base directory. Bundled files are read-only; create task scripts/, outputs/ and tmp/ as needed and use analysisDirectory as the shell workdir. Inputs, outputs and the selected TShark executable use absolute paths. Use a new output path per run; scripts refuse overwrites. Choose limits for the task; example limits are illustrative. Offline scripts return bounded JSON to both the output file and the tool log, including input/script hashes, parameters, tool version and incomplete reasons. A failure exits nonzero; do not cite it as a completed observation. Keep decoded-output limits sufficient for PDML metadata, or narrow the input/filter. Save committed native calls through security_capture_analysis before citing their evidence. Research and reviewer roles may read these methods but cannot execute scripts. Installed package resources run on the native host; do not assume they exist in a container.
+
+## mqtt.sessions
+
+Resource: mqtt/sessions.py
+Dependencies: python, tshark
+Parameters: --input <absolute capture path> (required); --output <new absolute result path> (required); --tshark <selected absolute executable path> (required); --timeout <seconds per invocation> (required); --max-packets <input frame limit> (required); --max-output-bytes <result byte limit> (required); --max-decode-bytes <decoded XML byte limit> (required); --filter <display filter> (optional); --stream <TCP stream number> (optional); --mqtt-port <TCP port; repeatable> (optional)
+
+\`\`\`text
+python "<resourceBase>/mqtt/sessions.py" --input "<capture>" --output "<analysisDirectory>/outputs/<run>.json" --tshark "<tshark>" --timeout 30 --max-packets 10000 --max-output-bytes 65536 --max-decode-bytes 16777216
+\`\`\`
+
+## mqtt.topics
+
+Resource: mqtt/topics.py
+Dependencies: python, tshark
+Parameters: --input <absolute capture path> (required); --output <new absolute result path> (required); --tshark <selected absolute executable path> (required); --timeout <seconds per invocation> (required); --max-packets <input frame limit> (required); --max-output-bytes <result byte limit> (required); --max-decode-bytes <decoded XML byte limit> (required); --filter <display filter> (optional); --stream <TCP stream number> (optional); --mqtt-port <TCP port; repeatable> (optional)
+
+\`\`\`text
+python "<resourceBase>/mqtt/topics.py" --input "<capture>" --output "<analysisDirectory>/outputs/<run>.json" --tshark "<tshark>" --timeout 30 --max-packets 10000 --max-output-bytes 65536 --max-decode-bytes 16777216
+\`\`\`
+</skill_instructions>
+</skill_content>"
+`;
+
+exports[`security method skills > discovers summaries and loads the requested instruction bodies > security-packet-analysis 1`] = `
+"<skill_content name="security-packet-analysis">
+<skill_resources>
+Base directory for this skill: <analysis-scripts>
+Resolve relative paths mentioned by this skill against the base directory before using them. Load referenced resources only as needed.
+</skill_resources>
+
+<skill_instructions>
+# security-packet-analysis
+
+Start with capture_summary.py to identify relevant protocols, peers and TCP streams. Use extract_packets.py with a display filter or stream to test a specific hypothesis. Add --field only for fields needed by the question. A frame limit applies before filtering; timestamps and counts describe selected frames, not the entire capture when incomplete. Load security-mqtt for MQTT messages.
+
+Read security_capabilities for analysisDirectory and inspect the selected environment's tool installation before execution. Resolve resource paths against this skill's base directory. Bundled files are read-only; create task scripts/, outputs/ and tmp/ as needed and use analysisDirectory as the shell workdir. Inputs, outputs and the selected TShark executable use absolute paths. Use a new output path per run; scripts refuse overwrites. Choose limits for the task; example limits are illustrative. Offline scripts return bounded JSON to both the output file and the tool log, including input/script hashes, parameters, tool version and incomplete reasons. A failure exits nonzero; do not cite it as a completed observation. Keep decoded-output limits sufficient for PDML metadata, or narrow the input/filter. Save committed native calls through security_capture_analysis before citing their evidence. Research and reviewer roles may read these methods but cannot execute scripts. Installed package resources run on the native host; do not assume they exist in a container.
+
+## tshark.capture-summary
+
+Resource: tshark/capture_summary.py
+Dependencies: python, tshark
+Parameters: --input <absolute capture path> (required); --output <new absolute result path> (required); --tshark <selected absolute executable path> (required); --timeout <seconds per invocation> (required); --max-packets <input frame limit> (required); --max-output-bytes <result byte limit> (required); --max-decode-bytes <decoded XML byte limit> (required); --filter <display filter> (optional); --stream <TCP stream number> (optional)
+
+\`\`\`text
+python "<resourceBase>/tshark/capture_summary.py" --input "<capture>" --output "<analysisDirectory>/outputs/<run>.json" --tshark "<tshark>" --timeout 30 --max-packets 10000 --max-output-bytes 65536 --max-decode-bytes 16777216
+\`\`\`
+
+## tshark.extract-packets
+
+Resource: tshark/extract_packets.py
+Dependencies: python, tshark
+Parameters: --input <absolute capture path> (required); --output <new absolute result path> (required); --tshark <selected absolute executable path> (required); --timeout <seconds per invocation> (required); --max-packets <input frame limit> (required); --max-output-bytes <result byte limit> (required); --max-decode-bytes <decoded XML byte limit> (required); --filter <display filter> (optional); --stream <TCP stream number> (optional); --field <TShark field; repeatable> (optional)
+
+\`\`\`text
+python "<resourceBase>/tshark/extract_packets.py" --input "<capture>" --output "<analysisDirectory>/outputs/<run>.json" --tshark "<tshark>" --timeout 30 --max-packets 10000 --max-output-bytes 65536 --max-decode-bytes 16777216
+\`\`\`
 </skill_instructions>
 </skill_content>"
 `;

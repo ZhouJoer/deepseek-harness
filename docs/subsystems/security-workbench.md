@@ -14,6 +14,8 @@ The experimental [security domain](../../packages/experimental/security-analysis
 
 ## Cordis API reference
 
+`AnalysisScript` describes a bundled analysis script: its stable ID, category, skill, resource paths, dependencies, parameters and example. The read-only catalog requires no project or environment and performs no tool probes; entries grant no execution authority. Fields are defined in [analysis script types](../../packages/experimental/security-analysis/src/analysis-script-types.ts).
+
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
 <a id="cordis-surface"></a>
@@ -58,6 +60,11 @@ Optional security profile service; default application compositions remain indep
  * @returns the catalog with legacy installation definitions and import revision.
  */
 @Remote('toolCatalog') toolCatalog(): ToolCatalogSnapshot
+
+/** Read the bundled script library without selecting a project or probing tools.
+ * @returns script parameters, dependencies and installed resource paths.
+ */
+@Remote('scriptCatalog') scriptCatalog(): AnalysisScript[]
 
 /** Validate an operator-selected pack without executing its commands.
  * @param input - JSON tool pack.

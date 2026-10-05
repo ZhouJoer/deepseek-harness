@@ -19,6 +19,7 @@ it('shows installed tools, missing dependencies and manual installation referenc
   } }
   const toolboxInventory = vi.fn(async () => data)
   render(<Toolbox toolboxInventory={toolboxInventory} toolboxDirectory={async () => data}
+    scriptCatalog={async () => []}
     toolCatalog={async () => ({ editable: false, revision: '', tools: [], packs: [], collections: [] })}
     previewToolPack={async () => { throw new Error('Unused') }} importToolPack={async () => { throw new Error('Unused') }} exportToolPack={async () => ''}
     toolboxConfiguration={async () => ({ editable: false, revision: '', tools: [] })}

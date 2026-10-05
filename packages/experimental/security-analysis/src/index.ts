@@ -4,6 +4,8 @@ import { installSecurityMethods } from './methods.ts'
 import { openWorkspaceIntake, type WorkspaceIntakeStore } from './workspace-intake.ts'
 import { resolveWorkspaceTaskAdmission, resolveTaskIntakeResources, validateTaskIntake, type TaskIntakeConfig } from './task-bootstrap.ts'
 import assert from 'node:assert/strict'
+import { analysisScripts } from './analysis-scripts.ts'
+import type { AnalysisScript } from './analysis-script-types.ts'
 import { randomUUID } from 'node:crypto'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import type { SessionId } from '@deepseek-ai/dsh-session'
@@ -1077,6 +1079,13 @@ export default class SecurityWorkbench extends TypertRemoteService {
   toolCatalog(): ToolCatalogSnapshot {
     this.toolConfiguration?.refresh()
     return this.catalog.read(this.config.environments.flatMap(env => env.tools))
+  }
+  /** Read the bundled script library without selecting a project or probing tools.
+   * @returns script parameters, dependencies and installed resource paths.
+   */
+  @Remote('scriptCatalog')
+  scriptCatalog(): AnalysisScript[] {
+    return analysisScripts()
   }
   /** Validate an operator-selected pack without executing its commands.
    * @param input - JSON tool pack.

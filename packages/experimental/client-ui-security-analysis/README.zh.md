@@ -28,6 +28,8 @@ kind: "package-reference"
 
 在专用 profile 中按顺序组合 `@deepseek-ai/dsh-base`、应用 bundle、`@deepseek-ai/dsh-experimental-security-profile`。Web 还需在最后加入 `@deepseek-ai/dsh-experimental-security-web-profile`。使用 `dsh --profile <name>` 启动。详见[安全分析](../security-analysis/README.zh.md)。
 
+工具箱的**分析脚本**标签展示内置流量、MQTT 和原生进程观察脚本。可搜索名称、用途或依赖，按分类筛选，展开查看分析思路、参数、安装路径、示例、输出和限制。浏览无需选择项目或环境，不检测或执行工具。关联技能向 Agent 提供同一组资源；执行及输出规则见[脚本库](../security-analysis/README.zh.md#use-this-package)。
+
 从侧栏的**安全分析**或输入框附近的紧凑**安全工作台**入口打开 Dashboard。工作台展示任务数量、名称与目标搜索以及状态筛选。**新建分析**先选择工作区，再暂存可选的文件、文件夹、文字或宿主路径；任务与材料保存后，通过新的原生 Session 发送目标。**更多选项**可选择环境。发送失败仅重试发送。任务详情提供总览、资产、发现、证据和报告；返回证据列表保留搜索条件，已保存的 Markdown 报告支持版本与格式选择。**分析助手**在右侧展开原生对话；折叠保留草稿，切换任务或离开页面释放会话引用。浏览历史不会创建 Session 或修改任务绑定。没有可访问的协调会话时，**继续分析**显式创建并关联会话。已停止任务需要明确恢复，恢复已移除任务仍保持停止。操作、重连及助手轮次结束后会刷新，也可手动刷新。
 
 -----

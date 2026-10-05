@@ -62,6 +62,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       toolboxInventory: (id, tools) => unwrap(remote.toolboxInventory(id, tools)),
       toolboxDirectory: id => unwrap(remote.toolboxDirectory(id)),
       toolCatalog: () => unwrap(remote.toolCatalog()),
+      scriptCatalog: () => unwrap(remote.scriptCatalog()),
       previewToolPack: input => unwrap(remote.previewToolPack(input)),
       importToolPack: (input, revision, replace) => unwrap(remote.importToolPack(input, revision, replace)),
       exportToolPack: id => unwrap(remote.exportToolPack(id)),

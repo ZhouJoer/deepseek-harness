@@ -1943,6 +1943,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the catalog with legacy installation definitions and import revision.',
       },
       {
+        signature: '@Remote(\'scriptCatalog\') scriptCatalog(): AnalysisScript[]',
+        description: 'Read the bundled script library without selecting a project or probing tools.',
+        parameters: [],
+        returns: 'script parameters, dependencies and installed resource paths.',
+      },
+      {
         signature: '@Remote(\'previewToolPack\') previewToolPack(input: string): ToolPackPreview',
         description: 'Validate an operator-selected pack without executing its commands.',
         parameters: [{ name: 'input', description: 'JSON tool pack.' }],
@@ -4730,6 +4736,22 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'AnalysisResult',
     declaration: 'export interface AnalysisResult {\n    bytes: Uint8Array;\n    mediaType: string;\n    summary: string;\n    incomplete: boolean;\n    toolVersion: string;\n    failure?: string;\n    cleanup?: string;\n    method?: \'static\' | \'simulation\' | \'device\';\n    observationKind?: \'inventory\' | \'implementation\';\n}',
+  },
+  {
+    name: 'AnalysisScript',
+    declaration: 'export interface AnalysisScript {\n    id: AnalysisScriptId;\n    kind: AnalysisScriptKind;\n    category: \'tshark\' | \'mqtt\' | \'dynamic\';\n    skill: string;\n    relativePath: string;\n    path: string;\n    toolIds: string[];\n    parameters: AnalysisScriptParameter[];\n    example: string;\n}',
+  },
+  {
+    name: 'AnalysisScriptId',
+    declaration: 'export type AnalysisScriptId = Branded<\'SecurityAnalysisScript\'>;',
+  },
+  {
+    name: 'AnalysisScriptKind',
+    declaration: 'export type AnalysisScriptKind = \'captureSummary\' | \'extractPackets\' | \'mqttSessions\' | \'mqttTopics\' | \'moduleWatch\' | \'functionTrace\';',
+  },
+  {
+    name: 'AnalysisScriptParameter',
+    declaration: 'export interface AnalysisScriptParameter {\n    flag: \'--input\' | \'--output\' | \'--tshark\' | \'--timeout\' | \'--max-packets\' | \'--max-output-bytes\' | \'--max-decode-bytes\' | \'--filter\' | \'--stream\' | \'--field\' | \'--mqtt-port\' | \'--max-events\' | \'--module\' | \'--symbol\' | \'--stack-depth\';\n    required: boolean;\n    value: string;\n}',
   },
   {
     name: 'ApiKeyRecord',

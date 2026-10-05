@@ -127,6 +127,10 @@ def main():
             if payload.get("type") == "error":
                 incomplete = True
                 stop.set()
+            observation = payload.get("payload")
+            if payload.get("type") == "send" and isinstance(observation, dict) and observation.get("incomplete") is True:
+                incomplete = True
+                stop.set()
 
     def detached(reason, crash):
         nonlocal incomplete

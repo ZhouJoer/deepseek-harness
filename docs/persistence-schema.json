@@ -23070,7 +23070,7 @@
       "digest": "509f1a030cb3b0e9295b35249bc40540af8408c07fea9e4fa1bc447b3b597649",
       "names": [],
       "sources": [
-        "packages/experimental/security-analysis/src/index.ts:55"
+        "packages/experimental/security-analysis/src/index.ts:57"
       ]
     },
     {

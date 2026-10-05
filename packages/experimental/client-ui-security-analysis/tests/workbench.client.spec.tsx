@@ -15,6 +15,7 @@ import { en, zh } from '../src/client/locales.ts'
 const unusedProjectAction = async () => { throw new Error('Unexpected advanced project action') }
 const unusedProjectActions = {
   manageProject: unusedProjectAction, toolboxDirectory: unusedProjectAction, toolboxInventory: unusedProjectAction,
+  scriptCatalog: unusedProjectAction,
   toolboxConfiguration: unusedProjectAction, configureTool: unusedProjectAction, toolboxFiles: unusedProjectAction,
   toolCatalog: unusedProjectAction, previewToolPack: unusedProjectAction, importToolPack: unusedProjectAction,
   exportToolPack: unusedProjectAction,

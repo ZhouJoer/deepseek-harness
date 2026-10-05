@@ -14,6 +14,8 @@
 
 ## Cordis API 参考
 
+`AnalysisScript` 描述内置分析脚本的稳定 ID、分类、技能、资源路径、依赖、参数和示例。只读清单不要求项目或环境，不触发工具检测，也不授予执行权限。字段定义见[分析脚本类型](../../packages/experimental/security-analysis/src/analysis-script-types.ts)。
+
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
 <a id="cordis-surface"></a>
@@ -58,6 +60,11 @@ Optional security profile service; default application compositions remain indep
  * @returns the catalog with legacy installation definitions and import revision.
  */
 @Remote('toolCatalog') toolCatalog(): ToolCatalogSnapshot
+
+/** Read the bundled script library without selecting a project or probing tools.
+ * @returns script parameters, dependencies and installed resource paths.
+ */
+@Remote('scriptCatalog') scriptCatalog(): AnalysisScript[]
 
 /** Validate an operator-selected pack without executing its commands.
  * @param input - JSON tool pack.

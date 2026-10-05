@@ -1,4 +1,5 @@
 /** Browser-safe security workbench types. @module */
+export type { AnalysisScript, AnalysisScriptId, AnalysisScriptKind, AnalysisScriptParameter } from './analysis-script-types.ts'
 export type { WorkbenchView, SecurityRecord, AnalysisOperation } from './workbench/model.ts'
 export type { SecurityDelegation, SecurityDelegationId } from './workbench/model.ts'
 export type { SecurityActivity, SecurityActivityBrief, SecurityActivityFrame, SecurityActivityPage, SecurityToolUsage } from './workbench/activity.ts'

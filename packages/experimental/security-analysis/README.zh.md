@@ -36,6 +36,8 @@ kind: "package-reference"
 4. 使用实现材料评估假设。需要运行验证时，准备包含目标、脚本、预期观察、影响、时限及清理方式的计划。
 5. 在工作台检查并批准不可变计划。停止或撤销会阻止新执行，并等待活动 provider 清理。中断的检查必须先核对再重试。
 
+内置[分析脚本库](src/analysis-scripts.ts) 将可复用文件保存在 `resources/analysis-scripts/{tshark,mqtt,dynamic}/`。编写新分析代码前，加载 `security-packet-analysis`、`security-mqtt` 或 `security-dynamic` 获取分析思路、绝对资源目录、参数和示例。离线 Python 脚本使用明确选择的 TShark 可执行文件读取 pcap/pcapng，保留 MQTT 消息边界和重组信息，并返回有界 JSON，包含输入与脚本摘要、工具版本、参数和不完整原因。时间、帧数、解码字节和结果字节上限均为必填参数。输出路径必须是尚不存在的绝对路径，结果保存在任务的 `outputs/` 中。动态 `prepare.py` 在任务的 `scripts/` 中生成参数化 JavaScript，交给现有不可变 Frida 验证计划；准备工具不会附加进程。模板观察原生模块或导出函数，达到事件上限时证据标记为不完整。内置资源保持不变。脚本运行在本机 Host；不提供在线 MQTT、Android Java 模板或自定义目录导入。`scriptCatalog` 支持无需选择项目或环境的只读浏览。
+
 自动 Web 任务入口依次使用操作者保存的工作区资源、`taskIntake.workspaces` 精确条目（`cwd`、`environmentIds`），或未匹配工作区的 `taskIntake.defaultEnvironmentIds`。`taskIntake.maxAttempts` 提供尝试上限。保存的选择在重启后保留；空选择会禁用自动入口，即使存在默认环境。修改只影响新任务。首个获准执行的安全工具将已记录的用户请求绑定到选定资源。内部消息和委派 Session 不能初始化任务；已有绑定和用户主动退出的状态都会保留。安全 profile 为未匹配的工作区选择 `local`。CLI 入口仍需显式创建项目。初始化不会导入文件、注册网络目标或批准执行。
 
 用户也可通过 `/security` 查看状态，或通过 `/security <JSON command>` 提交相同的修订检查命令。`security_help` 可通过可选 `action` 仅返回该动作的命令 schema；省略时返回完整 schema。静态采集回执包含可用于后续命令的当前修订号；发生并发修改时仍需刷新。模型不能批准计划或共享经验。普通命令必须携带稳定的操作 ID 和已观察修订号；停止与撤销只减少执行权限，因此接受较旧修订号。

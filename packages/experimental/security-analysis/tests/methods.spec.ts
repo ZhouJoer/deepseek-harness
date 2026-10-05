@@ -3,9 +3,10 @@ import { Context } from '@deepseek-ai/cordis'
 import Skills, { renderSkillContent } from '@deepseek-ai/dsh-skill'
 import { afterEach, describe, expect, it } from 'vitest'
 import { installSecurityMethods } from '../src/methods.ts'
+import { ANALYSIS_SCRIPTS_DIRECTORY } from '../src/analysis-scripts.ts'
 
 const contexts: Context[] = []
-const names = ['security-android', 'security-firmware', 'security-investigation', 'security-iot-offline', 'security-web']
+const names = ['security-android', 'security-dynamic', 'security-firmware', 'security-investigation', 'security-iot-offline', 'security-mqtt', 'security-packet-analysis', 'security-web']
 
 afterEach(async () => {
   await Promise.all(contexts.splice(0).map(ctx => ctx.fiber.dispose()))
@@ -43,7 +44,7 @@ describe('security method skills', () => {
         invocation: { modelInvocable: true, userInvocable: true },
       })
       if (!skill) throw new Error(`Missing security method: ${name}`)
-      expect(renderSkillContent(skill)).toMatchSnapshot(name)
+      expect(renderSkillContent(skill).replaceAll(ANALYSIS_SCRIPTS_DIRECTORY, '<analysis-scripts>')).toMatchSnapshot(name)
     }
   })
 

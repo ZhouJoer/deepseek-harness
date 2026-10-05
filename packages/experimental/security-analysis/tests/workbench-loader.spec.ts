@@ -451,6 +451,47 @@ describe('security workbench Loader composition', () => {
     expect((await execute(ctx, agent, 'security_capture_analysis', { assetId: asset.value.id })).isError).toBe(true)
     expect((await execute(ctx, agent, process.platform === 'win32' ? 'pwsh' : 'bash', { command: 'echo blocked', description: 'Attempt stopped analysis' })).isError).toBe(true)
   })
+  it.skipIf(!process.env.DSH_SECURITY_TSHARK)('loads a bundled capture method, executes its installed script and captures evidence', async () => {
+    const { ctx, agent, model, controller } = await load(false, 0, { native: true, skills: true })
+    const root = roots[roots.length - 1]!
+    const send = operator(controller, agent)
+    await send({ kind: 'create', title: 'Capture library', objective: 'Inspect an owned empty capture', environmentIds: ['local'], maxAttempts: 2 })
+    const capture = join(root, 'owned capture.pcap')
+    await writeFile(capture, Buffer.from('d4c3b2a1020004000000000000000000ffff000001000000', 'hex'))
+    await send({ kind: 'import', path: capture, label: 'capture' })
+    const asset = controller.view(agent.id).records.find(item => item.kind === 'asset')!
+    if (asset.kind !== 'asset') throw new Error('Missing capture asset')
+    const capabilities = await execute(ctx, agent, 'security_capabilities')
+    const { analysisDirectory: directory } = JSON.parse(capabilities.content.filter(block => block.type === 'text').map(block => block.text).join('')) as { analysisDirectory: string }
+    await mkdir(join(directory, 'outputs'), { recursive: true })
+    const script = ctx.securityWorkbench.scriptCatalog().find(item => item.kind === 'captureSummary')!
+    const python = process.env.DSH_SECURITY_SCRIPT_PYTHON ?? (process.platform === 'win32' ? 'python' : 'python3')
+    const output = join(directory, 'outputs', 'capture.json')
+    const quote = (value: string) => "'" + value.replaceAll("'", process.platform === 'win32' ? "''" : "'\\''") + "'"
+    const argv = [python, script.path, '--input', capture, '--output', output, '--tshark', process.env.DSH_SECURITY_TSHARK!,
+      '--timeout', '10', '--max-packets', '100', '--max-output-bytes', '4096', '--max-decode-bytes', '65536']
+    model.nativeCallId = () => randomUUID()
+    model.nativeCalls = [
+      { name: 'skill', args: { name: script.skill } },
+      { name: process.platform === 'win32' ? 'pwsh' : 'bash', args: {
+        command: (process.platform === 'win32' ? '& ' : '') + argv.map(quote).join(' '), workdir: directory, description: 'Analyze the owned capture with the bundled script',
+      } },
+      { name: 'security_capture_analysis', args: { assetId: asset.value.id } },
+      { name: 'security_capture_analysis', args: (request) => {
+        const message = request.messages.at(-1)
+        if (message?.role !== 'tool' || message.content[0]?.type !== 'text') throw new Error('Missing call listing')
+        const page = JSON.parse(message.content[0].text) as { calls: { callId: string }[] }
+        return { assetId: asset.value.id, callIds: page.calls.map(call => call.callId) }
+      } },
+    ]
+    agent.followup(webPrompt('Use the bundled script to inspect this capture and save its evidence.'))
+    await agent.whenIdle()
+    expect(JSON.parse(await readFile(output, 'utf8'))).toMatchObject({ scriptId: script.id, records: [{ kind: 'capture', frames: 0 }] })
+    const evidence = controller.view(agent.id).records.find(item => item.kind === 'evidence' && item.value.provider === 'session-tool')
+    if (evidence?.kind !== 'evidence') throw new Error('Missing bundled script evidence')
+    expect((await controller.artifacts.read(evidence.value.artifact)).toString()).toContain('tshark.capture-summary')
+    expect(agent.session.snapshotEvents().some(event => event.type === 'tool/call' && ['write', 'edit'].includes(event.data.name))).toBe(false)
+  })
   it('persists scoped child evidence reports without requiring or creating a finding review', async () => {
     const { ctx, agent, controller, model } = await load(true, 0, { native: true })
     expect(ctx.tools.schemas().some(tool => tool.name === 'job_output')).toBe(false)
@@ -893,7 +934,7 @@ describe('security workbench Loader composition', () => {
     const catalog = events.find(event => event.type === 'user/message' && event.data.source.kind === 'skill-catalog')
     if (catalog?.type !== 'user/message' || catalog.data.source.kind !== 'skill-catalog') throw new Error('Missing skill catalog')
     expect(catalog.data.source.entries.map(entry => entry.name).sort()).toEqual([
-      'security-android', 'security-firmware', 'security-investigation', 'security-iot-offline', 'security-web',
+      'security-android', 'security-dynamic', 'security-firmware', 'security-investigation', 'security-iot-offline', 'security-mqtt', 'security-packet-analysis', 'security-web',
     ])
     const loaded = events.find(event => event.type === 'tool/result')
     if (loaded?.type !== 'tool/result') throw new Error('Missing loaded skill result')
@@ -902,6 +943,12 @@ describe('security workbench Loader composition', () => {
     expect(text).toContain('<skill_content name="security-web">')
     expect(text).toContain('expected authorization rule')
     expect(model.requests[1]?.messages).toContainEqual(loaded.data.message)
+    const scripts = ctx.securityWorkbench.scriptCatalog()
+    expect(scripts).toHaveLength(6)
+    const packetMethod = await execute(ctx, agent, 'skill', { name: 'security-packet-analysis' })
+    expect(packetMethod.isError).not.toBe(true)
+    expect(JSON.stringify(packetMethod)).toContain('tshark/capture_summary.py')
+    expect(scripts.every(script => script.path.includes('analysis-scripts'))).toBe(true)
     expect((await execute(ctx, agent, 'shell')).isError).toBe(true)
     expect(shell).not.toHaveBeenCalled()
     await [...ctx.loader.entries()].find(entry => entry.options.id === 'security')!.fiber!.dispose()
