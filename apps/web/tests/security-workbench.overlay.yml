@@ -36,6 +36,8 @@
       name: '@deepseek-ai/dsh-experimental-security-analysis'
       config:
         analysisTurnTokens: 360000
+        evolution:
+          auto: true
         root: !!js dshHomePath('security')
         importRoots: !!js '[process.cwd()]'
         taskIntake:

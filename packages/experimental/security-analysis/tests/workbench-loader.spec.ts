@@ -40,6 +40,8 @@ import Security from '../src/workbench/index.ts'
 import type { ToolInstallation } from '../src/workbench/providers.ts'
 import { findingHash } from '../src/workbench/assessment.ts'
 import type { SessionBinding } from '../src/workbench/model.ts'
+import type { EvolutionConfig } from '../src/evolution.ts'
+import { evolutionInputSchema } from '../src/evolution-model.ts'
 import * as Ghidra from '../src/ghidra-provider.ts'
 import * as Frida from '../src/frida-provider.ts'
 import * as Android from '../src/android-provider.ts'
@@ -87,6 +89,8 @@ class ScopeModel extends LlmAdapter {
     summary: 'Assigned evidence review completed.', evidenceIds: [], uncertainty: 'No observations collected.', nextSteps: [],
   }
   refinementOutput: ((prompt: string) => string) | undefined
+  evolutionOutput: ((prompt: string) => string) | undefined
+  evolutionTruncated = false
   reportOutput: ((prompt: string) => string) | undefined
   refinementWait: ((signal: AbortSignal | undefined) => Promise<void>) | undefined
   override resolveModel(provider: string, model: string): Promise<LlmResolvedModelInfo> {
@@ -108,18 +112,20 @@ class ScopeModel extends LlmAdapter {
       return
     }
     const refinement = options.messages.flatMap(message => message.content).filter(block => block.type === 'text').map(block => block.text).find(text => text.includes('\nNotes: '))
+    const evolution = options.messages.flatMap(message => message.content).filter(block => block.type === 'text').map(block => block.text).find(text => text.includes('\nObservations: '))
     const report = options.messages.flatMap(message => message.content).filter(block => block.type === 'text').map(block => block.text).find(text => text.includes('\nData: '))
     if (report && this.reportFailure) {
       yield { type: 'finish', reason: { kind: 'error', failure: { message: 'Fixture model rejected report', code: 'UNKNOWN' } } }
       return
     }
-    if ((refinement && this.refinementOutput) || (report && this.reportOutput)) {
+    if ((refinement && this.refinementOutput) || (report && this.reportOutput) || (evolution && this.evolutionOutput)) {
       await this.refinementWait?.(options.signal)
-      const text = refinement && this.refinementOutput ? this.refinementOutput(refinement) : this.reportOutput!(report!)
+      const text = evolution && this.evolutionOutput ? this.evolutionOutput(evolution)
+        : refinement && this.refinementOutput ? this.refinementOutput(refinement) : this.reportOutput!(report!)
       yield { type: 'block-start', index: 0, blockType: 'text' }
       yield { type: 'text-delta', index: 0, text }
       yield { type: 'block-end', index: 0, block: { type: 'text', text } }
-      yield { type: 'finish', reason: { kind: 'stop' } }
+      yield { type: 'finish', reason: { kind: evolution && this.evolutionTruncated ? 'max-tokens' : 'stop' } }
     } else if (options.tools?.some(tool => tool.name === 'structured_output')) {
       const call = { type: 'tool-call' as const, id: ToolCallId('report'), name: 'structured_output',
         arguments: JSON.stringify(this.childReport) }
@@ -177,7 +183,7 @@ function independentTool(ctx: Context, name: string, execute = vi.fn(async () =>
 }
 
 async function load(inheritJobTool = false, knowledgeIntervalMs = 0,
-  options: { installations?: ToolInstallation[]; dedicatedModel?: boolean; analysisTurnTokens?: number; analysisCountCacheReads?: boolean; skills?: boolean; native?: boolean; taskIntake?: 'current' | 'other' | 'default'; maxConcurrentDelegations?: number; maxOutputBytes?: number; delegationTimeoutMs?: number } = {}) {
+  options: { evolution?: Partial<EvolutionConfig>; installations?: ToolInstallation[]; dedicatedModel?: boolean; analysisTurnTokens?: number; analysisCountCacheReads?: boolean; skills?: boolean; native?: boolean; taskIntake?: 'current' | 'other' | 'default'; maxConcurrentDelegations?: number; maxOutputBytes?: number; delegationTimeoutMs?: number } = {}) {
   const root = await mkdtemp(join(tmpdir(), 'dsh-workbench-loader-'))
   roots.push(root)
   const model = new ScopeModel()
@@ -253,6 +259,7 @@ async function load(inheritJobTool = false, knowledgeIntervalMs = 0,
                   ? { programs: [] }
                   : name === 'security'
                     ? { knowledgeIntervalMs, ...(options.dedicatedModel === false ? {} : { knowledgeProvider: 'fixture', knowledgeModel: 'fixture' }),
+                      ...(options.evolution ? { evolution: options.evolution } : {}),
                       ...(options.analysisTurnTokens === undefined ? {} : { analysisTurnTokens: options.analysisTurnTokens }),
                       ...(options.maxConcurrentDelegations === undefined ? {}
                         : { maxConcurrentDelegations: options.maxConcurrentDelegations }),
@@ -1651,4 +1658,210 @@ it('streams Session selection from unbound through create, switch and leave, and
     abort.abort()
     expect((await pending).done).toBe(true)
   } finally { abort.abort(); await stream.return?.() }
+})
+
+it('finds functional improvements in an isolated Loader Session and exports a coding task', async () => {
+  const { ctx, agent, controller, model } = await load(false, 0, { evolution: { provider: 'fixture', model: 'fixture' } })
+  const send = operator(controller, agent)
+  await send({ kind: 'create', title: 'Parser workflow', objective: 'Inspect packet captures', environmentIds: ['local'], maxAttempts: 2 })
+  await send({ kind: 'checkpoint', phase: 'assessment', title: 'Packet processing', reason: 'Compare captures',
+    summary: 'Repeatedly wrote the same packet parser in successful tasks', next: 'Reuse parsing results', evidenceIds: [], findingIds: [] })
+  const projectId = controller.binding(agent.id)!.engagementId
+  const originalRevision = controller.view(agent.id).revision
+  model.evolutionOutput = (prompt) => {
+    const data = evolutionInputSchema.parse(JSON.parse(prompt.split('\nObservations: ')[1]!))
+    expect(data.projectId).toBe(projectId)
+    return JSON.stringify({ suggestions: [{ title: 'Reusable packet analysis', component: 'security analysis scripts',
+      conditions: 'Tasks inspecting packet captures', problem: 'Each task writes the same parser', change: 'Ship a reusable parser tool',
+      acceptance: ['Use the tool in two capture-analysis tasks'], uncertainty: 'Inspect existing script coverage', sourceIds: [data.sources[0]!.id] }] })
+  }
+  const before = await ctx.securityWorkbench.improvements()
+  await ctx.securityWorkbench.analyzeImprovements(JSON.stringify({ operationId: 'first-analysis', projectId, expectedRevision: before.revision }))
+  await vi.waitFor(async () => { expect((await ctx.securityWorkbench.improvements()).runs.at(-1)).toMatchObject({ status: 'completed', detail: '' }) })
+  const result = await ctx.securityWorkbench.improvements(projectId)
+  expect(result.proposals).toHaveLength(1)
+  expect(controller.view(agent.id).revision).toBe(originalRevision)
+  expect(model.requests.at(-1)?.tools ?? []).toHaveLength(0)
+  expect((await ctx.securityWorkbench.exportImprovement(result.proposals[0]!.id)).markdown).toContain('AGENTS.md')
+  const ownedSession = result.runs.at(-1)!.sessionId!
+  await expect(ctx.agents.create({ sessionId: SessionId(ownedSession), agentOptions: { provider: 'fixture', model: 'fixture' } })).rejects.toThrow('read-only')
+  const latest = await ctx.securityWorkbench.improvements()
+  await ctx.securityWorkbench.analyzeImprovements(JSON.stringify({ operationId: 'repeat-analysis', projectId, expectedRevision: latest.revision }))
+  await vi.waitFor(async () => { expect((await ctx.securityWorkbench.improvements()).runs.at(-1)).toMatchObject({ status: 'completed', detail: '' }) })
+  expect(model.requests).toHaveLength(1)
+  expect((await ctx.securityWorkbench.improvements()).proposals[0]?.occurrences).toHaveLength(1)
+})
+
+it('cancels improvement synthesis and waits for teardown before task stop returns', async () => {
+  const { ctx, agent, controller, model } = await load(false, 0, { evolution: { provider: 'fixture', model: 'fixture' } })
+  const send = operator(controller, agent)
+  await send({ kind: 'create', title: 'Stop synthesis', objective: 'Review delegation', environmentIds: ['local'], maxAttempts: 2 })
+  await send({ kind: 'checkpoint', phase: 'assessment', title: 'Context gaps', reason: 'Investigate',
+    summary: 'Delegates repeatedly needed missing context', next: 'Improve assignment input', evidenceIds: [], findingIds: [] })
+  const started = Promise.withResolvers<undefined>()
+  let exited = false
+  model.evolutionOutput = () => '{"suggestions":[]}'
+  model.refinementWait = (signal): Promise<void> => new Promise((_resolve, reject) => {
+    started.resolve(undefined)
+    signal!.addEventListener('abort', () => { exited = true; reject(new Error('Fixture cancelled')) }, { once: true })
+  })
+  const before = await ctx.securityWorkbench.improvements()
+  const projectId = controller.binding(agent.id)!.engagementId
+  await ctx.securityWorkbench.analyzeImprovements(JSON.stringify({ operationId: 'slow-analysis', projectId, expectedRevision: before.revision }))
+  await started.promise
+  await send({ kind: 'stop' })
+  expect(exited).toBe(true)
+  expect((await ctx.securityWorkbench.improvements()).runs.at(-1)?.status).toBe('cancelled')
+  expect((await ctx.securityWorkbench.improvements()).proposals).toHaveLength(0)
+})
+
+it('automatically analyzes newly settled work only after the configured idle interval', async () => {
+  const { ctx, agent, controller, model } = await load(false, 0, { evolution: { auto: true, idleMs: 300000 } })
+  await operator(controller, agent)({ kind: 'create', title: 'Idle analysis', objective: 'Review owned fixture', environmentIds: ['local'], maxAttempts: 2 })
+  model.evolutionOutput = () => '{"suggestions":[]}'
+  agent.followup(webPrompt('Summarize the available fixture without running external tools.'))
+  await agent.whenIdle()
+  await ctx.securityWorkbench.improvements()
+  vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] })
+  try {
+    ctx.emit('agent/status', { agent, status: 'idle' })
+    await vi.advanceTimersByTimeAsync(0)
+    expect((await ctx.securityWorkbench.improvements()).runs).toHaveLength(0)
+    await vi.advanceTimersByTimeAsync(300000)
+    await vi.waitFor(async () => { expect((await ctx.securityWorkbench.improvements()).runs.at(-1)).toMatchObject({ status: 'completed', detail: '' }) })
+    const count = model.requests.length
+    await vi.advanceTimersByTimeAsync(600000)
+    expect(model.requests).toHaveLength(count)
+  } finally { await ctx.fiber.dispose(); vi.useRealTimers() }
+})
+
+it('keeps observed Session intervals with their task when the coordinator switches tasks', async () => {
+  const { ctx, agent, controller, model } = await load(false, 0, { evolution: { provider: 'fixture', model: 'fixture' } })
+  const send = operator(controller, agent)
+  await send({ kind: 'create', title: 'Alpha', objective: 'Alpha analysis', environmentIds: ['local'], maxAttempts: 2 })
+  const alpha = controller.binding(agent.id)!.engagementId
+  agent.followup(webPrompt('ALPHA_ONLY observation'))
+  await agent.whenIdle()
+  await send({ kind: 'create', title: 'Beta', objective: 'Beta analysis', environmentIds: ['local'], maxAttempts: 2 })
+  agent.followup(webPrompt('BETA_ONLY observation'))
+  await agent.whenIdle()
+  model.evolutionOutput = (prompt) => {
+    const input = evolutionInputSchema.parse(JSON.parse(prompt.split('\nObservations: ')[1]!))
+    expect(input.projectId).toBe(alpha)
+    expect(input.sources.some(source => source.excerpt.includes('ALPHA_ONLY'))).toBe(true)
+    expect(input.sources.some(source => source.excerpt.includes('BETA_ONLY'))).toBe(false)
+    return '{"suggestions":[]}'
+  }
+  await vi.waitFor(async () => {
+    const before = await ctx.securityWorkbench.improvements()
+    await ctx.securityWorkbench.analyzeImprovements(JSON.stringify({ projectId: alpha,
+      expectedRevision: before.revision, operationId: 'analyze-alpha' }))
+  })
+  await vi.waitFor(async () => { expect((await ctx.securityWorkbench.improvements()).runs.at(-1)).toMatchObject({ status: 'completed' }) })
+})
+
+it('denies unsolicited tools in improvement synthesis at the executor', async () => {
+  const { ctx, agent, controller, model } = await load(false, 0, { evolution: { provider: 'fixture', model: 'fixture' } })
+  const send = operator(controller, agent)
+  await send({ kind: 'create', title: 'Tool denial', objective: 'Review workflow', environmentIds: ['local'], maxAttempts: 2 })
+  await send({ kind: 'checkpoint', phase: 'assessment', title: 'Evidence', reason: 'Inspect',
+    summary: 'Manual parsing', next: 'Reuse parsing', evidenceIds: [], findingIds: [] })
+  const executed = vi.fn()
+  ctx.on('tools/execute', async (exec, next) => { executed(exec.name); return next() })
+  model.nativeCalls.push({ name: 'security_scope', args: {} })
+  model.evolutionOutput = () => '{"suggestions":[]}'
+  const denied: string[] = []
+  ctx.on('session/event', (_session, event) => {
+    if (event.type === 'tool/result' && event.data.message.isError) denied.push(JSON.stringify(event.data.message))
+  })
+  const before = await ctx.securityWorkbench.improvements()
+  await ctx.securityWorkbench.analyzeImprovements(JSON.stringify({ projectId: controller.binding(agent.id)!.engagementId,
+    expectedRevision: before.revision, operationId: 'deny-tool' }))
+  await vi.waitFor(async () => { expect((await ctx.securityWorkbench.improvements()).runs.at(-1)).toMatchObject({ status: 'completed' }) })
+  expect(executed).not.toHaveBeenCalled()
+  expect(denied.join(' ')).toContain('Tools are unavailable')
+})
+
+it('reports an exhausted synthesis budget and accepts an explicit retry', async () => {
+  const { ctx, agent, controller, model } = await load(false, 0, { evolution: { provider: 'fixture', model: 'fixture' } })
+  const send = operator(controller, agent)
+  await send({ kind: 'create', title: 'Output budget', objective: 'Review source observations', environmentIds: ['local'], maxAttempts: 2 })
+  await send({ kind: 'checkpoint', phase: 'assessment', title: 'Repeated conversion', reason: 'Review workflow',
+    summary: 'Time mapping was reconstructed manually', next: 'Assess script reuse', evidenceIds: [], findingIds: [] })
+  model.evolutionOutput = () => '{"suggestions":[]}'
+  model.evolutionTruncated = true
+  const projectId = controller.binding(agent.id)!.engagementId
+  const before = await ctx.securityWorkbench.improvements()
+  await ctx.securityWorkbench.analyzeImprovements(JSON.stringify({ projectId, expectedRevision: before.revision, operationId: 'budget-first' }))
+  await vi.waitFor(async () => {
+    const run = (await ctx.securityWorkbench.improvements()).runs.at(-1)
+    expect(run?.status).toBe('failed')
+    expect(run?.detail).toContain('output-token limit')
+  })
+  const failed = await ctx.securityWorkbench.improvements()
+  expect(failed.proposals).toHaveLength(0)
+  expect(failed.runs).toHaveLength(1)
+  model.evolutionTruncated = false
+  await ctx.securityWorkbench.analyzeImprovements(JSON.stringify({ projectId, expectedRevision: failed.revision, operationId: 'budget-retry' }))
+  await vi.waitFor(async () => { expect((await ctx.securityWorkbench.improvements()).runs.at(-1)?.status).toBe('completed') })
+})
+
+it('serializes improvement analysis across independently queued tasks', async () => {
+  const { ctx, agent, controller, model } = await load(false, 0, { evolution: { provider: 'fixture', model: 'fixture', concurrency: 1 } })
+  const send = operator(controller, agent)
+  const projects: string[] = []
+  for (const title of ['Packet timing', 'Firmware timing']) {
+    await send({ kind: 'create', title, objective: title, environmentIds: ['local'], maxAttempts: 2 })
+    await send({ kind: 'checkpoint', phase: 'assessment', title, reason: 'Review workflow',
+      summary: 'Repeated manual time conversion', next: 'Consider a shared script', evidenceIds: [], findingIds: [] })
+    projects.push(controller.binding(agent.id)!.engagementId)
+  }
+  const releases: (() => void)[] = []
+  let concurrent = 0
+  let peak = 0
+  model.evolutionOutput = () => '{"suggestions":[]}'
+  model.refinementWait = async (signal) => {
+    concurrent++; peak = Math.max(peak, concurrent)
+    try { await new Promise<void>((resolve, reject) => {
+      if (signal?.aborted) { reject(new Error('Fixture cancelled')); return }
+      const abort = () => { reject(new Error('Fixture cancelled')) }
+      signal?.addEventListener('abort', abort, { once: true })
+      releases.push(() => { signal?.removeEventListener('abort', abort); resolve() })
+    }) }
+    finally { concurrent-- }
+  }
+  for (const projectId of projects) {
+    const view = await ctx.securityWorkbench.improvements()
+    await ctx.securityWorkbench.analyzeImprovements(JSON.stringify({ projectId, expectedRevision: view.revision, operationId: projectId }))
+    if (projectId === projects[0]) await vi.waitFor(() => { expect(releases).toHaveLength(1) })
+  }
+  expect((await ctx.securityWorkbench.improvements()).runs.map(run => run.status)).toEqual(['running', 'queued'])
+  releases[0]!()
+  await vi.waitFor(() => { expect(releases).toHaveLength(2) })
+  expect(peak).toBe(1)
+  releases[1]!()
+  await vi.waitFor(async () => { expect((await ctx.securityWorkbench.improvements()).runs.map(run => run.status)).toEqual(['completed', 'completed']) })
+})
+
+it('settles a timed-out improvement request without publishing or retrying it', async () => {
+  const { ctx, agent, controller, model } = await load(false, 0, { evolution: { provider: 'fixture', model: 'fixture', timeoutMs: 50 } })
+  const send = operator(controller, agent)
+  await send({ kind: 'create', title: 'Timeout', objective: 'Review workflow', environmentIds: ['local'], maxAttempts: 2 })
+  await send({ kind: 'checkpoint', phase: 'assessment', title: 'Source', reason: 'Review workflow',
+    summary: 'A repeated manual conversion', next: 'Consider reuse', evidenceIds: [], findingIds: [] })
+  model.evolutionOutput = () => '{"suggestions":[]}'
+  model.refinementWait = signal => new Promise((_resolve, reject) => {
+    if (signal?.aborted) { reject(new Error('Fixture cancelled')); return }
+    signal?.addEventListener('abort', () => { reject(new Error('Fixture cancelled')) }, { once: true })
+  })
+  const view = await ctx.securityWorkbench.improvements()
+  await ctx.securityWorkbench.analyzeImprovements(JSON.stringify({ projectId: controller.binding(agent.id)!.engagementId,
+    expectedRevision: view.revision, operationId: 'timeout' }))
+  await vi.waitFor(async () => {
+    const result = await ctx.securityWorkbench.improvements()
+    expect(result.runs).toHaveLength(1)
+    expect(result.runs[0]?.status).toBe('failed')
+    expect(result.runs[0]?.detail).toContain('TimeoutError')
+    expect(result.proposals).toHaveLength(0)
+  })
 })

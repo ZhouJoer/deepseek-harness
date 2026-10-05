@@ -43,11 +43,23 @@ Open `http://127.0.0.1:3081` using the authenticated link printed by DSH. The [s
 
 ## 2. Start an analysis
 
+
+
 An analysis task saves the materials, evidence and reports for one analysis together; errors call this record a security project. The default security profile creates the record on the first security tool call in chat, even when the current workspace differs from the launch directory. Conversations that left a task and workspaces with automatic creation disabled use the entry below.
 
 Open **Security analysis** in the sidebar and choose **New analysis**. Select an existing workspace or add its absolute local path, then choose **Use this workspace**. Describe the objective and optionally select files or a folder, paste text, or supply a Host path. **Start analysis** saves the task and materials before sending the objective to the native conversation; a failed send can be retried without another import. The local environment is selected automatically, and **More options** changes it. Tasks with no configured environment show a blocker. Workspace selection alone does not import files. Model imports remain limited to `importRoots`; explicit material selection authorizes only that import. Browse tasks with search and status filters; “Can continue” does not imply a running model. The detail tabs keep materials, findings, evidence and rendered reports together. Expand **Analysis assistant** to continue; collapsing it preserves the draft. Missing historical Sessions require an explicit **Continue analysis** action. Stopped tasks require **Resume task**, and restoring a removed task does not run it.
 
 Open **Advanced details** → **Environments and tools** and inspect the selected environment. Missing installations and disconnected devices are shown as diagnostics. Configure Android device IDs and Docker images explicitly in the Host overlay; the default example creates only a local environment. Read the [provider setup](../../../packages/experimental/security-analysis/README.md#configure-analysis-providers) before using Ghidra or a device.
+
+<a id="continuous-improvement"></a>
+
+### Turn observations into source-code improvements
+
+After using the workbench, open a task's **Continuous improvement** and choose **Find improvements now**. Active analysis finishes first; the security profile also analyzes newly settled work after five quiet minutes while the Host runs. This is a phase review, not a declaration that the security task is complete. A completed review can have no worthwhile suggestion. Failed runs show a reason and can be requested again.
+
+Open **Continuous improvement** to compare suggestions across tasks. Expand one to inspect its problem, actual evidence, desired capability and acceptance scenarios. Module names are investigation hints until a coding AI checks the repository. Copy Markdown or download the task package and give it to Codex or another coding AI with access to the Harness repository. The task asks it to read `AGENTS.md`, confirm the implementation, update the appropriate code, script, workflow, prompt or skill, and test the result.
+
+Import the filled `result.template.json` or enter the modification and test results manually. This records implementation claims as **Modified**. Check the change and choose **Confirm verified** yourself. Ignore unsuitable suggestions or restore them later. New evidence for a verified suggestion requests another look. No coding tool is started automatically. [Configuration and retention](../../../packages/experimental/security-analysis/README.md#continuous-improvement) describe model usage, input limits and deletion.
 
 ## 3. Collect and evaluate evidence
 

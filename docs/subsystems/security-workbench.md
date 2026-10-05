@@ -14,6 +14,10 @@ The experimental [security domain](../../packages/experimental/security-analysis
 
 ## Cordis API reference
 
+`EvolutionRun` describes a queued or settled isolated analysis. `EvolutionSource` identifies the observed task and exact Session event or hashed domain record, including excerpt truncation. `EvolutionProposal` combines a functional change, acceptance scenarios, task occurrences and operator-owned progress. `EvolutionReceipt` stores external implementation and test claims; `EvolutionView.revision` checks operator mutations independently of security commands. These browser-safe values are defined in [evolution schemas](../../packages/experimental/security-analysis/src/evolution-model.ts). The `security_evolution` storage domain persists their versioned state without changing Session events or format.
+
+`analyzeImprovements` queues a project request with `operationId` and `expectedRevision`. `improvements` and `followImprovements` return the shared pool; `updateImprovement` accepts a revision-checked `status` or `receipt` action. Reusing an operation identity requires identical input. `exportImprovement` returns the selected coding task and receipt template. Receipt import can mark work modified but cannot mark it verified. These methods require operator Remote access and are not model tools.
+
 `AnalysisScript` describes a bundled analysis script: its stable ID, category, skill, resource paths, dependencies, parameters and example. The read-only catalog requires no project or environment and performs no tool probes; entries grant no execution authority. Fields are defined in [analysis script types](../../packages/experimental/security-analysis/src/analysis-script-types.ts).
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
@@ -31,6 +35,31 @@ Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnp
 Optional security profile service; default application compositions remain independent.
 
 ```ts cordis-catalog
+/** Read engineering suggestions without loading an analysis Agent.
+ * @param projectId - optional task filter.
+ * @returns the independent improvement revision and visible records. */
+@Remote('improvements') async improvements(projectId?: string): Promise<EvolutionView>
+
+/** Queue a revision-checked operator request for idle-time improvement analysis.
+ * @param input - operation ID, task and observed improvement revision.
+ * @returns the saved request and current suggestions. */
+@Remote('analyzeImprovements') async analyzeImprovements(input: string): Promise<EvolutionView>
+
+/** Save operator progress or a coding AI's implementation receipt.
+ * @param input - revision-checked status or receipt command.
+ * @returns current improvement records. */
+@Remote('updateImprovement') async updateImprovement(input: string): Promise<EvolutionView>
+
+/** Export a selected source-code improvement for an external coding AI.
+ * @param proposalId - operator-selected suggestion.
+ * @returns bounded source excerpts and portable implementation files. */
+@Remote('exportImprovement') async exportImprovement(proposalId: string): Promise<EvolutionBundle>
+
+/** Follow independent improvement commits without polling.
+ * @param signal - authenticated connection lifetime.
+ * @returns coalesced current views. */
+@Remote({ mode: 'stream' }) async *followImprovements(signal: AbortSignal): AsyncIterable<EvolutionView>
+
 /**
  * Refine and deduplicate the selected project's notes using a logged model Session.
  * @param agent - authenticated coordinating Session.

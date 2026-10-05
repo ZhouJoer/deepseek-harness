@@ -201,6 +201,8 @@ export class SecurityController {
     readonly options: WorkbenchOptions,
     private readonly generateReport?: (prompt: string, signal: AbortSignal, sessionId: string) => Promise<string>,
     readonly activity?: SecurityActivityStore,
+    private readonly removeImprovements?: (project: string) => Promise<void>,
+    private readonly cancelImprovements?: (project: string) => Promise<void>,
   ) {}
   /** Resolve the direction captured at delegation, or the coordinator's current direction.
    * @param sessionId - bound analysis Session.
@@ -559,6 +561,7 @@ export class SecurityController {
   }
 
   private async cancelExecutions(project: string, plan?: string): Promise<void> {
+    if (!plan) await this.cancelImprovements?.(project)
     const cancelled = [...this.active.values(), ...[...this.delegated].map(([controller, job]) => ({ ...job, controller, plan: '' }))]
       .filter(run => run.project === project && (plan === undefined || run.plan === plan))
     for (const run of cancelled) run.controller.abort(new Error('Operator revoked execution'))
@@ -1208,6 +1211,7 @@ export class SecurityController {
   }
   private async finishPurges(): Promise<void> {
     for (const purge of this.journal.pendingPurges()) {
+      await this.removeImprovements?.(purge.projectId)
       await this.activity?.removeProject(purge.projectId)
       const retained = await referencedArtifacts(this.artifacts, this.journal.view().records)
       for (const hash of purge.artifacts) if (!retained.has(hash)) await this.artifacts.remove(hash)

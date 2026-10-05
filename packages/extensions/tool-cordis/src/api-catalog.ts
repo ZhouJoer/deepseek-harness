@@ -1913,6 +1913,36 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [],
       },
       {
+        signature: '@Remote(\'improvements\') async improvements(projectId?: string): Promise<EvolutionView>',
+        description: 'Read engineering suggestions without loading an analysis Agent.',
+        parameters: [{ name: 'projectId', description: 'optional task filter.' }],
+        returns: 'the independent improvement revision and visible records.',
+      },
+      {
+        signature: '@Remote(\'analyzeImprovements\') async analyzeImprovements(input: string): Promise<EvolutionView>',
+        description: 'Queue a revision-checked operator request for idle-time improvement analysis.',
+        parameters: [{ name: 'input', description: 'operation ID, task and observed improvement revision.' }],
+        returns: 'the saved request and current suggestions.',
+      },
+      {
+        signature: '@Remote(\'updateImprovement\') async updateImprovement(input: string): Promise<EvolutionView>',
+        description: 'Save operator progress or a coding AI\'s implementation receipt.',
+        parameters: [{ name: 'input', description: 'revision-checked status or receipt command.' }],
+        returns: 'current improvement records.',
+      },
+      {
+        signature: '@Remote(\'exportImprovement\') async exportImprovement(proposalId: string): Promise<EvolutionBundle>',
+        description: 'Export a selected source-code improvement for an external coding AI.',
+        parameters: [{ name: 'proposalId', description: 'operator-selected suggestion.' }],
+        returns: 'bounded source excerpts and portable implementation files.',
+      },
+      {
+        signature: '@Remote({ mode: \'stream\' }) async *followImprovements(signal: AbortSignal): AsyncIterable<EvolutionView>',
+        description: 'Follow independent improvement commits without polling.',
+        parameters: [{ name: 'signal', description: 'authenticated connection lifetime.' }],
+        returns: 'coalesced current views.',
+      },
+      {
         signature: '@Remote(\'refineKnowledge\') async refineProjectKnowledge(agent: Agent): Promise<WorkbenchView>',
         description: 'Refine and deduplicate the selected project\'s notes using a logged model Session.',
         parameters: [{ name: 'agent', description: 'authenticated coordinating Session.' }],
@@ -5414,6 +5444,22 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface EveryScheduleRecord {\n    readonly id: ScheduleId;\n    readonly kind: \'every\';\n    readonly title: string;\n    readonly prompt: string;\n    readonly everySeconds: number;\n    readonly scheduledAt: string;\n}',
   },
   {
+    name: 'EvolutionBundle',
+    declaration: 'export interface EvolutionBundle {\n    markdown: string;\n    proposal: string;\n    receipt: string;\n}',
+  },
+  {
+    name: 'EvolutionProposal',
+    declaration: 'export type EvolutionProposal = z.infer<typeof evolutionProposalSchema>;',
+  },
+  {
+    name: 'EvolutionRun',
+    declaration: 'export type EvolutionRun = z.infer<typeof evolutionRunSchema>;',
+  },
+  {
+    name: 'EvolutionView',
+    declaration: 'export interface EvolutionView {\n    revision: number;\n    proposals: EvolutionProposal[];\n    runs: EvolutionRun[];\n}',
+  },
+  {
     name: 'FeedbackCategory',
     declaration: 'export type FeedbackCategory = \'task-result\' | \'instruction-following\' | \'product-interaction\' | \'service-stability\' | \'resource-cost\' | \'security-privacy-permission\' | \'other\';',
   },
@@ -6647,15 +6693,11 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SecurityActivityStore',
-    declaration: 'export class SecurityActivityStore {\n    static async open(ctx: Context): Promise<SecurityActivityStore>;\n    updateBrief(input: SecurityActivityBrief): Promise<void>;\n    async flush(): Promise<void>;\n    removeProject(projectId: string): Promise<void>;\n    has(sessionId: string, callId: string): boolean;\n    start(input: Pick<SecurityActivity, \'projectId\' | \'sessionId\' | \'callId\' | \'checkpointId\' | \'tools\' | \'verified\' | \'parameters\'>): Promise<SecurityActivity>;\n    finish(id: SecurityActivityId, result: Pick<SecurityActivity, \'status\' | \'incomplete\' | \'detail\'> & {\n        evidenceIds?: string[];\n    }): Promise<void>;\n    assignInitialDirection(projectId: string, sessionId: string, checkpointId: string): Promise<void>;\n    attachEvidence(projectId: string, sessionId: string, callIds: readonly string[], evidenceId: string): Promise<void>;\n    usage(project: string): SecurityToolUsage[];\n    page(project: string, checkpointId: string, offset: number, limit: number, through = this.cursor): SecurityActivityPage;\n    async *follow(project: string, view: () => WorkbenchView, subscribeProject: (listener: () => void) => () => void, signal: AbortSignal): AsyncGenerator<SecurityActivityFrame, void>;\n    async close(): Promise<void>;\n}',
+    declaration: 'export class SecurityActivityStore {\n    static async open(ctx: Context): Promise<SecurityActivityStore>;\n    updateBrief(input: SecurityActivityBrief): Promise<void>;\n    async flush(): Promise<void>;\n    subscribe(listener: (project: string) => void): () => void;\n    removeProject(projectId: string): Promise<void>;\n    has(sessionId: string, callId: string): boolean;\n    start(input: Pick<SecurityActivity, \'projectId\' | \'sessionId\' | \'callId\' | \'checkpointId\' | \'tools\' | \'verified\' | \'parameters\'>): Promise<SecurityActivity>;\n    finish(id: SecurityActivityId, result: Pick<SecurityActivity, \'status\' | \'incomplete\' | \'detail\'> & {\n        evidenceIds?: string[];\n    }): Promise<void>;\n    assignInitialDirection(projectId: string, sessionId: string, checkpointId: string): Promise<void>;\n    attachEvidence(projectId: string, sessionId: string, callIds: readonly string[], evidenceId: string): Promise<void>;\n    usage(project: string): SecurityToolUsage[];\n    page(project: string, checkpointId: string, offset: number, limit: number, through = this.cursor): SecurityActivityPage;\n    async *follow(project: string, view: () => WorkbenchView, subscribeProject: (listener: () => void) => () => void, signal: AbortSignal): AsyncGenerator<SecurityActivityFrame, void>;\n    async close(): Promise<void>;\n}',
   },
   {
     name: 'SecurityController',
-    declaration: 'export class SecurityController {\n    readonly providers: ProviderRegistry<AnalysisProvider>;\n    readonly environments: ProviderRegistry<{\n        id: string;\n        manager: EnvironmentManager;\n    }>;\n    readonly laboratories: ProviderRegistry<{\n        id: string;\n        action(projectId: string, action: string, laboratoryId?: string): Promise<WorkbenchView>;\n    }>;\n    laboratoriesView(): Laboratory[];\n    async saveLaboratory(input: Laboratory): Promise<Laboratory>;\n    constructor(private readonly journal: SecurityJournal, readonly artifacts: ArtifactStore, readonly options: WorkbenchOptions, private readonly generateReport?: (prompt: string, signal: AbortSignal, sessionId: string) => Promise<string>, readonly activity?: SecurityActivityStore);\n    checkpointId(sessionId: string): string;\n    trackDelegation(project: string, controller: AbortController, done: Promise<unknown>): () => void;\n    async manageEnvironment<T>(environmentId: string, run: (signal: AbortSignal) => Promise<T>, project: string = \'\'): Promise<T>;\n    binding(sessionId: string): SessionBinding | undefined;\n    analysisProject(sessionId: string): string | undefined;\n    analysisAsset(sessionId: string, assetId: string): string;\n    async captureAnalysis(sessionId: string, assetId: string, callIds: string[], bytes: Uint8Array, signal: AbortSignal): Promise<SecurityRecord>;\n    delegationForCall(sessionId: string, callId: string): SecurityDelegation | undefined;\n    async admitDelegation(sessionId /* …truncated — full shape in source */',
-  },
-  {
-    name: 'SecurityDelegation',
-    declaration: 'export type SecurityDelegation = z.infer<typeof delegationSchema>;',
+    declaration: 'export class SecurityController {\n    readonly providers: ProviderRegistry<AnalysisProvider>;\n    readonly environments: ProviderRegistry<{\n        id: string;\n        manager: EnvironmentManager;\n    }>;\n    readonly laboratories: ProviderRegistry<{\n        id: string;\n        action(projectId: string, action: string, laboratoryId?: string): Promise<WorkbenchView>;\n    }>;\n    laboratoriesView(): Laboratory[];\n    async saveLaboratory(input: Laboratory): Promise<Laboratory>;\n    constructor(private readonly journal: SecurityJournal, readonly artifacts: ArtifactStore, readonly options: WorkbenchOptions, private readonly generateReport?: (prompt: string, signal: AbortSignal, sessionId: string) => Promise<string>, readonly activity?: SecurityActivityStore, private readonly removeImprovements?: (project: string) => Promise<void>, private readonly cancelImprovements?: (project: string) => Promise<void>);\n    checkpointId(sessionId: string): string;\n    trackDelegation(project: string, controller: AbortController, done: Promise<unknown>): () => void;\n    async manageEnvironment<T>(environmentId: string, run: (signal: AbortSignal) => Promise<T>, project: string = \'\'): Promise<T>;\n    binding(sessionId: string): SessionBinding | undefined;\n    analysisProject(sessionId: string): string | undefined;\n    analysisAsset(sessionId: string, assetId: string): string;\n    async captureAnalysis(sessionId: string, assetId: string, callIds: string[], bytes: Uint8Array, signal: AbortSignal): Pr /* …truncated — full shape in source */',
   },
   {
     name: 'SecurityEnvironment',

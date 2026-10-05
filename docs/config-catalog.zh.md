@@ -1108,11 +1108,13 @@ export interface Config {
 ## `@deepseek-ai/dsh-experimental-security-analysis`
 
 - `inject`: `tools` · `agents` · `systemPrompt` · `storageDomain` · `jobs` · `subagents`
-- `source`: [`packages/experimental/security-analysis/src/index.ts:62`](../packages/experimental/security-analysis/src/index.ts)
+- `source`: [`packages/experimental/security-analysis/src/index.ts:66`](../packages/experimental/security-analysis/src/index.ts)
 
 ```ts config-catalog
 /** Explicit host locations and operational limits. */
 export interface WorkbenchConfig {
+  /** Engineering improvement scheduling and model budgets. */
+  evolution: EvolutionConfig
   /** Optional absolute file containing imported definition packs. */
   toolCatalogPath?: string
   /** Maximum definitions returned in one discovery page. */
@@ -1174,6 +1176,32 @@ export interface WorkbenchConfig {
   knowledgeProvider?: string
   /** Optional dedicated refinement model; on-demand calls inherit the initiating Agent model when omitted. */
   knowledgeModel?: string
+}
+
+/** Deployment-owned analysis scheduling and model budgets. */
+export interface EvolutionConfig {
+  /** Queue analysis when newly observed work becomes idle. */
+  auto: boolean
+  /** Quiet time after the latest task activity, in milliseconds. */
+  idleMs: number
+  /** Maximum simultaneous improvement Sessions across tasks. */
+  concurrency: number
+  /** Maximum UTF-8 bytes in a model input or exported evidence selection. */
+  inputBytes: number
+  /** Maximum model completion tokens per improvement Session. */
+  outputTokens: number
+  /** Maximum elapsed synthesis time in milliseconds. */
+  timeoutMs: number
+  /** Maximum UTF-8 bytes retained from one observation. */
+  excerptBytes: number
+  /** Maximum existing suggestions presented for possible merging. */
+  maxCandidates: number
+  /** Maximum suggestions accepted from one completed analysis. */
+  maxSuggestions: number
+  /** Dedicated provider, required together with model. */
+  provider?: string
+  /** Dedicated model; omission uses the latest observed coordinator route. */
+  model?: string
 }
 
 /** Host-selected resources for authenticated user tasks. */

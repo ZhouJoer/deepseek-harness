@@ -111,6 +111,13 @@ export class SecurityActivityStore {
    * @returns completion after the current write queue drains.
    */
   async flush(): Promise<void> { await this.chain }
+  /** Observe committed invocation and summary changes.
+   * @param listener - receives the owning project after persistence.
+   * @returns unsubscribe callback. */
+  subscribe(listener: (project: string) => void): () => void {
+    this.listeners.add(listener)
+    return () => { this.listeners.delete(listener) }
+  }
   /** Permanently remove a deleted task's observations and summaries.
    * @param projectId - project already removed from the authority journal.
    * @returns completion after serialized durable cleanup. */

@@ -9,6 +9,7 @@ import type { PropsLocale, PropsRenderSlots, PropsRuntime } from '@deepseek-ai/d
 import type { WorkbenchView } from '@deepseek-ai/dsh-experimental-security-analysis/client'
 import { MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
 import { ProjectManagement } from './ProjectManagement.tsx'
+import { Improvements, type ImprovementActions } from './Improvements.tsx'
 import { ProjectDeletion } from './ProjectDeletion.tsx'
 import type { ProjectActions } from './Projects.tsx'
 import { ProjectLaboratories } from './ProjectLaboratories.tsx'
@@ -18,9 +19,9 @@ import type { NS } from './locales.ts'
 import css from './Dashboard.module.css'
 
 type Project = Extract<WorkbenchView['records'][number], { kind: 'engagement' }>['value']
-type Tab = 'overview' | 'activityEntry' | 'assets' | 'findings' | 'evidence' | 'reports' | 'laboratories'
+type Tab = 'overview' | 'activityEntry' | 'assets' | 'findings' | 'evidence' | 'reports' | 'laboratories' | 'improvements'
 /** Native Session ownership and project-scoped reads injected by the plugin. */
-export interface DashboardActions extends ProjectActions, ActivityActions {
+export interface DashboardActions extends ProjectActions, ActivityActions, ImprovementActions {
   projectArtifact(projectId: string, hash: string): Promise<string>
   findSession(projectId: string): Promise<SessionId | undefined>
   createSession(workspaceId: WorkspaceId): Promise<SessionId>
@@ -39,7 +40,7 @@ export function Dashboard(props: Props) {
   const workspaces = props.useWorkspaces(state => state.items)
   const [projects, setProjects] = useState<Project[]>([])
   const [selected, setSelected] = useState('')
-  const [section, setSection] = useState<'tasks' | 'removed' | 'toolbox'>('tasks')
+  const [section, setSection] = useState<'tasks' | 'removed' | 'toolbox' | 'improvements'>('tasks')
   const [tab, setTab] = useState<Tab>('overview')
   const [query, setQuery] = useState('')
   const [status, setStatus] = useState('all')
@@ -201,7 +202,7 @@ export function Dashboard(props: Props) {
       <header className={css.topbar}><div><span className={css.eyebrow}>{t('dashboardEyebrow')}</span><h1>{t('dashboardTitle')}</h1><p>{t('dashboardSubtitle')}</p></div>
         <div className={css.actions}><button disabled={busy} onClick={() => void perform(refresh)}>{t('refresh')}</button><button className={css.primary} onClick={() => { navigate(); setCreating(true); setSection('tasks') }}>{t('newAnalysis')}</button></div>
       </header>
-      <nav className={css.navigation} aria-label={t('dashboardNavigation')}>{(['tasks', 'removed', 'toolbox'] as const).map(key => <button key={key} aria-current={section === key ? 'page' : undefined} onClick={() => { navigate(); setSection(key) }}>{t(key === 'tasks' ? 'dashboardTasks' : key === 'removed' ? 'removedProjects' : 'toolbox')}</button>)}</nav>
+      <nav className={css.navigation} aria-label={t('dashboardNavigation')}>{(['tasks', 'removed', 'toolbox', 'improvements'] as const).map(key => <button key={key} aria-current={section === key ? 'page' : undefined} onClick={() => { navigate(); setSection(key) }}>{t(key === 'tasks' ? 'dashboardTasks' : key === 'removed' ? 'removedProjects' : key === 'improvements' ? 'evoTitle' : 'toolbox')}</button>)}</nav>
       {error && <div className={css.error} role="alert">{error}<button disabled={busy} onClick={() => void perform(refresh)}>{t('dashboardRetry')}</button></div>}
       {deletedProject && <div className={css.deletionNotice} role="status"><span>{t('deleteProjectDone')} · {deletedProject.title}</span>
         <button disabled={busy} onClick={() => void perform(async () => {
@@ -211,7 +212,7 @@ export function Dashboard(props: Props) {
           setProjects(JSON.parse(items) as Project[]); setDeletedProject(undefined)
         })}>{t('deleteProjectUndo')}</button><button onClick={() => { setDeletedProject(undefined) }}>{t('close')}</button></div>}
       {purgedTitle && <div className={css.deletionNotice} role="status"><span>{t('purgeProjectDone')} · {purgedTitle}</span><button onClick={() => { setPurgedTitle('') }}>{t('close')}</button></div>}
-      {section === 'toolbox' ? <Toolbox {...props} /> : creating ? <>
+      {section === 'improvements' ? <Improvements {...props} tasks={projects} /> : section === 'toolbox' ? <Toolbox {...props} /> : creating ? <>
         <button className={css.back} onClick={() =>{  navigate() }}>{t('dashboardBack')}</button>
         {!sessionId && <section className={css.creation}><h2>{t('newAnalysis')}</h2>{workspacePicker}<button className={css.primary} disabled={busy || !selectedWorkspace} onClick={() => void perform(async () => {
           const current = generation.current
@@ -238,6 +239,7 @@ export function Dashboard(props: Props) {
         {loading && <p role="status">{t('dashboardLoading')}</p>}
         {project && <>
           <header className={css.detailHeader}><div><span className={project.stopped ? css.stopped : css.badge}>{t(project.archived ? 'dashboardRemoved' : project.stopped ? 'dashboardStopped' : 'dashboardReady')}</span><h2>{project.title}</h2><p>{project.objective}</p></div></header><div className={css.intervention}>
+            <button aria-pressed={tab === 'improvements'} onClick={() => { setTab('improvements') }}>{t('evoTitle')}</button>
             {!project.archived && <><button disabled={busy} onClick={() => void perform(() => connect(false, false, true))}>{t('advancedDetails')}</button><button disabled={stopping || project.stopped} onClick={() => {
               const current = generation.current
               setStopping(true)
@@ -254,6 +256,7 @@ export function Dashboard(props: Props) {
           <nav className={css.detailTabs} aria-label={t('dashboardDetailNavigation')}>{(['overview', 'activityEntry', 'assets', 'findings', 'evidence', 'reports'] as const).map(key => <button key={key} aria-pressed={tab === key} onClick={() => { setTab(key); setEvidenceId('') }}>{t(key === 'overview' ? 'dashboardOverview' : key === 'assets' ? 'dashboardMaterials' : key)}</button>)}<button aria-pressed={tab === 'laboratories'} onClick={() =>{  setTab('laboratories') }}>{t('laboratories')}</button></nav>
           {tab === 'laboratories' && <ProjectLaboratories t={t} view={view} busy={busy} run={async (action, id) => { await perform(async () => { const current = generation.current; const next = await props.laboratory(selected, action, id); if (current === generation.current) setView(next) }) }} />}
           <div hidden={tab !== 'overview' && tab !== 'activityEntry'}><ActivityPanel key={project.id} {...props} project={project.id} view={view} changed={(next) =>{  setView(previous => next.revision >= previous.revision ? next : previous) }} /></div>
+          {tab === 'improvements' && <Improvements key={project.id} {...props} projectId={project.id} disabled={project.stopped || !!project.archived} />}
           {tab === 'overview' && <>
             <div className={css.stats}>{([['confirmedFindings', findings.filter(item => item.value.status === 'confirmed').length], ['pendingFindings', findings.filter(item => ['suspected', 'inconclusive'].includes(item.value.status)).length], ['evidence', evidence.length], ['blockedChecks', blocked.length]] as const).map(([label, count]) => <article key={label}><span>{t(label)}</span><strong>{count}</strong></article>)}</div>
             <div className={css.overviewGrid}><section className={css.panel}><h3>{t('findings')}</h3>{findings.length ? findings.slice(0, 5).map(item => <button className={css.summaryRow} key={item.value.id} onClick={() =>{  setTab('findings') }}><strong>{item.value.title}</strong><span className={css.badge}>{t(item.value.status)}</span></button>) : <p className={css.muted}>{t('dashboardNoFindings')}</p>}</section><section className={css.panel}><h3>{t('blockedChecks')}</h3>{blocked.length ? blocked.map(item => <article key={item.value.id}><h4>{item.value.title}</h4><p>{item.value.rationale}</p></article>) : <p className={css.muted}>{t('dashboardNoBlocks')}</p>}</section></div>

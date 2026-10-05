@@ -15,6 +15,7 @@ import { SecurityToolRow, securityToolNames } from './SecurityToolRow.tsx'
 import type { WorkbenchActions } from './Workbench.tsx'
 import { selectCoordinator } from './session-selection.ts'
 import { Dashboard, type DashboardActions } from './Dashboard.tsx'
+import { ImprovementToast, improvementNotifications } from './Improvements.tsx'
 import { ConversationProgressLauncher, ConversationProgressTab, ConversationProgressTitle, type ConversationProgressActions, type ConversationProgressEntryActions } from './ConversationProgress.tsx'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import { DashboardSession, type DashboardSessionInput } from './DashboardSession.tsx'
@@ -55,6 +56,9 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     for (const key of securityToolNames) scoped.slots.inject('tool.call.toolview', () =>
       scoped.slots.register({ name: 'tool.call.toolview', key, locale: NS }, SecurityToolRow))
     const remote = scoped.remote.securityWorkbench
+    const notifications = improvementNotifications()
+    scoped.slots.inject('shell.overlay', () => scoped.slots.register({ name: 'shell.overlay', id: 'security-improvements-toast',
+      inject: () => ({ notifications }) }, ImprovementToast))
     const projectActions: ProjectActions = {
       toolboxConfiguration: id => unwrap(remote.toolboxConfiguration(id)),
       configureTool: (id, input) => unwrap(remote.configureTool(id, input)),
@@ -101,6 +105,12 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       report: (project, id, format) => unwrap(remote.report(project, id, format)),
     }
     const dashboardActions: DashboardActions = {
+      improvements: id => unwrap(remote.improvements(id)),
+      analyzeImprovements: input => unwrap(remote.analyzeImprovements(input)),
+      updateImprovement: input => unwrap(remote.updateImprovement(input)),
+      exportImprovement: id => unwrap(remote.exportImprovement(id)),
+      followImprovements: signal => remote.followImprovements(signal),
+      notifyImprovement: notifications.push,
       ...projectActions,
       openChild: actions.openChild,
       followActivity: (id, signal) => remote.followActivity(id, signal),

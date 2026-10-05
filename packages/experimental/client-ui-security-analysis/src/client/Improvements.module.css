@@ -1,0 +1,20 @@
+.root { min-width: 0; color: var(--dsw-alias-label-primary); font-size: 13px; }
+.header, .actions, .filters { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-bottom: 16px; }
+.header { justify-content: space-between; }
+.header h2, .detail h3 { font-weight: 500; }
+.header p, .meta { color: var(--dsw-alias-label-secondary); }
+.filters label, .form label, .import { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.filters label { flex: 1 1 180px; }
+.root input, .root select, .root textarea { min-width: 0; padding: 8px; border: 0.5px solid var(--dsw-alias-border-l3); border-radius: 5px; background: var(--dsw-alias-bg-layer-1); color: inherit; font: inherit; }
+.root textarea { min-height: 80px; resize: vertical; }
+.card { border-bottom: 0.5px solid var(--dsw-alias-border-l2); padding: 16px 0; overflow-wrap: anywhere; }
+.title { display: flex; justify-content: space-between; gap: 12px; width: 100%; text-align: left; color: inherit; font: inherit; font-weight: 500; border: 0; padding: 4px 0; background: transparent; cursor: pointer; }
+.title span:last-child { flex-shrink: 0; color: var(--dsw-alias-label-secondary); }
+.detail { display: grid; gap: 12px; padding-top: 12px; line-height: 1.6; }
+.detail h3, .detail p, .detail ul { margin: 0; }
+.detail pre { white-space: pre-wrap; overflow-wrap: anywhere; background: var(--dsw-alias-bg-layer-2); padding: 12px; border-radius: 5px; font-size: inherit; }
+.detail summary { cursor: pointer; padding: 8px 0; }
+.form { display: grid; gap: 12px; margin: 12px 0; }
+.empty { padding: 32px 0; text-align: center; color: var(--dsw-alias-label-secondary); }
+.skeleton { display: grid; gap: 12px; }
+.skeleton div { height: 44px; border-radius: 5px; background: var(--dsw-alias-bg-layer-2); }

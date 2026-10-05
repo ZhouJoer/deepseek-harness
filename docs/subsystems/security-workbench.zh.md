@@ -14,6 +14,10 @@
 
 ## Cordis API 参考
 
+`EvolutionRun` 描述排队或已结束的独立分析。`EvolutionSource` 标识所属任务及准确 Session 事件或带哈希的领域记录，包含摘录截断信息。`EvolutionProposal` 汇总功能改动、验收场景、任务来源和人工进度。`EvolutionReceipt` 保存外部实施及测试声明；`EvolutionView.revision` 独立于安全命令校验人工写操作。这些浏览器可用值定义于[演进 schema](../../packages/experimental/security-analysis/src/evolution-model.ts)。`security_evolution` 存储域保存其版本化状态，不修改 Session 事件或格式。
+
+`analyzeImprovements` 使用 `operationId` 和 `expectedRevision` 提交项目请求。`improvements` 与 `followImprovements` 返回统一改进池；`updateImprovement` 接受校验修订号的 `status` 或 `receipt` 动作。重用操作标识必须提交相同输入。`exportImprovement` 返回选定编码任务与回执模板。导入回执可标记已修改，但不能标记已验证。这些方法需要操作者 Remote 访问，不是模型工具。
+
 `AnalysisScript` 描述内置分析脚本的稳定 ID、分类、技能、资源路径、依赖、参数和示例。只读清单不要求项目或环境，不触发工具检测，也不授予执行权限。字段定义见[分析脚本类型](../../packages/experimental/security-analysis/src/analysis-script-types.ts)。
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
@@ -31,6 +35,31 @@ Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnp
 Optional security profile service; default application compositions remain independent.
 
 ```ts cordis-catalog
+/** Read engineering suggestions without loading an analysis Agent.
+ * @param projectId - optional task filter.
+ * @returns the independent improvement revision and visible records. */
+@Remote('improvements') async improvements(projectId?: string): Promise<EvolutionView>
+
+/** Queue a revision-checked operator request for idle-time improvement analysis.
+ * @param input - operation ID, task and observed improvement revision.
+ * @returns the saved request and current suggestions. */
+@Remote('analyzeImprovements') async analyzeImprovements(input: string): Promise<EvolutionView>
+
+/** Save operator progress or a coding AI's implementation receipt.
+ * @param input - revision-checked status or receipt command.
+ * @returns current improvement records. */
+@Remote('updateImprovement') async updateImprovement(input: string): Promise<EvolutionView>
+
+/** Export a selected source-code improvement for an external coding AI.
+ * @param proposalId - operator-selected suggestion.
+ * @returns bounded source excerpts and portable implementation files. */
+@Remote('exportImprovement') async exportImprovement(proposalId: string): Promise<EvolutionBundle>
+
+/** Follow independent improvement commits without polling.
+ * @param signal - authenticated connection lifetime.
+ * @returns coalesced current views. */
+@Remote({ mode: 'stream' }) async *followImprovements(signal: AbortSignal): AsyncIterable<EvolutionView>
+
 /**
  * Refine and deduplicate the selected project's notes using a logged model Session.
  * @param agent - authenticated coordinating Session.

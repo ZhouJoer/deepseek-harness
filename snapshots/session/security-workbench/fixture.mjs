@@ -27,6 +27,7 @@ export async function apply(ctx) {
     environments: [],
     knowledgeIntervalMs: 0,
     analysisTurnTokens: 1000,
+    evolution: { provider: 'deepseek-official', model: 'deepseek-v4-flash-vision-exp' },
   })
   ctx.inject(['securityWorkbench'], (securityCtx) => {
     securityCtx.on('tools/execute', async (exec, next) => {
@@ -72,7 +73,35 @@ export async function apply(ctx) {
         checkpointId = selected.records.filter(record => record.kind === 'checkpoint').at(-1).value.id
       }
       assert.equal(selected.records.filter(record => record.kind === 'checkpoint').length, 3)
-      return { ...result, value: { report: result.value, restoredProject: await service.view(exec.agent) } }
+      const controller = await service.ready
+      let revision = selected.revision
+      for (const action of [
+        { kind: 'create', title: 'Routine analysis', objective: 'Review an ordinary completed workflow', environmentIds: [], maxAttempts: 1 },
+        { kind: 'checkpoint', phase: 'assessment', title: 'Evidence review', reason: 'Review supplied notes',
+          summary: 'Available evidence was reviewed successfully; no workflow gap was observed.',
+          next: 'Wait for additional material', evidenceIds: [], findingIds: [] },
+      ]) {
+        const saved = await controller.command('fixture-evolution-operator', { operationId: 'fixture-evolution-' + action.kind,
+          expectedRevision: revision, action }, true)
+        revision = saved.revision
+      }
+      const projectId = controller.binding('fixture-evolution-operator').engagementId
+      const improvements = await service.improvements()
+      await service.analyzeImprovements(JSON.stringify({ operationId: 'fixture-evolution-run',
+        expectedRevision: improvements.revision, projectId }))
+      const abort = new AbortController()
+      let completed
+      try {
+        for await (const current of service.followImprovements(abort.signal)) {
+          const run = current.runs.find(item => item.projectId === projectId)
+          if (!run || run.status === 'queued' || run.status === 'running') continue
+          assert.equal(run.status, 'completed', run.detail)
+          assert.equal(run.proposalIds.length, 0)
+          completed = { status: run.status, suggestions: run.proposalIds.length }
+          break
+        }
+      } finally { abort.abort() }
+      return { ...result, value: { report: result.value, restoredProject: await service.view(exec.agent), improvements: completed } }
     })
   })
 }

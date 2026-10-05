@@ -2,6 +2,8 @@
 - id: security-workbench
   config:
     analysisTurnTokens: 360000
+    evolution:
+      auto: true
     root: !!js dshHomePath('security')
     importRoots: !!js '[process.cwd()]'
     taskIntake:

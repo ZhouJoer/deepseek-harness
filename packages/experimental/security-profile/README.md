@@ -48,7 +48,11 @@ The Host patch mounts domain services and dedicated providers. The bundle regist
 
 -----
 
+
+This profile enables automatic [continuous improvement](../security-analysis/README.md#continuous-improvement) after five minutes of task inactivity. The analysis uses a separate model Session and adds model usage; set `security-workbench.config.evolution.auto` to false in an overlay to keep manual analysis only.
+
 <a id="model-experience"></a>
+
 ## Model Experience
 
 ### Security context

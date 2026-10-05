@@ -48,7 +48,11 @@ Host patch 挂载领域服务和专用 provider。bundle 向 `agent-preset-regis
 
 -----
 
+
+此 profile 默认在任务静默五分钟后自动[分析改进点](../security-analysis/README.zh.md#continuous-improvement)。分析使用独立模型 Session，产生额外模型用量；可在 overlay 中将 `security-workbench.config.evolution.auto` 设为 false，仅保留手动分析。
+
 <a id="model-experience"></a>
+
 ## 模型体验
 
 ### 安全上下文
