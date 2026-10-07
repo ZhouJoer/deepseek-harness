@@ -31,6 +31,25 @@ pnpm security:doctor python unicorn radare2 tshark jadx --save
 
 可执行文件路径和参数保存在当前目录下被 Git 忽略的 `.dsh/security-tools.json`。请在仓库根目录运行这些命令。`pnpm security` 与页面共用该文件，工具检查和后续模型请求会重新读取它。已保存路径失效会报错，不会回退到其他安装。脚本配置已安装软件，不修改系统 PATH。TShark 通过原生分析脚本调用；JADX 还提供专用 Android provider。设备、容器及其他环境仍在[示例 overlay](../../../apps/cli/config/examples/security-analysis/cordis.yml) 中配置。`--config FILE` 用于管理其他 JSON 文件；启动器只读取默认文件。
 
+<a id="external-docker-containers"></a>
+### 接入已有本机或远程 Docker 容器
+
+将[环境示例](../../../apps/cli/config/examples/security-analysis/external-container.json)复制到 `.dsh/security-environments.json`，修改容器名称和容器内工作目录。宿主 `cwd` 相对此 JSON 文件解析，因此 `".."` 表示仓库目录。`pnpm security` 按 ID 将环境合并到 profile 模板。`defaultEnvironmentIds` 为新任务选择环境；已有任务保留已保存的选择。修改环境声明后重启安全 profile。
+
+示例使用当前 Docker context。将 Docker 安装项的 `prefixArgs` 设为 `["--context", "YOUR_CONTEXT"]`，即可选择其他已配置的 context，包括通过 SSH 或 TLS 连接的远程 daemon。宿主需要该 context 的凭据和传输程序。`externalContainer` 接入已运行的容器，不创建挂载、不启动服务、不改变网络，也不管理其生命周期。工具参数使用容器内文件系统；宿主文件不会自动上传。网络可达性由所选容器和 daemon 决定。
+
+在所选容器内通过 Kali 软件包管理器安装 Metasploit。现有 `metasploit` 定义通过容器的 PATH 发现 `msfconsole`，无需绝对安装路径或单独的 DSH 插件。在仓库根目录验证已配置的环境：
+
+```sh
+pnpm security:tools doctor metasploit --environment kali
+```
+
+`available` 和 `ready` 分别表示版本检测通过和容器就绪。发现使用与本机工具相同的可扩展目录：导入其他工具包，再通过 `--environment` 选择其工具 ID。`set ID COMMAND`、`remove ID` 和 `scan --save` 管理该环境 `tools` 数组中的安装项。`--environments FILE` 为命令行操作选择其他部署文件。Web 安装文件选择器仍只浏览宿主文件。
+
+`security_environment` 返回宿主命令和完整的 `prefixArgs`，包括 Docker context、容器和工作目录。追加工具参数即可，不要再包装一层 Docker 命令。容器停止与删除仍由操作者管理。取消检测会终止宿主 Docker 客户端，但不保证外部容器内的工作也已终止。现有角色、项目和 Shell 权限检查继续生效。远程传输已有确定性测试覆盖；实际远程部署仍需单独检查连接。
+
+### 启动
+
 通过现有 Web 应用加载安全组合：
 
 ```sh

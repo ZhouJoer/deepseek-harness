@@ -1160,6 +1160,8 @@ export class SecurityController {
     const environment = this.options.environments.find(item => item.id === environmentId)
     if (!project.environmentIds.includes(environmentId) || !environment)
       throw new Error('Environment is outside project scope')
+    if (environment.externalContainer)
+      throw new Error('Dedicated analysis providers require managed file access; use the external container catalog command for native execution')
     return environment
   }
   private dependencies(view: WorkbenchView, check: CheckStep): void {

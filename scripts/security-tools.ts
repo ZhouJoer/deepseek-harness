@@ -1,14 +1,18 @@
-/** Inspect and pin existing local executables for pnpm security. @module */
+/** Manage definition packs and inspect installations in selected security environments. @module */
 import { existsSync, readFileSync, statSync } from 'node:fs'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { parseArgs } from 'node:util'
 import { execa } from 'execa'
+import { Context } from '@deepseek-ai/cordis'
+import LocalSubprocess from '@deepseek-ai/dsh-subprocess-local'
 import { ToolCatalog } from '../packages/experimental/security-analysis/src/tool-catalog.ts'
 import { discoverTools, orderTools } from '../packages/experimental/security-analysis/src/tool-definitions.ts'
 import { probeArguments, probeIdentity } from '../packages/experimental/security-analysis/src/tool-probes.ts'
 import { toolCandidates } from '../packages/experimental/security-analysis/src/tool-candidates.ts'
 import { scrubbedParentEnv } from '../packages/subprocess/subprocess/src/index.ts'
-import { readSecurityTools, securityToolsFile, standaloneTool, writeSecurityToolsFile } from './security-tools-config.ts'
+import { inspectToolbox } from '../packages/experimental/security-analysis/src/toolbox.ts'
+import type { ToolCatalogSnapshot } from '../packages/experimental/security-analysis/src/tool-catalog.ts'
+import { readSecurityEnvironments, readSecurityTools, securityToolsFile, standaloneTool, writeSecurityEnvironments, writeSecurityToolsFile } from './security-tools-config.ts'
 
 async function probe(command: string, args: string[]): Promise<string> {
   if (process.platform === 'win32' && /\.(cmd|bat|ps1)$/i.test(command))
@@ -22,7 +26,91 @@ async function probe(command: string, args: string[]): Promise<string> {
   return version
 }
 
-/** Execute the local tool manager without installing software or starting the application.
+interface EnvironmentSelection {
+  id: string
+  file: string
+  snapshot: ToolCatalogSnapshot
+  tags?: string[] | undefined
+  collections?: string[] | undefined
+  prefixArgs?: string[] | undefined
+  versionArgs?: string[] | undefined
+  save?: boolean | undefined
+}
+
+async function manageEnvironmentTools(action: string, selected: string[], options: EnvironmentSelection): Promise<void> {
+  const expected = readFileSync(options.file, 'utf8')
+  const configuration = readSecurityEnvironments(options.file)
+  const environment = configuration.environments.find(item => item.id === options.id)
+  if (!environment) throw new Error(`Unknown security environment: ${options.id}; configure it in ${options.file}`)
+  const { snapshot } = options
+  const ids = action === 'set' ? selected.slice(0, 1) : selected
+  const custom = [...new Set([...environment.tools.map(tool => tool.id), ...ids])]
+    .filter(id => !snapshot.tools.some(tool => tool.id === id)).map(id => standaloneTool(id, snapshot.tools))
+  const catalog = [...snapshot.tools, ...custom]
+  const definitions = discoverTools(catalog, snapshot.collections, { tags: options.tags, collectionIds: options.collections })
+  if (action === 'list') {
+    console.table(definitions.map((tool) => {
+      const installation = environment.tools.find(item => item.id === tool.id)
+      return { environment: environment.id, tool: tool.id, command: installation?.command ?? tool.commands.join(' / '),
+        prefixArgs: (installation?.prefixArgs ?? []).join(' '), versionArgs: (installation?.versionArgs ?? tool.args).join(' '),
+        via: tool.dependency ?? tool.invocation }
+    }))
+    console.log(`Environments: ${options.file}`)
+    return
+  }
+  if (action === 'remove') {
+    environment.tools = environment.tools.filter(tool => tool.id !== selected[0])
+  } else {
+    if (action === 'set') {
+      const id = selected[0] ?? '', command = selected[1] ?? ''
+      if (!command.trim()) throw new Error('An executable command is required')
+      const definition = standaloneTool(id, catalog)
+      const previous = environment.tools.find(tool => tool.id === id)
+      environment.tools = [...environment.tools.filter(tool => tool.id !== id), {
+        id, command, prefixArgs: options.prefixArgs ?? [], versionArgs: options.versionArgs ?? definition.args,
+        source: previous?.source ?? 'Operator installation',
+      }]
+    }
+    const requested = ids.length ? ids : definitions.filter(tool => tool.commands.length || tool.dependency).map(tool => tool.id)
+    const ctx = new Context()
+    let inventory
+    try {
+      await ctx.plugin(LocalSubprocess)
+      inventory = await inspectToolbox(ctx, environment, { durationMs: 15000, maxOutputBytes: 65536, graceMs: 3000 },
+        new AbortController().signal, requested, catalog)
+    } finally {
+      await ctx.fiber.dispose()
+    }
+    for (const tool of inventory.tools)
+      console.log(`${tool.id}: ${tool.status} | ${JSON.stringify([tool.command, ...tool.prefixArgs ?? []])}${tool.version ? ' | ' + tool.version : ''}${tool.detail ? ' | ' + tool.detail : ''}`)
+    console.log(`Environment ${environment.id}: ${inventory.runtime}${inventory.detail ? ' | ' + inventory.detail : ''}`)
+    const invalid = inventory.runtime !== 'ready' || inventory.tools.some(tool => tool.status === 'error') ||
+      (action === 'set' && inventory.tools.some(tool => tool.id === ids[0] && tool.status !== 'available'))
+    if (invalid) {
+      console.error('Repair the selected environment or installation. No configuration changes were saved.')
+      process.exitCode = 1
+      return
+    }
+    if (options.save) {
+      for (const tool of inventory.tools) {
+        const definition = catalog.find(item => item.id === tool.id)
+        if (tool.status !== 'available' || !definition || definition.dependency) continue
+        const previous = environment.tools.find(item => item.id === tool.id)
+        const installation = tool.installation ?? { command: tool.command, prefixArgs: tool.prefixArgs ?? [] }
+        environment.tools = [...environment.tools.filter(item => item.id !== tool.id), {
+          id: tool.id, ...installation,
+          versionArgs: previous?.versionArgs ?? definition.args, source: previous?.source ?? tool.source,
+        }]
+      }
+    }
+  }
+  if (action === 'set' || action === 'remove' || options.save) {
+    writeSecurityEnvironments(options.file, configuration, expected)
+    console.log(`Saved ${options.file}. Restart the security profile to apply environment changes.`)
+  } else console.log(`Environments: ${options.file}`)
+}
+
+/** Execute the tool manager without installing software or starting the application.
  * @param args - action, tool identifiers and optional configuration/search paths.
  * @returns completion after read-only probes and requested pin updates.
  */
@@ -32,10 +120,11 @@ export async function manageSecurityTools(args: string[]): Promise<void> {
     replace: { type: 'boolean' },
     arg: { type: 'string', multiple: true },
     'version-arg': { type: 'string', multiple: true },
+    environment: { type: 'string' }, environments: { type: 'string' },
     config: { type: 'string' }, dir: { type: 'string', multiple: true }, save: { type: 'boolean' }, help: { type: 'boolean' },
   } })
   if (values.help) {
-    console.log('pnpm security:tools [import PACK.json [--replace] | export PACK_ID FILE.json | list | doctor [ids...] | scan [ids...] [--dir DIR] [--save] | set ID PATH | remove ID]\nOptions: --config FILE; --catalog FILE; --tag TAG; --collection ID; --dir DIR (repeatable), --save (scan/doctor only); --arg=ARG, --version-arg=ARG (repeatable, set only). doctor checks Python environment details, Python modules (unicorn, r2pipe, frida) and native tools. Custom IDs supported. Refresh the toolbox after changes.')
+    console.log('pnpm security:tools [import PACK.json [--replace] | export PACK_ID FILE.json | list | doctor [ids...] | scan [ids...] [--dir DIR] [--save] | set ID COMMAND | remove ID]\nOptions: --environment ID; --environments FILE; --config FILE (local pins); --catalog FILE; --tag TAG; --collection ID; --dir DIR (local scan/doctor, repeatable); --save (scan/doctor only); --arg=ARG, --version-arg=ARG (repeatable, set only). Definitions describe discovery commands and probes; installations belong to the selected environment. Environment changes require restarting the security profile.')
     return
   }
   const [action = 'list', ...selected] = positionals
@@ -47,7 +136,11 @@ export async function manageSecurityTools(args: string[]): Promise<void> {
   if (values.arg && action !== 'set') throw new Error('--arg is only valid with set')
   if (values['version-arg'] && action !== 'set') throw new Error('--version-arg is only valid with set')
   const file = resolve(values.config ?? securityToolsFile)
-  const store = new ToolCatalog(resolve(values.catalog ?? join(dirname(file), 'security-tool-packs.json')))
+  const environmentsFile = resolve(values.environments ?? join(dirname(file), 'security-environments.json'))
+  if (values.environments && !values.environment) throw new Error('--environments requires --environment')
+  if (values.environment && values.dir) throw new Error('--dir searches the Host filesystem; use catalog command names or set ID COMMAND for a selected environment')
+  if (values.environment && values.config) throw new Error('--config selects local pins; use --environments for a selected environment')
+  const store = new ToolCatalog(resolve(values.catalog ?? join(dirname(values.environment ? environmentsFile : file), 'security-tool-packs.json')))
   if (action === 'import') {
     if (selected.length !== 1) throw new Error('Expected import PACK.json')
     const input = readFileSync(resolve(selected[0] ?? ''), 'utf8'), preview = store.preview(input)
@@ -64,6 +157,11 @@ export async function manageSecurityTools(args: string[]): Promise<void> {
     return
   }
   const snapshot = store.read()
+  if (values.environment) {
+    await manageEnvironmentTools(action, selected, { id: values.environment, file: environmentsFile, snapshot,
+      tags: values.tag, collections: values.collection, prefixArgs: values.arg, versionArgs: values['version-arg'], save: values.save })
+    return
+  }
   const toolboxCatalog = snapshot.tools
   const toolDefinition = (id: string) => standaloneTool(id, toolboxCatalog)
   let pins = readSecurityTools(file, toolboxCatalog)

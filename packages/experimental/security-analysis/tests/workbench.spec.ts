@@ -14,6 +14,7 @@ import { ArtifactStore } from '../src/workbench/artifacts.ts'
 import { SecurityController } from '../src/workbench/controller.ts'
 import { BinaryProvider } from '../src/workbench/binary.ts'
 import type { SecurityCommand } from '../src/workbench/controller.ts'
+import type { AnalysisOperation } from '../src/workbench/model.ts'
 import { findingHash } from '../src/workbench/assessment.ts'
 import { refineKnowledge, refinementSchema } from '../src/workbench/knowledge.ts'
 import { SecuritySearchIndex } from '../src/workbench/search.ts'
@@ -72,6 +73,37 @@ async function harness(generateReport?: (prompt: string, signal: AbortSignal) =>
 }
 
 describe('security workbench', () => {
+  it('rejects external-container provider preparation, observations and execution before reading Host artifacts', async () => {
+    const { controller, send, assetId, journal } = await harness()
+    const resolve = vi.fn((request: AnalysisOperation) => request)
+    const run = vi.fn(async () => ({ bytes: Buffer.from('wrong environment'), mediaType: 'text/plain',
+      summary: 'Unverified file', incomplete: false, toolVersion: 'fixture' }))
+    controller.providers.register({ id: 'ghidra', operations: ['functions'], resolve, run })
+    const operation = { provider: 'ghidra', operation: 'functions', assetId, environmentId: 'local',
+      parameters: {}, impact: 'observe' as const }
+    await send({ kind: 'check', check: { assetId, title: 'Inspect functions', phase: 'validation',
+      criterion: 'Verify file identity', dependencies: [], evidenceIds: [] } })
+    const check = controller.view('parent').records.find(item => item.kind === 'check')!
+    if (check.kind !== 'check') throw new Error('Missing fixture check')
+    const action = { kind: 'plan' as const, checkId: check.value.id, operation, hypothesis: 'Inspect the selected binary',
+      expectedObservation: 'Measured functions', impact: 'Read only', cleanup: 'No persistent target effects', durationMs: 100 }
+    await send(action)
+    const plan = controller.view('parent').records.find(item => item.kind === 'plan')!
+    if (plan.kind !== 'plan') throw new Error('Missing fixture plan')
+    await send({ kind: 'approve', planId: plan.value.id }, true)
+    resolve.mockClear()
+    const environment = controller.options.environments[0]!
+    environment.kind = 'docker'
+    environment.externalContainer = { name: 'external-analysis', workdir: '/analysis' }
+    const signal = new AbortController().signal
+    await expect(controller.observe('parent', operation, 'external-observation', signal)).rejects.toThrow('managed file access')
+    await expect(send(action)).rejects.toThrow('managed file access')
+    await expect(controller.execute('parent', plan.value.id, 'external-execution', journal.view().revision,
+      'external-execute', signal)).rejects.toThrow('managed file access')
+    expect(resolve).not.toHaveBeenCalled()
+    expect(run).not.toHaveBeenCalled()
+    expect(controller.view('parent').records.some(item => item.kind === 'evidence' || item.kind === 'execution')).toBe(false)
+  })
   it('notifies coordinator cancellation after durable stop and before waiting for delegated cleanup', async () => {
     const { controller } = await harness()
     const project = controller.binding('parent')!.engagementId

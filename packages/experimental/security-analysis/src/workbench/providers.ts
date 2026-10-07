@@ -16,11 +16,11 @@ export interface ToolInstallation {
   /** Operator-recorded origin of the installation. */
   source: string
 }
-/** An explicit local execution world; container images never silently change. */
+/** An operator-selected execution environment; container images never silently change. */
 export interface SecurityEnvironment {
   /** Stable identity used in project scope and execution leases. */
   id: string
-  /** Local process, owned Docker container or selected Android device. */
+  /** Local process, Docker container or selected Android device. */
   kind: 'local' | 'docker' | 'android'
   /** Operator-facing environment name. */
   label: string
@@ -30,6 +30,13 @@ export interface SecurityEnvironment {
   deviceId?: string
   /** Exact local Docker image reference; missing images are not downloaded. */
   image?: string
+  /** Existing container managed outside DSH, on the configured Docker endpoint. */
+  externalContainer?: {
+    /** Docker container name or ID; DSH never starts, stops or removes it. */
+    name: string
+    /** Absolute POSIX directory in the container; Host paths are not mounted or translated. */
+    workdir: string
+  } | undefined
   /** Installed tool declarations, independent of current runtime readiness. */
   tools: ToolInstallation[]
   /** Runtime-only immutable image identity measured by the environment manager. */

@@ -31,6 +31,25 @@ Custom tools default to `--version`; override this with repeated `--version-arg=
 
 Executable paths and arguments are saved in the Git-ignored `.dsh/security-tools.json` under the current directory. Run these commands from the repository root. `pnpm security` shares this file with the page; tool inspection and subsequent model requests reload it. A broken saved path reports an error without falling back to another installation. This script configures existing software and leaves system PATH unchanged. TShark is available through native analysis scripts; JADX also has a dedicated Android provider. Configure devices, containers and other environments in the [example overlay](../../../apps/cli/config/examples/security-analysis/cordis.yml). `--config FILE` manages an alternative JSON file; the launcher reads only the default file.
 
+<a id="external-docker-containers"></a>
+### Existing local or remote Docker containers
+
+Copy the [environment example](../../../apps/cli/config/examples/security-analysis/external-container.json) to `.dsh/security-environments.json`, then set the container name and its working directory. The Host `cwd` resolves relative to that JSON file, so `".."` selects the checkout. `pnpm security` merges environments by ID with the profile template. `defaultEnvironmentIds` selects environments for new tasks; existing tasks keep their saved selection. Restart the security profile after changing environment declarations.
+
+The example uses the current Docker context. Set the Docker installation's `prefixArgs` to `["--context", "YOUR_CONTEXT"]` to select another configured context, including a remote daemon reached through SSH or TLS. The Host needs that context's credentials and transport helpers. `externalContainer` attaches to a running container without creating mounts, starting services, changing networks or managing its lifetime. Tool arguments use the container's filesystem; Host files are not uploaded automatically. Network reachability follows the selected container and daemon.
+
+Install Metasploit through Kali's package manager in the selected container. The existing `metasploit` definition discovers `msfconsole` through the container's PATH. No absolute installation path or separate DSH plugin is required. Verify the configured environment from the repository root:
+
+```sh
+pnpm security:tools doctor metasploit --environment kali
+```
+
+`available` and `ready` confirm the version probe and container health. Discovery uses the same extensible catalog as local tools: import another tool pack, then select its IDs with `--environment`. `set ID COMMAND`, `remove ID` and `scan --save` manage installations in that environment's `tools` array. `--environments FILE` selects another deployment file for CLI operations. The Web installation file picker remains Host-only.
+
+`security_environment` returns a Host command and complete `prefixArgs`, including the Docker context, container and working directory. Append the tool's arguments without adding another Docker wrapper. Stopping and removing the container remain operator actions. Cancelling a probe terminates the Host Docker client; it does not guarantee termination of work inside an external container. Existing role, project and shell permission checks still apply. Remote transport has deterministic test coverage; an actual remote deployment needs its own connection check.
+
+### Launch
+
 Launch through the existing Web application with the security layers:
 
 ```sh

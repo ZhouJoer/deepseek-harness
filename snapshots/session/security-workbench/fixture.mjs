@@ -4,7 +4,7 @@ import crypto from 'node:crypto'
 import { syncBuiltinESMExports } from 'node:module'
 import { join } from 'node:path'
 export const name = 'security-workbench-snapshot-fixture'
-export const inject = ['tools', 'agents', 'systemPrompt', 'storageDomain', 'subagents', 'jobs']
+export const inject = ['tools', 'agents', 'systemPrompt', 'storageDomain', 'subagents', 'jobs', 'subprocess']
 export async function apply(ctx) {
   const originalNow = Date.now
   const originalUUID = crypto.randomUUID
@@ -18,18 +18,72 @@ export async function apply(ctx) {
     crypto.randomUUID = originalUUID
     syncBuiltinESMExports()
   })
+  const subprocess = ctx.subprocess
+  const originalResolve = subprocess.resolveExecutable
+  const originalSpawn = subprocess.spawn
+  const dockerCommand = 'fixture-docker'
+  const dockerPrefix = ['--context', 'fixture-remote']
+  subprocess.resolveExecutable = async function(command, ...args) {
+    return command === dockerCommand ? command : originalResolve.call(this, command, ...args)
+  }
+  subprocess.spawn = function(spec) {
+    if (spec.argv[0] !== dockerCommand) return originalSpawn.call(this, spec)
+    spec.signal.throwIfAborted()
+    assert.deepEqual(spec.argv.slice(1, 3), dockerPrefix)
+    const args = spec.argv.slice(3)
+    let stdout
+    switch (args[0]) {
+      case 'info':
+        assert.deepEqual(args, ['info', '--format', '{{.ServerVersion}}'])
+        stdout = '27.0\n'
+        break
+      case 'inspect':
+        assert.deepEqual(args, ['inspect', '--format', '{{.State.Running}}', 'fixture-container'])
+        stdout = 'true\n'
+        break
+      default:
+        assert.deepEqual(args, ['exec', '-i', '--workdir', '/analysis', 'fixture-container', 'fixture-console', '--version'])
+        stdout = 'Fixture Console 1.0\n'
+    }
+    return {
+      done: Promise.resolve({ exitCode: 0, signal: null }),
+      collected: {
+        stdout: { readFrom: () => ({ text: stdout, lossy: false }) },
+        stderr: { readFrom: () => ({ text: '', lossy: false }) },
+      },
+      terminate() {},
+      waitForExit: async () => true,
+    }
+  }
+  ctx.effect(() => () => {
+    subprocess.resolveExecutable = originalResolve
+    subprocess.spawn = originalSpawn
+  })
   ctx.on('agent/request', async (_request, next) => ({ ...await next(), maxTokens: 4096 }))
   const entry = process.env.DSH_EXAMPLE_MODE === 'lib' ? 'lib/index.js' : 'src/index.ts'
   const plugin = await import(new URL(`../../../packages/experimental/security-analysis/${entry}`, import.meta.url))
   await ctx.plugin(plugin.default, {
     root: join(process.env.DSH_HOME, 'security'),
     importRoots: [process.cwd()],
-    environments: [],
+    toolCatalogPath: join(process.env.DSH_HOME, 'security-tool-catalog.json'),
+    environments: [{ id: 'fixture-remote', label: 'Remote toolbox', kind: 'docker', cwd: process.cwd(),
+      externalContainer: { name: 'fixture-container', workdir: '/analysis' },
+      tools: [{ id: 'docker', command: dockerCommand, prefixArgs: dockerPrefix, versionArgs: ['--version'], source: 'Fixture endpoint' }] }],
     knowledgeIntervalMs: 0,
     analysisTurnTokens: 1000,
     evolution: { provider: 'deepseek-official', model: 'deepseek-v4-flash-vision-exp' },
   })
+  const environmentEntry = process.env.DSH_EXAMPLE_MODE === 'lib' ? 'lib/environment-local.js' : 'src/environment-local.ts'
+  const environments = await import(new URL(`../../../packages/experimental/security-analysis/${environmentEntry}`, import.meta.url))
+  await ctx.plugin(environments, {})
   ctx.inject(['securityWorkbench'], (securityCtx) => {
+    const pack = JSON.stringify({ version: 1, id: 'fixture-pack', label: 'Fixture tools', tools: [
+      { id: 'fixture-console', label: 'Fixture Console', commands: ['fixture-console'], platforms: ['linux'],
+        tags: ['security'], description: 'A separately registered container console.', args: ['--version'] },
+    ] })
+    const preview = securityCtx.securityWorkbench.previewToolPack(pack)
+    assert.deepEqual(preview.conflicts, [])
+    securityCtx.securityWorkbench.importToolPack(pack, preview.revision, false)
     securityCtx.on('tools/execute', async (exec, next) => {
       if (exec.name !== 'security_command' || JSON.parse(exec.arguments.command).action.kind !== 'report') return next()
       assert(exec.agent)
@@ -101,7 +155,12 @@ export async function apply(ctx) {
           break
         }
       } finally { abort.abort() }
-      return { ...result, value: { report: result.value, restoredProject: await service.view(exec.agent), improvements: completed } }
+      const toolbox = await service.toolboxInventory('fixture-remote', ['fixture-console'])
+      assert.equal(toolbox.inventory.tools[0].status, 'available')
+      assert.deepEqual(toolbox.inventory.tools[0].prefixArgs,
+        [...dockerPrefix, 'exec', '-i', '--workdir', '/analysis', 'fixture-container', 'fixture-console'])
+      return { ...result, value: JSON.parse(JSON.stringify({ report: result.value,
+        restoredProject: await service.view(exec.agent), improvements: completed, toolbox })) }
     })
   })
 }

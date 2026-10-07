@@ -1106,7 +1106,7 @@ export interface Config {
 ## `@deepseek-ai/dsh-experimental-security-analysis`
 
 - `inject`: `tools` · `agents` · `llm` · `systemPrompt` · `storageDomain` · `jobs` · `subagents`
-- `source`: [`packages/experimental/security-analysis/src/index.ts:66`](../packages/experimental/security-analysis/src/index.ts)
+- `source`: [`packages/experimental/security-analysis/src/index.ts:67`](../packages/experimental/security-analysis/src/index.ts)
 
 ```ts config-catalog
 /** Explicit host locations and operational limits. */
@@ -1214,11 +1214,11 @@ export interface TaskIntakeConfig {
   maxAttempts: number
 }
 
-/** An explicit local execution world; container images never silently change. */
+/** An operator-selected execution environment; container images never silently change. */
 export interface SecurityEnvironment {
   /** Stable identity used in project scope and execution leases. */
   id: string
-  /** Local process, owned Docker container or selected Android device. */
+  /** Local process, Docker container or selected Android device. */
   kind: 'local' | 'docker' | 'android'
   /** Operator-facing environment name. */
   label: string
@@ -1228,6 +1228,13 @@ export interface SecurityEnvironment {
   deviceId?: string
   /** Exact local Docker image reference; missing images are not downloaded. */
   image?: string
+  /** Existing container managed outside DSH, on the configured Docker endpoint. */
+  externalContainer?: {
+    /** Docker container name or ID; DSH never starts, stops or removes it. */
+    name: string
+    /** Absolute POSIX directory in the container; Host paths are not mounted or translated. */
+    workdir: string
+  } | undefined
   /** Installed tool declarations, independent of current runtime readiness. */
   tools: ToolInstallation[]
   /** Runtime-only immutable image identity measured by the environment manager. */

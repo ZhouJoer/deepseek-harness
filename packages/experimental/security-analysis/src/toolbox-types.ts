@@ -8,6 +8,8 @@ export interface ToolboxTool {
   command: string
   /** Fixed launcher arguments to prepend when invoking the reported command. */
   prefixArgs?: string[]
+  /** Executable inside a non-Host environment, suitable for saving its installation configuration. */
+  installation?: { command: string; prefixArgs: string[] }
   version: string
   location: string
   source: string

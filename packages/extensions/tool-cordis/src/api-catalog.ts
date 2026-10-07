@@ -6701,7 +6701,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SecurityEnvironment',
-    declaration: 'export interface SecurityEnvironment {\n    id: string;\n    kind: \'local\' | \'docker\' | \'android\';\n    label: string;\n    cwd: string;\n    deviceId?: string;\n    image?: string;\n    tools: ToolInstallation[];\n    resolvedImageId?: string;\n    containerId?: string;\n    exchangeRoot?: string;\n    webTarget?: {\n        origin: string;\n        instanceId: string;\n        networkId: string;\n        address: string;\n        laboratoryId: string;\n        target: string;\n        targetImageId: string;\n    };\n    manifest?: {\n        recipe: string;\n        imageId: string;\n        tools: Record<string, string>;\n        templates: Record<string, string>;\n    };\n}',
+    declaration: 'export interface SecurityEnvironment {\n    id: string;\n    kind: \'local\' | \'docker\' | \'android\';\n    label: string;\n    cwd: string;\n    deviceId?: string;\n    image?: string;\n    externalContainer?: {\n        name: string;\n        workdir: string;\n    } | undefined;\n    tools: ToolInstallation[];\n    resolvedImageId?: string;\n    containerId?: string;\n    exchangeRoot?: string;\n    webTarget?: {\n        origin: string;\n        instanceId: string;\n        networkId: string;\n        address: string;\n        laboratoryId: string;\n        target: string;\n        targetImageId: string;\n    };\n    manifest?: {\n        recipe: string;\n        imageId: string;\n        tools: Record<string, string>;\n        templates: Record<string, string>;\n    };\n}',
   },
   {
     name: 'SecurityJournal',
@@ -7905,7 +7905,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ToolboxTool',
-    declaration: 'export interface ToolboxTool {\n    id: string;\n    category: \'runtime\' | \'reverse\' | \'device\' | \'web\' | \'utility\' | \'custom\';\n    status: \'available\' | \'missing\' | \'error\' | \'not-checked\';\n    command: string;\n    prefixArgs?: string[];\n    version: string;\n    location: string;\n    source: string;\n    dependency?: string;\n    detail: string;\n    installUrl: string;\n    invocation: \'shell\' | \'plugin\' | \'python\' | \'provider\';\n    provider?: string;\n}',
+    declaration: 'export interface ToolboxTool {\n    id: string;\n    category: \'runtime\' | \'reverse\' | \'device\' | \'web\' | \'utility\' | \'custom\';\n    status: \'available\' | \'missing\' | \'error\' | \'not-checked\';\n    command: string;\n    prefixArgs?: string[];\n    installation?: {\n        command: string;\n        prefixArgs: string[];\n    };\n    version: string;\n    location: string;\n    source: string;\n    dependency?: string;\n    detail: string;\n    installUrl: string;\n    invocation: \'shell\' | \'plugin\' | \'python\' | \'provider\';\n    provider?: string;\n}',
   },
   {
     name: 'ToolCallBlock',

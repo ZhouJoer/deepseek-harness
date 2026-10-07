@@ -91,6 +91,7 @@ export class LocalEnvironmentManager {
    * @returns the owned container identity.
    */
   async start(environment: SecurityEnvironment, signal: AbortSignal): Promise<string> {
+    if (environment.externalContainer) throw new Error('External containers are managed outside DSH; start the container through its Docker endpoint')
     if (environment.kind !== 'docker' || !environment.image)
       throw new Error('A Docker environment and explicit image are required')
     if (this.containers.has(environment.id) || this.starting.has(environment.id))
@@ -176,6 +177,7 @@ export class LocalEnvironmentManager {
    * @returns completion after Docker confirms removal.
    */
   async stop(environment: SecurityEnvironment, signal: AbortSignal): Promise<void> {
+    if (environment.externalContainer) throw new Error('External containers are managed outside DSH; stop the container through its Docker endpoint')
     if (this.starting.has(environment.id) && !this.containers.has(environment.id)) throw new Error('Environment is starting')
     const container = this.containers.get(environment.id)
     if (!container) throw new Error('This activation does not own the environment container')
@@ -202,7 +204,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   ctx.effect(() => async () => {
     await controller.dispose()
     for (const environment of controller.options.environments) {
-      if (environment.containerId) await manager.stop(environment, new AbortController().signal)
+      if (environment.containerId && !environment.externalContainer) await manager.stop(environment, new AbortController().signal)
     }
   })
 }

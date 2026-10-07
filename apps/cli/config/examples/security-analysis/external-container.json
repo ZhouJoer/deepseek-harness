@@ -1,0 +1,21 @@
+{
+  "environments": [
+    {
+      "id": "kali",
+      "kind": "docker",
+      "label": "Kali Docker",
+      "cwd": "..",
+      "externalContainer": { "name": "kali-linux", "workdir": "/workspace" },
+      "tools": [
+        {
+          "id": "docker",
+          "command": "docker",
+          "prefixArgs": [],
+          "versionArgs": ["--version"],
+          "source": "Operator Docker context"
+        }
+      ]
+    }
+  ],
+  "defaultEnvironmentIds": ["local", "kali"]
+}

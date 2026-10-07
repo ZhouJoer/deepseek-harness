@@ -12,7 +12,7 @@ const run = vi.mocked(runProcess)
 const env: SecurityEnvironment = { id: 'local', label: 'Local', kind: 'local', cwd: process.cwd(), tools: [] }
 const limits = { durationMs: 1000, maxOutputBytes: 8192, graceMs: 100 }
 const ok = (stdout: string) => ({ stdout, stderr: '', exitCode: 0, signal: null, timedOut: false, cancelled: false, truncated: false })
-function fixture(available = ['python', 'radare2']) {
+function fixture(available = ['python', 'radare2', 'docker']) {
   const resolveExecutable = vi.fn(async (command: string) => {
     if (!available.includes(command)) throw new Error('Executable not found: ' + command)
     return command
@@ -85,5 +85,38 @@ describe('tool inventory', () => {
       tools: [{ id: 'r2pipe', command: 'other-python', versionArgs: [], source: 'Custom' }] })
     expect(result.tools.find(tool => tool.id === 'r2pipe')).toMatchObject({ status: 'error', command: 'other-python' })
     expect(run.mock.calls.some(call => call[2] === 'r2pipe')).toBe(false)
+  })
+  it('returns remote Docker invocations after probing dependencies inside the selected container', async () => {
+    run.mockImplementation(async (_ctx, _env, id, args) => id === 'docker' ? ok(args[0] === 'inspect' ? 'true' : '29.0')
+      : ok(id === 'python' ? '{"version":"3.12","location":"/opt/python/bin/python3"}'
+        : id === 'r2ghidra' ? '[{"name":"r2ghidra","version":"6.2","path":"/plugins/core.so"}]'
+          : id === 'r2pipe' || id === 'frida' ? '{"version":"1.0","location":"/site-packages"}' : '6.2'))
+    const environment: SecurityEnvironment = { ...env, kind: 'docker',
+      externalContainer: { name: 'remote-analysis', workdir: '/analysis' }, tools: [
+        { id: 'docker', command: 'docker', prefixArgs: ['--context', 'remote'], versionArgs: [], source: 'Host' },
+        { id: 'python', command: 'python3', prefixArgs: ['-I'], versionArgs: [], source: 'Container' },
+      ] }
+    const result = await fixture().inspect(environment)
+    expect(result).toMatchObject({ runtime: 'ready', containerId: 'remote-analysis', workdir: '/analysis' })
+    expect(result.tools.find(tool => tool.id === 'r2pipe')).toMatchObject({ status: 'available', command: 'docker',
+      installation: { command: 'python3', prefixArgs: ['-I'] },
+      location: '/site-packages', prefixArgs: ['--context', 'remote', 'exec', '-i', '--workdir', '/analysis', 'remote-analysis', 'python3', '-I'] })
+    const moduleProbe = run.mock.calls.find(call => call[2] === 'r2pipe')!
+    expect(moduleProbe[1].tools.find(tool => tool.id === 'r2pipe')).toMatchObject({ command: 'python3', prefixArgs: ['-I'] })
+    expect(moduleProbe[3][1]).toContain('importlib.import_module("r2pipe")')
+    expect(run.mock.calls.find(call => call[2] === 'docker' && call[3][0] === 'inspect')?.[3]).toEqual([
+      'inspect', '--format', '{{.State.Running}}', 'remote-analysis',
+    ])
+    expect(environment.tools[1]?.command).toBe('python3')
+    expect(environment.containerId).toBeUndefined()
+  })
+  it('does not probe tools or publish wrapper invocations for a stopped external container', async () => {
+    run.mockImplementation(async (_ctx, _env, _id, args) => ok(args[0] === 'inspect' ? 'false' : '29.0'))
+    const result = await fixture().inspect({ ...env, kind: 'docker',
+      externalContainer: { name: 'stopped-analysis', workdir: '/analysis' },
+      tools: [{ id: 'docker', command: 'docker', versionArgs: [], source: 'Host' }] })
+    expect(result.runtime).toBe('stopped')
+    expect(result.tools.every(tool => tool.status === 'not-checked')).toBe(true)
+    expect(run.mock.calls.every(call => call[2] === 'docker')).toBe(true)
   })
 })

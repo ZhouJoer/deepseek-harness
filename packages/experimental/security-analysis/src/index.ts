@@ -45,6 +45,7 @@ import { openSecurityJournal, type SecurityJournal } from './workbench/journal.t
 import { SecurityController, commandSchema } from './workbench/controller.ts'
 import { SecuritySearchIndex } from './workbench/search.ts'
 import type { SecurityEnvironment } from './workbench/providers.ts'
+import { securityEnvironmentSchema, validateSecurityEnvironments } from './security-environment-config.ts'
 import type { ToolboxDirectory, ToolboxConfiguration, ToolboxConfigurationResult, ToolboxFiles } from './toolbox-types.ts'
 import { operationSchema, childReportSchema, type WorkbenchView, type SecurityDelegation, type SecurityDelegationId } from './workbench/model.ts'
 import { refineKnowledge, refinementPrompt } from './workbench/knowledge.ts'
@@ -189,25 +190,7 @@ export default class SecurityWorkbench extends TypertRemoteService {
     knowledgeModel: Schema.string().pattern(/\S/u),
     root: Schema.string().required(),
     importRoots: Schema.array(Schema.string()).required(),
-    environments: Schema.array(
-      Schema.object({
-        id: Schema.string().required(),
-        kind: Schema.union(['local', 'docker', 'android'] as const).required(),
-        label: Schema.string().required(),
-        cwd: Schema.string().required(),
-        deviceId: Schema.string(),
-        image: Schema.string(),
-        tools: Schema.array(
-          Schema.object({
-            id: Schema.string().required(),
-            command: Schema.string().required(),
-            prefixArgs: Schema.array(Schema.string()),
-            versionArgs: Schema.array(Schema.string()).required(),
-            source: Schema.string().required(),
-          }),
-        ).required(),
-      }),
-    ).required(),
+    environments: Schema.array(securityEnvironmentSchema).required(),
     toolConfiguration: Schema.union([Schema.const(undefined),
       Schema.object({ path: Schema.string().required(), environmentId: Schema.string().required() }).required()]),
     maxDerivedAssets: Schema.number().step(1).min(1).default(256),
@@ -256,11 +239,7 @@ export default class SecurityWorkbench extends TypertRemoteService {
     if (![config.root, ...config.importRoots, ...config.environments.map(env => env.cwd)].every(isAbsolute)) {
       throw new Error('Security root, import roots and environment working directories must be absolute')
     }
-    if (new Set(config.environments.map(env => env.id)).size !== config.environments.length)
-      throw new Error('Environment IDs must be unique')
-    for (const environment of config.environments)
-      if (new Set(environment.tools.map(tool => tool.id)).size !== environment.tools.length)
-        throw new Error('Tool IDs must be unique within an environment')
+    validateSecurityEnvironments(config.environments)
     if (config.toolConfiguration) {
       const environment = config.environments.find(item => item.id === config.toolConfiguration?.environmentId)
       if (!environment) throw new Error('Tool configuration refers to an unknown environment')

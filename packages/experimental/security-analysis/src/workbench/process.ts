@@ -1,4 +1,4 @@
-/** Structured subprocess execution inside operator-selected local environments. @module */
+/** Structured subprocess execution in operator-selected Host and Docker environments. @module */
 import assert from 'node:assert/strict'
 import { isAbsolute, relative, sep, dirname, delimiter } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
@@ -29,10 +29,11 @@ export function installation(environment: SecurityEnvironment, id: string): Tool
 /**
  * Map an owned host path into the selected container mounts.
  * @param environment - selected execution world.
- * @param path - host file path supplied by an admitted provider.
- * @returns equivalent container path, or the original local path.
+ * @param path - provider argument; external-container arguments already use container paths.
+ * @returns mapped path for managed mounts, otherwise the original argument. External containers do not stage Host files.
  */
 export function environmentPath(environment: SecurityEnvironment, path: string): string {
+  if (environment.externalContainer) return path
   if (environment.kind !== 'docker' || !isAbsolute(path)) return path
   for (const [host, target] of [
     [environment.exchangeRoot, '/dsh-inputs'],
@@ -46,6 +47,25 @@ export function environmentPath(environment: SecurityEnvironment, path: string):
   throw new Error('Provider path is outside the selected container mounts')
 }
 
+/** Resolve a tool to its Host command and fixed launcher arguments.
+ * @param environment - selected execution environment.
+ * @param tool - installation selected in that environment.
+ * @returns invocation on the Host; append operation arguments separately.
+ */
+export function toolInvocation(environment: SecurityEnvironment, tool: Pick<ToolInstallation, 'id' | 'command' | 'prefixArgs'>): {
+  command: string
+  prefixArgs: string[]
+} {
+  if (environment.kind !== 'docker' || tool.id === 'docker')
+    return { command: tool.command, prefixArgs: [...tool.prefixArgs ?? []] }
+  const container = environment.externalContainer?.name ?? environment.containerId
+  if (!container) throw new Error('Start the configured Docker environment before using its tools')
+  const docker = installation(environment, 'docker')
+  return { command: docker.command, prefixArgs: [...docker.prefixArgs ?? [], 'exec', '-i', '--workdir',
+    environment.externalContainer?.workdir ?? (environment.webTarget ? '/tmp' : '/workspace'),
+    container, tool.command, ...tool.prefixArgs ?? []] }
+}
+
 /**
  * Run one explicit argv request and await subprocess quiescence.
  * @param ctx - configured subprocess service.
@@ -54,7 +74,7 @@ export function environmentPath(environment: SecurityEnvironment, path: string):
  * @param args - provider-resolved argv, not a shell program.
  * @param limits - cancellation, timeout and output limits; read-only inventory disables container shutdown on abort.
  * @param input - optional protocol input on stdin.
- * @returns output and independent termination facts.
+ * @returns output and independent termination facts. External-container cancellation stops the Host client; remote work may continue.
  */
 export async function runProcess(
   ctx: Context,
@@ -73,33 +93,18 @@ export async function runProcess(
   let handle
   try {
     const container = environment.kind === 'docker' && toolId !== 'docker'
-    if (container && !environment.containerId)
-      throw new Error('Start the configured Docker environment before using its tools')
+    const invocation = toolInvocation(environment, tool)
     const command = await ctx.subprocess.resolveExecutable(
-      container ? installation(environment, 'docker').command : tool.command,
+      invocation.command,
       {},
       signal,
     )
-    const toolArgs = [...tool.prefixArgs ?? [], ...args]
-    const argv = container
-      ? [
-        command,
-        ...installation(environment, 'docker').prefixArgs ?? [],
-        'exec',
-        '-i',
-        '--workdir',
-        environment.webTarget ? '/tmp' : '/workspace',
-        environment.containerId as string,
-        tool.command,
-        ...tool.prefixArgs ?? [],
-        ...args.map(arg => environmentPath(environment, arg)),
-      ]
-      : [command, ...toolArgs]
+    const argv = [command, ...invocation.prefixArgs, ...(container ? args.map(arg => environmentPath(environment, arg)) : args)]
     signal.throwIfAborted()
     handle = ctx.subprocess.spawn({
       argv,
       cwd: environment.cwd,
-      env: toolId === 'docker' ? { PATH: dirname(command) + delimiter + (process.env.PATH ?? '') } : {},
+      env: container || toolId === 'docker' ? { PATH: dirname(command) + delimiter + (process.env.PATH ?? '') } : {},
       signal,
       graceMs: limits.graceMs,
       stdio: {
@@ -127,7 +132,7 @@ export async function runProcess(
       handle.terminate()
       await handle.done
       if (!(await handle.waitForExit())) throw new Error('Tool process did not reach quiescence')
-      if (signal.aborted && limits.stopContainerOnAbort !== false && environment.kind === 'docker' && toolId !== 'docker' && environment.containerId) {
+      if (signal.aborted && limits.stopContainerOnAbort !== false && environment.kind === 'docker' && !environment.externalContainer && toolId !== 'docker' && environment.containerId) {
         const cleanup = await runProcess(ctx, environment, 'docker', ['kill', environment.containerId], {
           ...limits,
           signal: new AbortController().signal,

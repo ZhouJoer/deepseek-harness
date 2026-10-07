@@ -1,7 +1,7 @@
 /** Bounded, read-only discovery in the selected execution environment. @module */
 import type { Context } from '@deepseek-ai/cordis'
 import type { SecurityEnvironment, ToolInstallation } from './workbench/providers.ts'
-import { runProcess, requireProcessSuccess } from './workbench/process.ts'
+import { runProcess, requireProcessSuccess, toolInvocation, installation } from './workbench/process.ts'
 import type { ToolboxInventory, ToolboxTool } from './toolbox-types.ts'
 
 import { builtinToolPack } from './builtin-tools.ts'
@@ -31,10 +31,11 @@ export async function inspectToolbox(ctx: Context, environment: SecurityEnvironm
   environment = { ...environment, tools: structuredClone(environment.tools) }
   const resolved = resolveCatalog([{ ...builtinToolPack, tools: [...catalog], collections: [] }], environment.tools)
   const entries = orderTools(resolved.tools, toolIds).filter(tool => environment.kind !== 'docker' || tool.id !== 'docker')
+  const container = environment.externalContainer?.name ?? environment.containerId
   const inventory: ToolboxInventory = { environmentId: environment.id, kind: environment.kind,
-    runtime: 'ready', detail: '', checkedAt: Date.now(), workdir: environment.kind === 'docker'
-      ? environment.webTarget ? '/tmp' : '/workspace' : environment.cwd,
-    ...(environment.containerId ? { containerId: environment.containerId } : {}), tools: [] }
+    runtime: 'ready', detail: '', checkedAt: Date.now(), workdir: environment.externalContainer?.workdir ?? (environment.kind === 'docker'
+      ? environment.webTarget ? '/tmp' : '/workspace' : environment.cwd),
+    ...(container ? { containerId: container } : {}), tools: [] }
   const run = async (tool: ToolInstallation, args: string[]) => {
     const selected = environment.tools.find(item => item.id === tool.id)
     const tools = [...environment.tools.filter(item => item.id !== tool.id), { ...selected, ...tool }]
@@ -51,7 +52,7 @@ export async function inspectToolbox(ctx: Context, environment: SecurityEnvironm
       const docker = environment.tools.find(tool => tool.id === 'docker')
       if (!docker) throw new Error('Docker command is not configured')
       await run(docker, ['info', '--format', '{{.ServerVersion}}'])
-      if (!environment.containerId || await run(docker, ['inspect', '--format', '{{.State.Running}}', environment.containerId]) !== 'true') inventory.runtime = 'stopped'
+      if (!container || await run(docker, ['inspect', '--format', '{{.State.Running}}', container]) !== 'true') inventory.runtime = 'stopped'
     } catch (error) {
       signal.throwIfAborted()
       inventory.runtime = 'unavailable'
@@ -119,6 +120,16 @@ export async function inspectToolbox(ctx: Context, environment: SecurityEnvironm
       signal.throwIfAborted()
       row.detail = error instanceof Error ? error.message : String(error)
       row.status = configured || (executableFound && !(error instanceof MissingContainerTool) && !/ModuleNotFoundError|PackageNotFoundError/.test(row.detail)) ? 'error' : 'missing'
+    }
+  }
+  if (environment.kind === 'docker' && inventory.runtime === 'ready') {
+    const docker = installation(environment, 'docker')
+    const command = await ctx.subprocess.resolveExecutable(docker.command, {}, signal)
+    for (const row of inventory.tools) {
+      if (row.status !== 'available') continue
+      row.installation = { command: row.command, prefixArgs: [...row.prefixArgs ?? []] }
+      row.prefixArgs = toolInvocation(environment, row).prefixArgs
+      row.command = command
     }
   }
   return inventory
