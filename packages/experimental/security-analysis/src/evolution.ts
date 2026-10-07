@@ -38,16 +38,19 @@ export interface EvolutionConfig {
   provider?: string
   /** Dedicated model; omission uses the latest observed coordinator route. */
   model?: string
+  /** Provider-supported effort; omission keeps the model default. */
+  reasoningEffort?: string
 }
 /** Defaults apply only when the security workbench is installed; automatic runs are profile-owned. */
 export const evolutionConfig: Schema<EvolutionConfig> = Schema.object({
   auto: Schema.boolean().default(false), idleMs: Schema.number().step(1).min(1).max(2147483647).default(300000),
   concurrency: Schema.number().step(1).min(1).default(1), inputBytes: Schema.number().step(1).min(16384).default(131072),
-  outputTokens: Schema.number().step(1).min(1).default(16384),
+  outputTokens: Schema.number().step(1).min(1).default(24576),
   timeoutMs: Schema.number().step(1).min(1).max(2147483647).default(300000),
   excerptBytes: Schema.number().step(1).min(128).default(2048), maxCandidates: Schema.number().step(1).min(0).default(20),
   maxSuggestions: Schema.number().step(1).min(1).default(5),
   provider: Schema.string().pattern(/\S/u), model: Schema.string().pattern(/\S/u),
+  reasoningEffort: Schema.string().pattern(/\S/u),
 }).default({})
 
 /** Instructions deliberately target product capabilities rather than vulnerabilities in analyzed targets. */
@@ -388,10 +391,18 @@ export class SecurityEvolution {
       }
       const route = this.config.provider && this.config.model ? { provider: this.config.provider, model: this.config.model } : task?.route
       if (!route) throw new Error('Select an analysis model or configure evolution.provider and evolution.model')
+      const model = await this.ctx.llm.resolveModelInfo(route.provider, route.model, signal)
+      const efforts = model.reasoning?.efforts ?? []
+      const effort = this.config.reasoningEffort === undefined
+        ? model.reasoning?.defaultEffort
+        : efforts.find(item => item.id === this.config.reasoningEffort)?.id
+      if (this.config.reasoningEffort !== undefined && effort === undefined) {
+        throw new Error(`evolution.reasoningEffort "${this.config.reasoningEffort}" is unsupported by ${route.provider}/${route.model}`)
+      }
       this.creating.add(sessionId)
       let output: string
-      try { output = await synthesize(this.ctx, { ...route, maxTokens: this.config.outputTokens, instructions: evolutionPrompt,
-        prompt: this.prompt(input), signal, sessionId }) }
+      try { output = await synthesize(this.ctx, { ...route, reasoningEffort: effort, maxTokens: this.config.outputTokens,
+        instructions: evolutionPrompt, prompt: this.prompt(input), signal, sessionId }) }
       finally { this.creating.delete(sessionId) }
       signal.throwIfAborted()
       if (Buffer.byteLength(output) > this.outputBytes) throw new Error('Improvement response exceeds the output limit')

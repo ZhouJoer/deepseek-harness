@@ -1107,7 +1107,7 @@ export interface Config {
 
 ## `@deepseek-ai/dsh-experimental-security-analysis`
 
-- `inject`: `tools` · `agents` · `systemPrompt` · `storageDomain` · `jobs` · `subagents`
+- `inject`: `tools` · `agents` · `llm` · `systemPrompt` · `storageDomain` · `jobs` · `subagents`
 - `source`: [`packages/experimental/security-analysis/src/index.ts:66`](../packages/experimental/security-analysis/src/index.ts)
 
 ```ts config-catalog
@@ -1202,6 +1202,8 @@ export interface EvolutionConfig {
   provider?: string
   /** Dedicated model; omission uses the latest observed coordinator route. */
   model?: string
+  /** Provider-supported effort; omission keeps the model default. */
+  reasoningEffort?: string
 }
 
 /** Host-selected resources for authenticated user tasks. */

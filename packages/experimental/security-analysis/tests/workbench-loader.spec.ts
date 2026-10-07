@@ -11,7 +11,7 @@ import Include from '@deepseek-ai/cordis-plugin-include'
 import Agents from '@deepseek-ai/dsh-agent'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
-import Llm, { LlmAdapter, ToolCallId, createUserMessage } from '@deepseek-ai/dsh-llm'
+import Llm, { LlmAdapter, ReasoningEffortId, ToolCallId, createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { GenerateOptions, LlmResolvedModelInfo, StreamChunk } from '@deepseek-ai/dsh-llm'
 import Sessions, { SessionId } from '@deepseek-ai/dsh-session'
 import Projections from '@deepseek-ai/dsh-session-projection'
@@ -91,10 +91,12 @@ class ScopeModel extends LlmAdapter {
   refinementOutput: ((prompt: string) => string) | undefined
   evolutionOutput: ((prompt: string) => string) | undefined
   evolutionTruncated = false
+  reasoning: LlmResolvedModelInfo['reasoning']
   reportOutput: ((prompt: string) => string) | undefined
   refinementWait: ((signal: AbortSignal | undefined) => Promise<void>) | undefined
   override resolveModel(provider: string, model: string): Promise<LlmResolvedModelInfo> {
-    return Promise.resolve({ provider, id: model, name: model, inputModalities: ['text'] })
+    return Promise.resolve({ provider, id: model, name: model, inputModalities: ['text'],
+      ...this.reasoning === undefined ? {} : { reasoning: this.reasoning } })
   }
   async *stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
     this.requests.push(options)
@@ -1780,6 +1782,45 @@ it('denies unsolicited tools in improvement synthesis at the executor', async ()
   await vi.waitFor(async () => { expect((await ctx.securityWorkbench.improvements()).runs.at(-1)).toMatchObject({ status: 'completed' }) })
   expect(executed).not.toHaveBeenCalled()
   expect(denied.join(' ')).toContain('Tools are unavailable')
+})
+
+it.each([
+  { offered: ['low', 'high'], configured: undefined, expected: 'high' },
+  { offered: ['low', 'high'], configured: 'low', expected: 'low' },
+  { offered: ['high'], configured: undefined, expected: 'high' },
+  { offered: [], configured: undefined, expected: undefined },
+  { offered: ['low', 'high'], configured: 'unsupported', expected: undefined },
+])('resolves improvement reasoning from provider capabilities: $offered / $configured', async ({ offered, configured, expected }) => {
+  const { ctx, agent, controller, model } = await load(false, 0, { evolution: { provider: 'fixture', model: 'fixture',
+    ...configured === undefined ? {} : { reasoningEffort: configured } } })
+  if (offered.length) model.reasoning = { efforts: offered.map(id => ({ id: ReasoningEffortId(id), name: id })),
+    defaultEffort: ReasoningEffortId('high') }
+  const loggedEfforts: (ReasoningEffortId | undefined)[] = []
+  ctx.on('session/event', (_session, event) => {
+    if (event.type === 'request/header') loggedEfforts.push(event.data.header.config.reasoningEffort)
+  })
+  const send = operator(controller, agent)
+  await send({ kind: 'create', title: 'Reasoning budget', objective: 'Review packet processing', environmentIds: ['local'], maxAttempts: 2 })
+  await send({ kind: 'checkpoint', phase: 'assessment', title: 'Repeated conversion', reason: 'Review workflow',
+    summary: 'Time mapping was reconstructed manually', next: 'Assess script reuse', evidenceIds: [], findingIds: [] })
+  model.evolutionOutput = () => '{"suggestions":[]}'
+  const before = await ctx.securityWorkbench.improvements()
+  await ctx.securityWorkbench.analyzeImprovements(JSON.stringify({ projectId: controller.binding(agent.id)!.engagementId,
+    expectedRevision: before.revision, operationId: 'reasoning-policy' }))
+  await vi.waitFor(async () => {
+    const run = (await ctx.securityWorkbench.improvements()).runs.at(-1)
+    expect(run?.status).toBe(configured === 'unsupported' ? 'failed' : 'completed')
+    if (configured === 'unsupported') expect(run?.detail).toContain('evolution.reasoningEffort "unsupported" is unsupported')
+  })
+  const requests = model.requests.filter(request => request.messages.some(message => message.content.some(block =>
+    block.type === 'text' && block.text.includes('\nObservations: '))))
+  if (configured === 'unsupported') expect(requests).toHaveLength(0)
+  else {
+    expect(requests).toHaveLength(1)
+    expect(requests[0]?.reasoningEffort).toBe(expected)
+    expect(requests[0]?.maxTokens).toBe(24576)
+    expect(loggedEfforts).toEqual([expected])
+  }
 })
 
 it('reports an exhausted synthesis budget and accepts an explicit retry', async () => {

@@ -157,7 +157,7 @@ Keep human-facing reports brief: the key conclusion, material impact or limitati
 
 /** Optional security profile service; default application compositions remain independent. */
 export default class SecurityWorkbench extends TypertRemoteService {
-  static inject = ['tools', 'agents', 'systemPrompt', 'storageDomain', 'jobs', 'subagents']
+  static inject = ['tools', 'agents', 'llm', 'systemPrompt', 'storageDomain', 'jobs', 'subagents']
   static Config: Schema<WorkbenchConfig> = Schema.object({
     evolution: evolutionConfig,
     toolCatalogPath: Schema.string(),

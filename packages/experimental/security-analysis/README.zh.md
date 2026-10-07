@@ -163,7 +163,7 @@ Host 运行期间，配置成对的 `knowledgeProvider` 和 `knowledgeModel` 后
 
 服务的 `evolution.auto` 默认为 false，安全 profile 将其设为 true。新增活动后，`idleMs` 默认等待 300,000 毫秒；协调会话、子任务、检查和后台作业须全部空闲。手动请求也等待空闲，但不等待静默间隔。每个任务保留一个请求；`concurrency` 默认为一。新增活动取消分析并重新等待。停止、归档和卸载会取消并等待执行结束。待处理请求跨重启保留；中断运行重新排队，失败则等待新增活动或手动重试。历史任务不自动回溯。
 
-专用 `evolution.provider` 与 `model` 必须一起配置；否则沿用最近观察到的协调者已解析 provider/model。默认 `inputBytes: 131072`、`excerptBytes: 2048`、`outputTokens: 16384`、`timeoutMs: 300000`、`maxCandidates: 20` 和 `maxSuggestions: 5`。输入包含有界可见记录、准确 Session 序号、任务记录、运行版本、截断标记和历史资料缺口。事件发生时确定归属；工具结果保留调用所属任务。不收集推理流。候选筛选匹配组件、适用条件和预期改动的中英文关键词；模型归并保留人工进度，准确来源去重。已验证建议收到新依据时提示复查，不改变状态。
+专用 `evolution.provider` 与 `model` 必须一起配置；否则沿用最近观察到的协调者已解析 provider/model。独立分析沿用模型默认推理强度；`evolution.reasoningEffort` 可显式选择受支持的强度，不支持的值会在发送请求前报错。该设置不改变协调者。在推理与正文共用额度的服务商上，`outputTokens` 同时限制两者。默认 `inputBytes: 131072`、`excerptBytes: 2048`、`outputTokens: 24576`、`timeoutMs: 300000`、`maxCandidates: 20` 和 `maxSuggestions: 5`。输入包含有界可见记录、准确 Session 序号、任务记录、运行版本、截断标记和历史资料缺口。事件发生时确定归属；工具结果保留调用所属任务。不收集推理流。候选筛选匹配组件、适用条件和预期改动的中英文关键词；模型归并保留人工进度，准确来源去重。已验证建议收到新依据时提示复查，不改变状态。
 
 独立 `security_evolution` 存储域串行提交包含运行、记录、建议和回执的原子状态记录，其修订号不改变安全审批修订号。永久删除接入现有可恢复清理，移除任务记录与快照，保留共享建议中其他任务的贡献。导出即时生成，仅附有界摘录，不附样本或完整会话。原始及复盘 Session 沿用现有保留规则；用途标记继续保留，禁止将复盘 Session 作为普通 Agent 续聊。
 

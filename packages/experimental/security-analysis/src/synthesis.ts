@@ -4,13 +4,15 @@ import type { Context } from '@deepseek-ai/cordis'
 import { installModelSelection } from '@deepseek-ai/dsh-agent'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import type { SessionId } from '@deepseek-ai/dsh-session'
-import { createUserMessage } from '@deepseek-ai/dsh-llm'
+import { createUserMessage, type ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 
 /** Fully resolved model selection and output limits for an isolated request. */
 export interface SynthesisRequest {
   provider: string
   model: string
   maxTokens: number
+  /** Resolved provider-supported effort; omission keeps the provider default. */
+  reasoningEffort?: ReasoningEffortId | undefined
   instructions: string
   prompt: string
   signal: AbortSignal
@@ -23,14 +25,15 @@ export interface SynthesisRequest {
  * @param request - resolved route, exact input and cancellation owner.
  * @returns completed visible model text after Agent teardown. */
 export async function synthesize(ctx: Context, request: SynthesisRequest): Promise<string> {
-  const { provider, model, signal } = request
+  const { provider, model, signal, reasoningEffort } = request
   const result = { output: '', completed: false, failure: '' }
   const handle = await ctx.agents.create({
     sessionId: brandString<SessionId>(request.sessionId ?? randomUUID()),
     meta: { cwd: request.cwd ?? process.cwd() },
     agentOptions: { provider, model, maxTokens: request.maxTokens }, signal,
     setup: (scoped, agent) => {
-      installModelSelection(scoped, { current: { provider, model }, assembled: undefined })
+      installModelSelection(scoped, { current: { provider, model,
+        ...reasoningEffort === undefined ? {} : { reasoningEffort } }, assembled: undefined })
       scoped.effect(() => scoped.tools.presentAs('native'))
       scoped.effect(() => scoped.tools.restrict({ allow: [] }))
       scoped.tools.guard(() => 'Tools are unavailable in a synthesis Session')
