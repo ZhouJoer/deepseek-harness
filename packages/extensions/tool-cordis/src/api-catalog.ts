@@ -2015,6 +2015,18 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'environment choices and current optional-tool observations.',
       },
       {
+        signature: '@Remote(\'deviceDirectory\') deviceDirectory(environmentId?: string): DeviceDirectory',
+        description: 'Read the last device inspection without touching hardware or selecting a project.',
+        parameters: [{ name: 'environmentId', description: 'selected environment; omission selects the first local environment.' }],
+        returns: 'environment choices and unchecked or previously measured interfaces.',
+      },
+      {
+        signature: '@Remote(\'deviceInventory\') async deviceInventory(environmentId?: string): Promise<DeviceDirectory>',
+        description: 'Explicitly inspect Windows prerequisites; enumeration does not validate radio capture.',
+        parameters: [{ name: 'environmentId', description: 'configured local environment.' }],
+        returns: 'settled observations; failed inspections leave the previous directory intact.',
+      },
+      {
         signature: '@Remote(\'toolboxConfiguration\') toolboxConfiguration(environmentId: string): ToolboxConfiguration',
         description: 'Read editable tool settings independently of a project or conversation.',
         parameters: [{ name: 'environmentId', description: 'selected environment.' }],
@@ -4777,11 +4789,11 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'AnalysisScriptKind',
-    declaration: 'export type AnalysisScriptKind = \'captureSummary\' | \'extractPackets\' | \'mqttSessions\' | \'mqttTopics\' | \'moduleWatch\' | \'functionTrace\';',
+    declaration: 'export type AnalysisScriptKind = \'captureSummary\' | \'extractPackets\' | \'mqttSessions\' | \'mqttTopics\' | \'moduleWatch\' | \'functionTrace\' | \'wirelessCapture\';',
   },
   {
     name: 'AnalysisScriptParameter',
-    declaration: 'export interface AnalysisScriptParameter {\n    flag: \'--input\' | \'--output\' | \'--tshark\' | \'--timeout\' | \'--max-packets\' | \'--max-output-bytes\' | \'--max-decode-bytes\' | \'--filter\' | \'--stream\' | \'--field\' | \'--mqtt-port\' | \'--max-events\' | \'--module\' | \'--symbol\' | \'--stack-depth\';\n    required: boolean;\n    value: string;\n}',
+    declaration: 'export interface AnalysisScriptParameter {\n    flag: \'--input\' | \'--output\' | \'--tshark\' | \'--timeout\' | \'--max-packets\' | \'--max-output-bytes\' | \'--max-decode-bytes\' | \'--filter\' | \'--stream\' | \'--field\' | \'--mqtt-port\' | \'--max-events\' | \'--module\' | \'--symbol\' | \'--stack-depth\' | \'--protocol\' | \'--mode\';\n    required: boolean;\n    value: string;\n}',
   },
   {
     name: 'ApiKeyRecord',
@@ -5308,6 +5320,18 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface DeveloperMessage extends MessageBase {\n    readonly role: \'developer\';\n}',
   },
   {
+    name: 'DeviceCheck',
+    declaration: 'export interface DeviceCheck {\n    id: \'python\' | \'tshark\' | \'npcap\' | \'serial\' | \'capture-interfaces\' | \'nrf-extcap\' | \'capture-validation\';\n    status: \'not-checked\' | \'available\' | \'missing\' | \'unsupported\' | \'error\';\n    detail: string;\n}',
+  },
+  {
+    name: 'DeviceDirectory',
+    declaration: 'export interface DeviceDirectory {\n    environments: {\n        id: string;\n        label: string;\n        kind: \'local\' | \'docker\' | \'android\';\n    }[];\n    inventory: DeviceInventory;\n}',
+  },
+  {
+    name: 'DeviceInventory',
+    declaration: 'export interface DeviceInventory {\n    environmentId: string;\n    checkedAt: number;\n    checks: DeviceCheck[];\n    devices: RadioDevice[];\n}',
+  },
+  {
     name: 'DirectoryEntry',
     declaration: 'export interface DirectoryEntry {\n    name: string;\n    path: string;\n    hidden: boolean;\n}',
   },
@@ -5421,7 +5445,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'EnvironmentManager',
-    declaration: 'export interface EnvironmentManager {\n    inventory(environment: SecurityEnvironment, signal: AbortSignal, toolIds?: readonly string[]): Promise<ToolboxInventory>;\n    inspect(environment: SecurityEnvironment, signal: AbortSignal): Promise<EnvironmentStatus>;\n    start(environment: SecurityEnvironment, signal: AbortSignal): Promise<string>;\n    stop(environment: SecurityEnvironment, signal: AbortSignal): Promise<void>;\n}',
+    declaration: 'export interface EnvironmentManager {\n    devices(environment: SecurityEnvironment, signal: AbortSignal): Promise<import(\'../device-types.ts\').DeviceInventory>;\n    inventory(environment: SecurityEnvironment, signal: AbortSignal, toolIds?: readonly string[]): Promise<ToolboxInventory>;\n    inspect(environment: SecurityEnvironment, signal: AbortSignal): Promise<EnvironmentStatus>;\n    start(environment: SecurityEnvironment, signal: AbortSignal): Promise<string>;\n    stop(environment: SecurityEnvironment, signal: AbortSignal): Promise<void>;\n}',
   },
   {
     name: 'EnvironmentStatus',
@@ -6426,6 +6450,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'QueueAction',
     declaration: 'export type QueueAction = {\n    readonly kind: \'edit\';\n    readonly content: readonly TextBlock[];\n} | {\n    readonly kind: \'remove\';\n} | {\n    readonly kind: \'steer\';\n};',
+  },
+  {
+    name: 'RadioDevice',
+    declaration: 'export interface RadioDevice {\n    id: RadioDeviceId;\n    kind: \'serial\' | \'capture\' | \'nrf-extcap\';\n    name: string;\n    path: string;\n    pnpId?: string;\n    vendorId?: string;\n    productId?: string;\n    serialNumber?: string;\n    observedAt: number;\n}',
+  },
+  {
+    name: 'RadioDeviceId',
+    declaration: 'export type RadioDeviceId = Branded<\'SecurityRadioDevice\'>;',
   },
   {
     name: 'ReadOnlyReason',

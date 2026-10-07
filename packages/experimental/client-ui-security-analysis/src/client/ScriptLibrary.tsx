@@ -12,6 +12,7 @@ const parameterLabels = {
   '--max-decode-bytes': 'scriptParamDecodeBytes', '--filter': 'scriptParamFilter', '--stream': 'scriptParamStream',
   '--mqtt-port': 'scriptParamMqttPort', '--field': 'scriptParamField', '--max-events': 'scriptParamEvents',
   '--module': 'scriptParamModule', '--symbol': 'scriptParamSymbol', '--stack-depth': 'scriptParamStack',
+  '--protocol': 'captureProtocol', '--mode': 'captureOperation',
 } as const
 
 /** Browse built-in scripts and their parameters without executing them.

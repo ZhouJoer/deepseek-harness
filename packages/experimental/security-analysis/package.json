@@ -71,6 +71,10 @@
     "./offline": {
       "types": "./lib/types/offline-provider.d.ts",
       "default": "./lib/offline.js"
+    },
+    "./packet-capture": {
+      "types": "./lib/types/packet-capture-provider.d.ts",
+      "default": "./lib/packet-capture.js"
     }
   },
   "files": [
@@ -85,6 +89,7 @@
     "lib/web.js",
     "lib/laboratory.js",
     "lib/offline.js",
+    "lib/packet-capture.js",
     "lib/model-*.js",
     "lib/process-*.js",
     "lib/toolbox-*.js",
@@ -92,6 +97,7 @@
     "lib/source-*.js",
     "lib/assessment-*.js",
     "lib/artifacts-*.js",
+    "lib/device-inventory-*.js",
     "resources/**/*.py",
     "resources/**/*.js",
     "resources/toolbox/Dockerfile",

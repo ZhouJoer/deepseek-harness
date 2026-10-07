@@ -60,6 +60,8 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     scoped.slots.inject('shell.overlay', () => scoped.slots.register({ name: 'shell.overlay', id: 'security-improvements-toast',
       inject: () => ({ notifications }) }, ImprovementToast))
     const projectActions: ProjectActions = {
+      deviceDirectory: id => unwrap(remote.deviceDirectory(id)),
+      deviceInventory: id => unwrap(remote.deviceInventory(id)),
       toolboxConfiguration: id => unwrap(remote.toolboxConfiguration(id)),
       configureTool: (id, input) => unwrap(remote.configureTool(id, input)),
       toolboxFiles: (id, directory) => unwrap(remote.toolboxFiles(id, directory)),
@@ -105,6 +107,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       report: (project, id, format) => unwrap(remote.report(project, id, format)),
     }
     const dashboardActions: DashboardActions = {
+      observe: (id, input) => scoped.sessions.using(id, { source: 'securityWorkbench' }, () => unwrap(remote.observe(id, input))),
       improvements: id => unwrap(remote.improvements(id)),
       analyzeImprovements: input => unwrap(remote.analyzeImprovements(input)),
       updateImprovement: input => unwrap(remote.updateImprovement(input)),

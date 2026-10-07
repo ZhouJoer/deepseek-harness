@@ -47,6 +47,8 @@ import * as Frida from '../src/frida-provider.ts'
 import * as Android from '../src/android-provider.ts'
 import * as Web from '../src/web-provider.ts'
 import * as Offline from '../src/offline-provider.ts'
+import * as PacketCapture from '../src/packet-capture-provider.ts'
+import { captureInterfaces, uncheckedDevices } from '../src/device-inventory.ts'
 import * as Laboratory from '../src/laboratory.ts'
 import * as Environments from '../src/environment-local.ts'
 import LocalSubprocess from '@deepseek-ai/dsh-subprocess-local'
@@ -230,6 +232,7 @@ async function load(inheritJobTool = false, knowledgeIntervalMs = 0,
     ['environments', Environments],
     ['web', Web],
     ['offline', Offline],
+    ['packet-capture', PacketCapture],
     ['laboratory', Laboratory],
   ])
   if (options.skills) {
@@ -335,6 +338,63 @@ function operator(controller: Awaited<Security['ready']>, agent: Agent) {
 }
 
 describe('security workbench Loader composition', () => {
+  it.skipIf(!process.env.DSH_SECURITY_TSHARK)('stores offline wireless provider evidence through the Loader and operator Remote', async () => {
+    const { ctx, agent, controller } = await load(false, 0, { native: true, installations: [
+      { id: 'tshark', command: process.env.DSH_SECURITY_TSHARK!, prefixArgs: [], versionArgs: ['--version'], source: 'Test installation' },
+    ] })
+    const root = roots[roots.length - 1]!
+    if (process.platform === 'win32') {
+      const diagnostics = await ctx.securityWorkbench.deviceInventory('local')
+      expect(diagnostics.inventory.checkedAt).toBeGreaterThan(0)
+      expect(diagnostics.inventory.checks.find(check => check.id === 'tshark')?.status).toBe('available')
+      expect(diagnostics.inventory.checks.find(check => check.id === 'capture-validation')?.status).toBe('not-checked')
+    }
+    const send = operator(controller, agent)
+    await send({ kind: 'create', title: 'Wireless capture', objective: 'Inspect an owned recording', environmentIds: ['local'], maxAttempts: 1 })
+    const capture = join(root, 'wireless.pcap')
+    const original = Buffer.from('d4c3b2a1020004000000000000000000ffff000069000000', 'hex')
+    await writeFile(capture, original)
+    await send({ kind: 'import', path: capture, label: 'Wireless capture' })
+    const asset = controller.view(agent.id).records.find(item => item.kind === 'asset')!
+    if (asset.kind !== 'asset' || 'kind' in asset.value) throw new Error('Missing capture')
+    const request = { provider: 'packet-capture', operation: 'summary', assetId: asset.value.id,
+      environmentId: 'local', parameters: { protocol: 'wifi' }, impact: 'observe' }
+    const view = await ctx.securityWorkbench.observe(agent, JSON.stringify(request))
+    const evidence = view.records.find(item => item.kind === 'evidence')
+    if (evidence?.kind !== 'evidence') throw new Error('Missing evidence')
+    expect(evidence.value).toMatchObject({ provider: 'packet-capture', method: 'static', incomplete: false })
+    expect(JSON.parse((await controller.artifacts.read(evidence.value.artifact)).toString())).toMatchObject({
+      inputSha256: asset.value.artifact.sha256, records: [{ kind: 'capture', matchedFrames: 0 }],
+    })
+    expect(JSON.parse(await ctx.securityWorkbench.projectArtifact(asset.value.engagementId, asset.value.artifact.sha256)))
+      .toMatchObject({ binary: true, text: '', size: original.length })
+    expect(await readFile(capture)).toEqual(original)
+    await expect(ctx.securityWorkbench.observe(agent, JSON.stringify({ ...request, assetId: 'foreign' }))).rejects.toThrow('scope')
+    await expect(ctx.securityWorkbench.observe(agent, JSON.stringify({ ...request, parameters: { protocol: 'wifi', interface: 'COM7' } }))).rejects.toThrow()
+    await send({ kind: 'stop' })
+    await expect(ctx.securityWorkbench.observe(agent, JSON.stringify(request))).rejects.toThrow('stopped')
+  }, 30000)
+  it('retains cached interfaces after failed checks and removes disappeared devices after a successful check', async () => {
+    const { ctx, controller } = await load()
+    const directory = ctx.securityWorkbench.deviceDirectory('local')
+    expect(directory.inventory.checkedAt).toBe(0)
+    const environment = controller.options.environments[0]!
+    const devices = captureInterfaces('1. nrf_sniffer_ble_COM8 (nRF Sniffer for Bluetooth LE)')
+    const measured = { ...uncheckedDevices(environment), devices, checkedAt: 100 }
+    const inspect = vi.spyOn(controller.environments.get('local').manager, 'devices').mockResolvedValueOnce(measured)
+    try {
+      await ctx.securityWorkbench.deviceInventory('local')
+      inspect.mockResolvedValueOnce({ ...uncheckedDevices(environment), checkedAt: 200,
+        checks: [{ id: 'capture-interfaces', status: 'error', detail: 'Access denied' }] })
+      expect((await ctx.securityWorkbench.deviceInventory('local')).inventory).toMatchObject({ checkedAt: 200, devices })
+      inspect.mockRejectedValueOnce(new Error('cancelled'))
+      await expect(ctx.securityWorkbench.deviceInventory('local')).rejects.toThrow('cancelled')
+      expect(ctx.securityWorkbench.deviceDirectory('local').inventory.devices).toEqual(devices)
+      inspect.mockResolvedValueOnce({ ...uncheckedDevices(environment), checkedAt: 300,
+        checks: [{ id: 'capture-interfaces', status: 'missing', detail: '' }] })
+      expect((await ctx.securityWorkbench.deviceInventory('local')).inventory.devices).toEqual([])
+    } finally { inspect.mockRestore() }
+  })
   it('records rejected provider requests as failed and unverified without claiming execution', async () => {
     const { ctx, agent, controller } = await load()
     await operator(controller, agent)({ kind: 'create', title: 'Rejected request', objective: 'Inspect fixture',
@@ -619,7 +679,7 @@ describe('security workbench Loader composition', () => {
   })
   it('loads independent providers and logs model-visible scope through the unchanged loop', async () => {
     const { ctx, agent, controller, model } = await load()
-    expect(controller.providers.list().sort()).toEqual(['android', 'binary', 'frida', 'ghidra', 'offline', 'source', 'web'])
+    expect(controller.providers.list().sort()).toEqual(['android', 'binary', 'frida', 'ghidra', 'offline', 'packet-capture', 'source', 'web'])
     expect(controller.environments.list()).toEqual(['local'])
     agent.followup(
       createUserMessage({ content: [{ type: 'text', text: 'Inspect the scope.' }], source: { kind: 'user' } }),
@@ -953,7 +1013,7 @@ describe('security workbench Loader composition', () => {
     expect(text).toContain('expected authorization rule')
     expect(model.requests[1]?.messages).toContainEqual(loaded.data.message)
     const scripts = ctx.securityWorkbench.scriptCatalog()
-    expect(scripts).toHaveLength(6)
+    expect(scripts).toHaveLength(7)
     const packetMethod = await execute(ctx, agent, 'skill', { name: 'security-packet-analysis' })
     expect(packetMethod.isError).not.toBe(true)
     expect(JSON.stringify(packetMethod)).toContain('tshark/capture_summary.py')
@@ -1007,6 +1067,9 @@ describe('security workbench Loader composition', () => {
       for (const name of ['web_search', 'web_fetch'])
         expect(visible.includes(name)).toBe(['reverse-analyst', 'web-analyst', 'researcher'].includes(role))
       if (role === 'researcher' || role === 'reviewer') {
+        await expect(controller.observe(child.id, { provider: 'packet-capture', operation: 'summary', assetId: asset.value.id,
+          environmentId: 'local', impact: 'observe', parameters: { protocol: 'wifi' } }, 'wireless-role', new AbortController().signal))
+          .rejects.toThrow('role')
         expect((await execute(ctx, child, 'security_capture_analysis', { assetId: asset.value.id })).isError).toBe(true)
         expect(() => controller.analysisAsset(child.id, asset.value.id)).toThrow('Analysis collection role required')
       } else expect(() => controller.analysisAsset(child.id, asset.value.id)).not.toThrow()

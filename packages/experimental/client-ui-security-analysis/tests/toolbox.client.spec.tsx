@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { deviceActions } from './device-fixture.client.ts'
 /** Installation discovery does not require a selected project. @module */
 import { afterEach, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
@@ -18,7 +19,7 @@ it('shows installed tools, missing dependencies and manual installation referenc
     ],
   } }
   const toolboxInventory = vi.fn(async () => data)
-  render(<Toolbox toolboxInventory={toolboxInventory} toolboxDirectory={async () => data}
+  render(<Toolbox {...deviceActions} toolboxInventory={toolboxInventory} toolboxDirectory={async () => data}
     scriptCatalog={async () => []}
     toolCatalog={async () => ({ editable: false, revision: '', tools: [], packs: [], collections: [] })}
     previewToolPack={async () => { throw new Error('Unused') }} importToolPack={async () => { throw new Error('Unused') }} exportToolPack={async () => ''}

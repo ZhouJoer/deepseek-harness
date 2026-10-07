@@ -1,5 +1,7 @@
 /** Host service exposing the security workbench to tools and generated Remote clients. @module */
 import './service.ts'
+import { uncheckedDevices } from './device-inventory.ts'
+import type { DeviceDirectory, DeviceInventory } from './device-types.ts'
 import { installSecurityMethods } from './methods.ts'
 import { openWorkspaceIntake, type WorkspaceIntakeStore } from './workspace-intake.ts'
 import { resolveWorkspaceTaskAdmission, resolveTaskIntakeResources, validateTaskIntake, type TaskIntakeConfig } from './task-bootstrap.ts'
@@ -40,7 +42,7 @@ import { modelPage, recordDetail, commandReceipt, sourceEvidenceLines } from './
 import { SourceProvider } from './workbench/source.ts'
 import { BinaryProvider } from './workbench/binary.ts'
 import { toolsForRole, canObserve, delegationPrompt, resolveTask, taskKinds } from './workbench/roles.ts'
-import { ArtifactStore } from './workbench/artifacts.ts'
+import { ArtifactStore, isPacketCapture } from './workbench/artifacts.ts'
 import { openSecurityJournal, type SecurityJournal } from './workbench/journal.ts'
 import { SecurityController, commandSchema } from './workbench/controller.ts'
 import { SecuritySearchIndex } from './workbench/search.ts'
@@ -362,7 +364,7 @@ export default class SecurityWorkbench extends TypertRemoteService {
       defineTool({
         name: 'security_environment',
         description: 'Check tool versions and runtime readiness in one project environment. Optionally select toolId when a full inventory exceeds the output budget. Does not install tools, start containers or change devices. Health is not sample evidence.',
-        parameters: { environmentId: { type: 'string', required: true }, toolId: { type: 'string' }, toolIds: { type: 'array', items: { type: 'string' } } },
+        parameters: { environmentId: { type: 'string', required: true }, toolId: { type: 'string' }, toolIds: { type: 'array', items: { type: 'string' } }, devices: { type: 'boolean', description: 'Inspect Windows interfaces only; does not open devices or validate capture.' } },
         output,
         execute: async (args, exec) => {
           if (!exec.agent) throw new Error('Security tools require a session')
@@ -374,6 +376,8 @@ export default class SecurityWorkbench extends TypertRemoteService {
           assert(environment, 'Project environment must be configured')
           this.toolConfiguration?.refresh()
           const manager = controller.environments.get('local').manager
+          if (args.devices) return json(await controller.manageEnvironment(environment.id, signal => manager.devices(environment,
+            AbortSignal.any([signal, exec.signal, this.shutdown.signal])), project.value.id))
           const inventory = await controller.manageEnvironment(environment.id, signal => manager.inventory(environment,
             AbortSignal.any([signal, exec.signal, this.shutdown.signal]),
             args.toolIds ?? (args.toolId === undefined ? undefined : [args.toolId])), project.value.id)
@@ -482,9 +486,9 @@ export default class SecurityWorkbench extends TypertRemoteService {
       defineTool({
         name: 'security_static',
         description:
-          'Collect read-only source, binary, Ghidra or Android evidence for an imported asset. Raw output is stored before a summary and current project revision are returned. Use that revision for a following command; concurrent changes can still cause a revision conflict.',
+          'Collect read-only source, binary, Ghidra, Android or offline Wi-Fi/BLE packet-capture evidence for an imported asset. Packet capture accepts summary/packets with protocol wifi/ble and never opens live interfaces. Raw output is stored before a summary and current project revision are returned. Use that revision for a following command; concurrent changes can still cause a revision conflict.',
         parameters: {
-          provider: { type: 'string', required: true, enum: ['binary', 'ghidra', 'android', 'source'] },
+          provider: { type: 'string', required: true, enum: ['binary', 'ghidra', 'android', 'source', 'packet-capture'] },
           operation: { type: 'string', required: true },
           assetId: { type: 'string', required: true, description: 'Imported asset ID returned by security_command or security_scope, not a path or filename. For source files not yet imported, first use security_command action import-source.' },
           environmentId: { type: 'string', required: true },
@@ -1212,6 +1216,43 @@ export default class SecurityWorkbench extends TypertRemoteService {
       return { environments: environments.map(({ id, label, kind }) => ({ id, label, kind })), inventory }
     } finally { this.pending.delete(pending) }
   }
+  private readonly deviceObservations = new Map<string, DeviceInventory>()
+  /** Read the last device inspection without touching hardware or selecting a project.
+   * @param environmentId - selected environment; omission selects the first local environment.
+   * @returns environment choices and unchecked or previously measured interfaces.
+   */
+  @Remote('deviceDirectory')
+  deviceDirectory(environmentId?: string): DeviceDirectory {
+    const environment = environmentId === undefined ? this.config.environments.find(item => item.kind === 'local') ?? this.config.environments[0]
+      : this.config.environments.find(item => item.id === environmentId)
+    if (!environment) throw new Error('Configure an analysis environment before inspecting devices')
+    return { environments: this.config.environments.map(({ id, label, kind }) => ({ id, label, kind })),
+      inventory: this.deviceObservations.get(environment.id) ?? uncheckedDevices(environment) }
+  }
+  /** Explicitly inspect Windows prerequisites; enumeration does not validate radio capture.
+   * @param environmentId - configured local environment.
+   * @returns settled observations; failed inspections leave the previous directory intact.
+   */
+  @Remote('deviceInventory')
+  async deviceInventory(environmentId?: string): Promise<DeviceDirectory> {
+    const controller = await this.ready
+    this.toolConfiguration?.refresh()
+    const directory = this.deviceDirectory(environmentId)
+    const environment = this.config.environments.find(item => item.id === directory.inventory.environmentId)
+    if (!environment) throw new Error('Selected device environment is no longer configured')
+    const pending = controller.manageEnvironment(environment.id, signal => controller.environments.get('local').manager.devices(environment,
+      AbortSignal.any([signal, this.shutdown.signal])))
+    this.pending.add(pending)
+    try {
+      const inventory = await pending
+      const failed = new Set(inventory.checks.filter(check => check.status === 'error').map(check => check.id))
+      const previous = this.deviceObservations.get(environment.id) ?? directory.inventory
+      inventory.devices.push(...previous.devices.filter(device =>
+        device.kind === 'serial' ? failed.has('serial') : failed.has('capture-interfaces')))
+      this.deviceObservations.set(environment.id, inventory)
+      return { ...directory, inventory }
+    } finally { this.pending.delete(pending) }
+  }
   /** Read editable tool settings independently of a project or conversation.
    * @param environmentId - selected environment.
    * @returns saved values and the revision required for edits.
@@ -1590,7 +1631,7 @@ export default class SecurityWorkbench extends TypertRemoteService {
       sha256,
       size: bytes.length,
       truncated: bytes.length > this.config.maxOutputBytes,
-      text: bytes.subarray(0, this.config.maxOutputBytes).toString('utf8'),
+      ...(isPacketCapture(bytes) ? { binary: true, text: '' } : { text: bytes.subarray(0, this.config.maxOutputBytes).toString('utf8') }),
     })
   }
 }

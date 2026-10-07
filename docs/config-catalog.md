@@ -1106,7 +1106,7 @@ export interface Config {
 ## `@deepseek-ai/dsh-experimental-security-analysis`
 
 - `inject`: `tools` · `agents` · `llm` · `systemPrompt` · `storageDomain` · `jobs` · `subagents`
-- `source`: [`packages/experimental/security-analysis/src/index.ts:67`](../packages/experimental/security-analysis/src/index.ts)
+- `source`: [`packages/experimental/security-analysis/src/index.ts:69`](../packages/experimental/security-analysis/src/index.ts)
 
 ```ts config-catalog
 /** Explicit host locations and operational limits. */

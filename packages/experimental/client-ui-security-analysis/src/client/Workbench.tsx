@@ -1,3 +1,4 @@
+import { CaptureControls } from './CaptureControls.tsx'
 /** Security project workbench presented inside the existing conversation shell. @module */
 import { randomUUID } from '@deepseek-ai/dsh-util-crypto'
 import { useEffect, useRef, useState } from 'react'
@@ -44,7 +45,7 @@ interface Configuration {
   workspace?: { cwd: string; revision: number; environmentIds: string[]; maxAttempts?: number; configured: boolean } | null
   knowledgeIntervalMs?: number
   projects?: { id: string; title: string }[]
-  environments: { id: string; kind: string; label: string; tools: string[] }[]
+  environments: { id: string; kind: 'local' | 'docker' | 'android'; label: string; tools: string[] }[]
   providers: { id: string; operations: string[] }[]
 }
 const tabKeys: Tab[] = ['overview', 'findings', 'evidence', 'reports']
@@ -491,6 +492,17 @@ export function Workbench(props: WorkbenchProps) {
                         </p>
                         <code>{'kind' in item.value && item.value.kind === 'web' ? item.value.instanceId : item.value.artifact.sha256}</code>
                         <small>{item.value.id}</small>
+                        {!('kind' in item.value) && <>
+                          <p>{t('captureFileBytes')} {item.value.artifact.size}</p>
+                          {configuration.providers.some(provider => provider.id === 'packet-capture') && <CaptureControls t={t}
+                            disabled={busy > 0 || project?.kind !== 'engagement' || project.value.stopped}
+                            environments={configuration.environments.filter(environment => project?.kind === 'engagement' && project.value.environmentIds.includes(environment.id))}
+                            analyze={async (operation, protocol, environmentId) => { await perform(async () => {
+                              const next = await props.observe(sessionId, JSON.stringify({ provider: 'packet-capture', operation,
+                                assetId: item.value.id, environmentId, parameters: { protocol }, impact: 'observe' }))
+                              if (activeSession.current === sessionId) { setView(previous => next.revision >= previous.revision ? next : previous); setTab('evidence') }
+                            }) }} />}
+                        </>}
                         {'kind' in item.value && item.value.kind === 'source' && (
                           <div className={css.form}>
                             {field('sourcePath')}

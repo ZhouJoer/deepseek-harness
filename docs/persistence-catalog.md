@@ -6669,7 +6669,7 @@ SHA-256: `8c1c4f72755a78ea163523a46565316e36e9b644382eb48e6635c71a6f412dd2`
 
 SHA-256: `509f1a030cb3b0e9295b35249bc40540af8408c07fea9e4fa1bc447b3b597649`
 
-Sources: [`packages/experimental/security-analysis/src/index.ts:62`](../packages/experimental/security-analysis/src/index.ts)
+Sources: [`packages/experimental/security-analysis/src/index.ts:64`](../packages/experimental/security-analysis/src/index.ts)
 
 | Property | Presence | Type |
 |---|---|---|

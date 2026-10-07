@@ -1512,7 +1512,7 @@ export class SecurityController {
     if (sample?.kind !== 'asset') throw new Error('Asset is outside the session scope')
     if (!canObserve(binding.role, operation.provider, operation.operation))
       throw new Error('This role cannot collect the requested observation')
-    if (operation.script || !['binary', 'ghidra', 'android', 'source'].includes(operation.provider))
+    if (operation.script || !['binary', 'ghidra', 'android', 'source', 'packet-capture'].includes(operation.provider))
       throw new Error('Use an approved plan for dynamic or programmable operations')
     const previous = view.records.find(item => item.kind === 'evidence' &&
       item.value.source.sessionId === sessionId && item.value.source.callId === callId && !item.value.planId)

@@ -156,3 +156,11 @@ export function detectFileFormat(bytes: Buffer, name: string): FileAsset['format
   if (bytes.subarray(0, 4).equals(Buffer.from([0x50, 0x4b, 0x03, 0x04])) && name.toLowerCase().endsWith('.apk')) return 'apk'
   return 'other'
 }
+
+/** Identify classic PCAP or PCAPNG container signatures without decoding packets.
+ * @param bytes - original file bytes.
+ * @returns whether a capture header is present; validity still requires the decoder.
+ */
+export function isPacketCapture(bytes: Uint8Array): boolean {
+  return ['d4c3b2a1', 'a1b2c3d4', '4d3cb2a1', 'a1b23c4d', '0a0d0d0a'].includes(Buffer.from(bytes.subarray(0, 4)).toString('hex'))
+}

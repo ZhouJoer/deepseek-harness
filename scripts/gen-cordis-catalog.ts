@@ -683,6 +683,7 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   SecurityActivityFrame: 'security-workbench.md',
   SecurityActivityPage: 'security-workbench.md',
   ToolboxDirectory: 'security-workbench.md',
+  DeviceDirectory: 'security-workbench.md',
   ToolCatalogSnapshot: 'security-workbench.md',
   ToolPackPreview: 'security-workbench.md',
   ToolPreferences: 'security-workbench.md',

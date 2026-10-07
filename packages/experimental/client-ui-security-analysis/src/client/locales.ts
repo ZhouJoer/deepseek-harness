@@ -2,6 +2,16 @@
 export const NS = 'security-workbench'
 /** Chinese operator-facing security copy. */
 export const zh = {
+  deviceTab: '设备', deviceHelp: '检查 Windows 软件、驱动和接口。枚举不启动抓包，不打开串口，也不证明设备支持无线采集。',
+  deviceInspect: '检查设备', deviceInspectionFailed: '设备检查失败，可重试；保留上次结果', deviceUnsupported: '此环境不支持',
+  devicePython: 'Python', deviceTshark: 'TShark', deviceNpcap: 'Npcap 驱动', deviceSerial: 'USB / COM 串口',
+  deviceCaptureInterfaces: '抓包接口', deviceNrf: 'nRF extcap 接口', deviceCaptureValidation: '真机采集验证',
+  deviceNone: '此次检查未返回设备，请结合各项检查状态判断', deviceUsbIds: 'USB VID / PID', deviceSerialNumber: '序列号',
+  deviceTuftyUnverified: '仅确认串口可见；Tufty 身份和控制协议尚未验证',
+  captureProtocol: '抓包协议', captureOperation: '分析方式', captureWifi: 'Wi-Fi', captureBle: 'BLE',
+  captureEnvironment: '本地分析环境', captureChooseEnvironment: '选择环境', captureAnalyze: '分析抓包', capturePackets: '查看帧观察', captureFileBytes: '文件字节数',
+  wirelessCaptureTitle: 'Wi-Fi / BLE 离线分析', wirelessCapturePurpose: '从已有抓包提取无线字段及帧引用',
+  wirelessCaptureMethod: '区分 Wi-Fi 空口、BLE 空口、HCI 和普通 IP；不推测缺失或加密字段',
   evoTitle: '持续改进', evoHint: '从实际分析中改进系统能力、流程、脚本和方法论，交给编码 AI 落实',
   evoAnalyze: '立即分析改进点', evoOpen: '待改进', evoModified: '已修改', evoVerified: '已验证', evoIgnored: '已忽略',
   evoQueued: '等待分析任务空闲', evoRunning: '正在发现改进点', evoCompleted: '阶段分析完成',
@@ -424,6 +434,16 @@ export const zh = {
 export type SecurityKey = keyof typeof zh
 /** English operator-facing security copy. */
 export const en: Record<SecurityKey, string> = {
+  deviceTab: 'Devices', deviceHelp: 'Inspect Windows software, drivers and interfaces. Enumeration does not start capture, open serial ports or establish wireless capture support.',
+  deviceInspect: 'Inspect devices', deviceInspectionFailed: 'Device inspection failed; retry. Previous results are retained', deviceUnsupported: 'Unsupported environment',
+  devicePython: 'Python', deviceTshark: 'TShark', deviceNpcap: 'Npcap driver', deviceSerial: 'USB / COM ports',
+  deviceCaptureInterfaces: 'Capture interfaces', deviceNrf: 'nRF extcap interfaces', deviceCaptureValidation: 'Physical capture validation',
+  deviceNone: 'No devices returned; check the individual inspection statuses', deviceUsbIds: 'USB VID / PID', deviceSerialNumber: 'Serial number',
+  deviceTuftyUnverified: 'Serial interface discovered; Tufty identity and control protocol are unverified',
+  captureProtocol: 'Capture protocol', captureOperation: 'Analysis mode', captureWifi: 'Wi-Fi', captureBle: 'BLE',
+  captureEnvironment: 'Local analysis environment', captureChooseEnvironment: 'Choose environment', captureAnalyze: 'Analyze capture', capturePackets: 'Inspect frames', captureFileBytes: 'File bytes',
+  wirelessCaptureTitle: 'Wi-Fi / BLE offline analysis', wirelessCapturePurpose: 'Extract wireless fields and frame references from recorded captures',
+  wirelessCaptureMethod: 'Distinguish Wi-Fi air, BLE air, HCI and ordinary IP observations; missing or encrypted fields remain unknown',
   evoTitle: 'Continuous improvement', evoHint: 'Improve capabilities, workflows, scripts and investigation methods through a coding AI',
   evoAnalyze: 'Find improvements now', evoOpen: 'Open', evoModified: 'Modified', evoVerified: 'Verified', evoIgnored: 'Ignored',
   evoQueued: 'Waiting for analysis to become idle', evoRunning: 'Finding improvements', evoCompleted: 'Stage analysis complete',

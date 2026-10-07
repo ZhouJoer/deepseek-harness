@@ -28,6 +28,8 @@ This bundle ships disabled and must be selected explicitly. Compose `@deepseek-a
 
 -----
 
+The composition includes the fixed offline `packet-capture` provider and Windows device diagnostics. Python and TShark must be installed separately; browsing never starts a probe. See the [Windows wireless workflow](../../../docs/user/guide/security-analysis.md#windows-wireless) for importing and analyzing recordings.
+
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
 

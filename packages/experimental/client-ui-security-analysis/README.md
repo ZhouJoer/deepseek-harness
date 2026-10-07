@@ -36,6 +36,8 @@ Open **Security analysis** from the sidebar or the compact **Security workspace*
 
 Source file or directory assets provide file inventory, line reads and literal searches from the conversation workbench. Evidence cards label static observations, offline simulations and device validation, with failure and cleanup details. Each research direction lists recorded child questions, roles, execution states, returned summaries and the coordinator's report decisions. Expand a child task for its dispatch reason, completion criterion, evidence references, uncertainty and suggested next steps; **Open child conversation** opens its original one-shot history. Accepting a child report does not confirm a finding. Directions without saved assignments say that no child tasks are recorded; older child summaries remain in the advanced workbench history.
 
+The Toolbox's **Devices** tab reads cached observations on opening. **Inspect devices** explicitly inspects the selected environment; failures retain previous interfaces with observation times. Serial cards show COM/PnP and available USB identifiers without authenticating Tufty or opening ports. In task materials, choose Wi-Fi or BLE and a local environment, then **Analyze capture** or **Inspect frames**. A stopped task must be resumed; a task without an accessible conversation needs **Continue analysis** first. Results enter the existing evidence and progress views. File sizes and hashes remain visible without rendering raw capture bytes as text.
+
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
 

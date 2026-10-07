@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { deviceActions } from './device-fixture.client.ts'
 /** Operator gestures, authoritative state and stale-session isolation. @module */
 import { afterEach, it, expect, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
@@ -101,7 +102,7 @@ it('renders saved Markdown reports from the report read API in both project view
   expect(api.artifact).not.toHaveBeenCalled()
   workbench.unmount()
 
-  const projectProps = { ...unusedProjectActions, projects: async () => JSON.stringify([{ id: 'project', title: 'Owned lab' }]),
+  const projectProps = { ...unusedProjectActions, ...deviceActions, projects: async () => JSON.stringify([{ id: 'project', title: 'Owned lab' }]),
     project: async () => projectView, laboratory: async () => projectView, report,
     subscribeReset: () => () => {}, t: makeTranslate(zh, commonZh) } as Parameters<typeof Projects>[0]
   render(<Projects {...projectProps} />)
@@ -153,7 +154,7 @@ it('submits explicit approval for the displayed plan identity', async () => {
 
 it('reuses the configured local image through an explicit operator gesture', async () => {
   const laboratory = vi.fn(async () => view)
-  const projectProps = { ...unusedProjectActions, projects: async () => JSON.stringify([{ id: 'project', title: 'Owned lab' }]), project: async () => view,
+  const projectProps = { ...unusedProjectActions, ...deviceActions, projects: async () => JSON.stringify([{ id: 'project', title: 'Owned lab' }]), project: async () => view,
     laboratory, report: async () => '', subscribeReset: () => () => {}, t: makeTranslate(zh, commonZh) } as Parameters<typeof Projects>[0]
   render(<Projects {...projectProps} />)
   await screen.findByRole('option', { name: 'Owned lab' })

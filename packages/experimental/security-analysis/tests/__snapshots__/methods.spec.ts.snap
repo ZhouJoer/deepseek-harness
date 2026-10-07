@@ -184,6 +184,16 @@ Start with capture_summary.py to identify relevant protocols, peers and TCP stre
 
 Read security_capabilities for analysisDirectory and inspect the selected environment's tool installation before execution. Resolve resource paths against this skill's base directory. Bundled files are read-only; create task scripts/, outputs/ and tmp/ as needed and use analysisDirectory as the shell workdir. Inputs, outputs and the selected TShark executable use absolute paths. Use a new output path per run; scripts refuse overwrites. Choose limits for the task; example limits are illustrative. Offline scripts return bounded JSON to both the output file and the tool log, including input/script hashes, parameters, tool version and incomplete reasons. A failure exits nonzero; do not cite it as a completed observation. Keep decoded-output limits sufficient for PDML metadata, or narrow the input/filter. Save committed native calls through security_capture_analysis before citing their evidence. Research and reviewer roles may read these methods but cannot execute scripts. Installed package resources run on the native host; do not assume they exist in a container.
 
+## tshark.wireless
+
+Resource: tshark/wireless.py
+Dependencies: python, tshark
+Parameters: --input <absolute capture path> (required); --output <new absolute result path> (required); --tshark <selected absolute executable path> (required); --timeout <seconds per invocation> (required); --max-packets <input frame limit> (required); --max-output-bytes <result byte limit> (required); --max-decode-bytes <decoded XML byte limit> (required); --filter <display filter> (optional); --stream <TCP stream number> (optional); --protocol <wifi|ble> (required); --mode <summary|packets> (required)
+
+\`\`\`text
+python "<resourceBase>/tshark/wireless.py" --input "<capture>" --output "<analysisDirectory>/outputs/<run>.json" --tshark "<tshark>" --timeout 30 --max-packets 10000 --max-output-bytes 65536 --max-decode-bytes 16777216 --protocol wifi --mode summary
+\`\`\`
+
 ## tshark.capture-summary
 
 Resource: tshark/capture_summary.py

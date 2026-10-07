@@ -8,6 +8,8 @@ The experimental [security domain](../../packages/experimental/security-analysis
 
 `ToolboxDirectory` contains configured environment choices and one measured or explicitly unchecked `ToolboxInventory`. Its `ToolboxTool` entries separate availability, invocation method and optional provider integration. Available Docker tools expose the Host `command` and `prefixArgs`, with the original container executable and arguments in `installation` for configuration persistence. These read-only observations are not project evidence or execution authority; fields are defined in [toolbox types](../../packages/experimental/security-analysis/src/toolbox-types.ts).
 
+`DeviceDirectory` contains configured environment choices and a cached or unchecked `DeviceInventory`. Independent prerequisite checks and branded `RadioDeviceId` values describe software, drivers and visible interfaces; observation timestamps distinguish retained data from failed refreshes. These values are transient and do not establish capture permission or radio readiness. See [device types](../../packages/experimental/security-analysis/src/device-types.ts).
+
 [Record schemas](../../packages/experimental/security-analysis/src/workbench/model.ts) define project, asset, check, evidence, finding, plan, execution, delegation and reviewed knowledge values. Each command appends one revision to the storage-domain journal. Artifact bytes are published before references. Session logs retain model-visible tool results; the domain journal owns check and delegation recovery. `SecurityDelegation` records an assigned question, immutable project and asset scope, execution outcome, child report and coordinator disposition. Jobs own live execution; a report's acceptance does not confirm a finding.
 
 `ToolCatalogSnapshot` holds the resolved tool definitions, collections, packs and import revision. `ToolPackPreview` lists conflicts before an explicit import. `ToolPreferences` contains active-session soft selections, recorded in model context but excluded from project persistence. See [tool configuration](../../packages/experimental/security-analysis/README.md) for import, probing and lifecycle semantics.
@@ -134,6 +136,18 @@ Optional security profile service; default application compositions remain indep
  * @returns environment choices and current optional-tool observations.
  */
 @Remote('toolboxInventory') async toolboxInventory(environmentId?: string, toolIds?: string[]): Promise<ToolboxDirectory>
+
+/** Read the last device inspection without touching hardware or selecting a project.
+ * @param environmentId - selected environment; omission selects the first local environment.
+ * @returns environment choices and unchecked or previously measured interfaces.
+ */
+@Remote('deviceDirectory') deviceDirectory(environmentId?: string): DeviceDirectory
+
+/** Explicitly inspect Windows prerequisites; enumeration does not validate radio capture.
+ * @param environmentId - configured local environment.
+ * @returns settled observations; failed inspections leave the previous directory intact.
+ */
+@Remote('deviceInventory') async deviceInventory(environmentId?: string): Promise<DeviceDirectory>
 
 /** Read editable tool settings independently of a project or conversation.
  * @param environmentId - selected environment.

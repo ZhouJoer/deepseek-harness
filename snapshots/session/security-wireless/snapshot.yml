@@ -1,0 +1,10 @@
+version: 1
+scenario: security-wireless
+profile: headless
+composition: security-wireless
+recording: authored
+header:
+  class: security-wireless
+  pin: true
+replay:
+  override: true

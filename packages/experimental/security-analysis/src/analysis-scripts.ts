@@ -33,6 +33,9 @@ export function analysisScripts(): AnalysisScript[] {
     extra?: AnalysisScriptParameter[]
     template?: string
   }> = [
+    { id: 'tshark.wireless', kind: 'wirelessCapture', category: 'tshark', skill: 'security-packet-analysis', relativePath: 'tshark/wireless.py', toolIds: ['python', 'tshark'], extra: [
+      { flag: '--protocol', required: true, value: '<wifi|ble>' }, { flag: '--mode', required: true, value: '<summary|packets>' },
+    ] },
     { id: 'tshark.capture-summary', kind: 'captureSummary', category: 'tshark', skill: 'security-packet-analysis', relativePath: 'tshark/capture_summary.py', toolIds: ['python', 'tshark'] },
     { id: 'tshark.extract-packets', kind: 'extractPackets', category: 'tshark', skill: 'security-packet-analysis', relativePath: 'tshark/extract_packets.py', toolIds: ['python', 'tshark'], extra: [{ flag: '--field', required: false, value: '<TShark field; repeatable>' }] },
     { id: 'mqtt.sessions', kind: 'mqttSessions', category: 'mqtt', skill: 'security-mqtt', relativePath: 'mqtt/sessions.py', toolIds: ['python', 'tshark'] },
@@ -52,6 +55,6 @@ export function analysisScripts(): AnalysisScript[] {
     example: template
       ? 'python "<resourceBase>/dynamic/prepare.py" ' + template + ' --output "<analysisDirectory>/scripts/<run>.js" --max-events 100'
         + (template === 'function-trace' ? ' --module "<module>" --symbol "<export>" --stack-depth 8' : '')
-      : 'python "<resourceBase>/' + entry.relativePath + '"' + offlineExample,
+      : 'python "<resourceBase>/' + entry.relativePath + '"' + offlineExample + (entry.kind === 'wirelessCapture' ? ' --protocol wifi --mode summary' : ''),
   }))
 }

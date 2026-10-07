@@ -70,6 +70,16 @@ Open **Security analysis** in the sidebar and choose **New analysis**. Select an
 
 Open **Advanced details** → **Environments and tools** and inspect the selected environment. Missing installations and disconnected devices are shown as diagnostics. Configure Android device IDs and Docker images explicitly in the Host overlay; the default example creates only a local environment. Read the [provider setup](../../../packages/experimental/security-analysis/README.md#configure-analysis-providers) before using Ghidra or a device.
 
+<a id="windows-wireless"></a>
+
+### Inspect Windows devices and analyze wireless recordings
+
+Open **Toolbox → Devices**, select the local environment and click **Inspect devices**. Python, TShark, Npcap, capture interfaces, nRF extcap and serial devices have separate results. A permission error is a failed check; an installed tool or visible COM port does not establish capture capability. Failed checks retain prior interfaces with their original timestamps. Generic serial ports are not automatically recognized as Tufty; no port is opened.
+
+Import an owned `.pcap` or `.pcapng` through **Add materials**. In **Materials**, choose **Wi-Fi** or **BLE**, select the local environment, and click **Analyze capture** for a summary or **Inspect frames** for frame references. Resume paused tasks first. If the task has no accessible conversation, use **Continue analysis** first. The provider needs Python and TShark on Windows; Docker, WSL and dedicated sniffer hardware are not required for offline files.
+
+Open **Evidence** to inspect the structured result, and **Tools & progress** for execution status. Wi-Fi fields include recorded SSIDs, BSSIDs, channels, signal and security announcements; BLE includes recorded advertisements, addresses, UUIDs and ATT fields. Results identify HCI versus air captures and ordinary IP traffic. Missing fields and encrypted content remain unknown. Original files retain their hashes; frame/time references and analysis metadata link results to the recording. Limit, cancellation and failure results are incomplete. This workflow does not scan, pair, capture, inject, flash firmware or verify Tufty radio operation.
+
 <a id="continuous-improvement"></a>
 
 ### Turn observations into source-code improvements

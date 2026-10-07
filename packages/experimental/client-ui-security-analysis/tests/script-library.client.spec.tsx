@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { deviceActions } from './device-fixture.client.ts'
 /** Script browsing does not require project state or installation probes. @module */
 import { afterEach, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
@@ -45,7 +46,7 @@ it('retries a failed catalog read', async () => {
 it('opens scripts when no environment exists and never probes or executes', async () => {
   const unavailable = vi.fn(async () => { throw new Error('No environment') })
   const probe = vi.fn(async () => { throw new Error('Unexpected probe') })
-  render(<Toolbox t={t} scriptCatalog={async () => analysisScripts()} toolboxDirectory={unavailable}
+  render(<Toolbox {...deviceActions} t={t} scriptCatalog={async () => analysisScripts()} toolboxDirectory={unavailable}
     toolboxInventory={probe} toolboxConfiguration={probe} configureTool={probe} toolboxFiles={probe}
     toolCatalog={probe} previewToolPack={probe} importToolPack={probe} exportToolPack={probe} />)
   expect(await screen.findByRole('alert')).toBeTruthy()

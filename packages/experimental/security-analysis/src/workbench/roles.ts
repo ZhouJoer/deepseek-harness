@@ -40,6 +40,7 @@ export function toolsForRole(role: SecurityRole | undefined): readonly string[] 
  */
 export function canObserve(role: SecurityRole, provider: string, operation: string): boolean {
   if (role === 'researcher' || role === 'reviewer') return false
+  if (provider === 'packet-capture') return ['summary', 'packets'].includes(operation)
   if (provider === 'source') return ['list', 'read', 'search'].includes(operation) &&
     (role !== 'reconnaissance' || operation !== 'read')
   if (role === 'web-analyst') return false

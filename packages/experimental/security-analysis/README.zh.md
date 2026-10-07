@@ -125,6 +125,10 @@ Host 运行期间，配置成对的 `knowledgeProvider` 和 `knowledgeModel` 后
 
 模型的项目视图与搜索结果返回短摘要，包含源码证据的文件路径与读取范围；`security_scope` 按字节分页读取绑定项目修订的记录详情，`security_evidence` 可按字节分页读取原始观察，也可按行号选取已保存的源码读取结果。`modelResultBytes` 默认将完整模型工具响应限制为 16,384 字节，`maxOutputBytes` 仍用于采集。命令返回有界回执，完全相同的观察重试返回已保存证据 ID。子任务摘要保留在 Session 绑定中，不作为原始证据或报告正文。
 
+`./packet-capture` 为本机环境中已导入的 PCAP/PCAPNG 文件资产注册固定的 `summary` 和 `packets` 观察操作。`parameters.protocol` 选择 `wifi` 或 `ble`；可选 `filter` 是 TShark 显示过滤器。需要 Python 和直接执行的 TShark 程序。Provider 配置 `maxPackets`（10,000）、`maxDecodeBytes`（16,777,216）及 `graceMs`（3,000）与工作台的时间、输出限制共同生效。证据保留抓包哈希、脚本身份、参数、工具版本和帧号、时间戳；失败及省略输出明确标记为不完整。HCI、空口抓包和 IP 流量分别标注，不推测缺失或加密字段。原始抓包只返回二进制元数据，不做 UTF-8 预览。采集角色可执行固定操作，研究者和复核者仅可读取已保存证据。
+
+`deviceDirectory` 只读取进程内诊断缓存，不触发检测。显式调用 `deviceInventory` 或 `security_environment` 的 `devices: true` 检查 Windows 本机 Python/TShark 安装、Npcap 驱动、抓包及 nRF extcap 接口和 COM/PnP 身份。接口检查失败保留上次观测及其时间。通用串口不自动识别为 Tufty，不打开串口，真机采集能力保持未验证；发现过程不安装工具、不修改驱动。非 Windows 或非本机环境不支持设备检查。
+
 <a id="understand-the-implementation"></a>
 ## 实现
 

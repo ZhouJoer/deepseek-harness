@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url'
 import { readFileSync } from 'node:fs'
 import type { Browser, Page } from 'playwright'
 import { chromium } from 'playwright'
-import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, onTestFailed } from 'vitest'
 import * as yaml from 'js-yaml'
 import { interpolate } from '@deepseek-ai/cordis-plugin-loader'
 import { entryListSchema } from '@deepseek-ai/cordis-plugin-include'
@@ -51,7 +51,7 @@ describe('web e2e: Security workbench', () => {
   let page: Page
   let tripwire: ReturnType<typeof watchConsole>
 
-  beforeAll(async () => {
+  beforeEach(async () => {
     scaffold = await launchWebScaffold({ extraOverlayPath: OVERLAY, extraInstallAnchors: INSTALL_ANCHORS,
       agentPresets: { default: 'security' } })
     const executablePath = process.env.DSH_PLAYWRIGHT_EXECUTABLE_PATH
@@ -63,9 +63,59 @@ describe('web e2e: Security workbench', () => {
     await connectFreshWorkspace(page, scaffold.workspaceCwd)
     await page.getByRole('button', { name: 'Security workspace', exact: false }).waitFor()
   })
-  afterAll(async () => {
+  afterEach(async () => {
     await browser?.close()
     await scaffold?.close()
+  })
+  it.skipIf(process.platform !== 'win32' || !process.env.DSH_SECURITY_TSHARK)('inspects Windows interfaces and analyzes imported captures through the browser Remote', async () => {
+    onTestFailed(() => saveFailureShot(page, 'web-e2e-wireless'))
+    const agent = scaffold.ctx.agents.list()[0]!
+    const controller = await scaffold.ctx.securityWorkbench.ready
+    controller.options.environments.find(item => item.id === 'local')!.tools.push({ id: 'tshark',
+      command: process.env.DSH_SECURITY_TSHARK!, prefixArgs: [], versionArgs: ['--version'], source: 'Offline test installation' })
+    const capture = Buffer.from('d4c3b2a1020004000000000000000000ffff000069000000', 'hex')
+    const imported = await scaffold.ctx.securityWorkbench.importMaterials(agent, JSON.stringify({
+      operationId: 'wireless-upload', expectedRevision: controller.view(agent.id).revision,
+      title: 'Wireless recording', objective: 'Review an owned offline capture', resources: { environmentIds: ['local'], maxAttempts: 1 },
+      material: { kind: 'files', directory: false, files: [{ name: 'radio.pcap', base64: capture.toString('base64') }] },
+    }))
+    const asset = imported.records.find(item => item.kind === 'asset')!
+    await page.getByRole('button', { name: 'Security workspace', exact: false }).click()
+    const dashboard = page.getByRole('region', { name: 'Security analysis', exact: true })
+    await dashboard.getByRole('button', { name: 'Reverse engineering toolbox', exact: true }).click()
+    await dashboard.getByRole('tab', { name: 'Devices', exact: true }).click()
+    await dashboard.getByText('Physical capture validation · Not checked', { exact: true }).waitFor()
+    expect(scaffold.ctx.securityWorkbench.deviceDirectory('local').inventory.checkedAt).toBe(0)
+    await dashboard.getByRole('button', { name: 'Inspect devices', exact: true }).click()
+    await expect.poll(() => scaffold.ctx.securityWorkbench.deviceDirectory('local').inventory.checkedAt, { timeout: 30000 }).toBeGreaterThan(0)
+    await dashboard.getByText('Physical capture validation · Not checked', { exact: true }).waitFor()
+    await dashboard.screenshot({ path: '.dsh/wireless-devices-en-light.png' })
+    await page.emulateMedia({ colorScheme: 'dark' })
+    await dashboard.screenshot({ path: '.dsh/wireless-devices-en-dark.png' })
+    await page.emulateMedia({ colorScheme: 'light' })
+    await dashboard.getByRole('button', { name: 'Tasks', exact: true }).click()
+    await dashboard.getByRole('button', { name: /Wireless recording/ }).click()
+    await dashboard.getByRole('button', { name: 'Materials', exact: true }).click()
+    await dashboard.getByRole('button', { name: 'Analyze capture', exact: true }).click()
+    await dashboard.getByRole('button', { name: /packet-capture/ }).waitFor()
+    const observation = controller.view(agent.id).records.find(item => item.kind === 'evidence')!
+    expect(observation.value).toMatchObject({ provider: 'packet-capture', incomplete: false })
+    await dashboard.getByRole('button', { name: /packet-capture/ }).click()
+    await dashboard.getByText(/"matchedFrames":0/).waitFor()
+    if (!('artifact' in asset.value)) throw new Error('Expected imported file')
+    expect(await controller.artifacts.read(asset.value.artifact)).toEqual(capture)
+    await dashboard.screenshot({ path: '.dsh/wireless-evidence-en.png' })
+    const chinese = await browser.newPage({ viewport: { width: 1440, height: 1000 }, locale: 'zh-CN', colorScheme: 'dark' })
+    try {
+      await chinese.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
+      await chinese.getByRole('button', { name: '安全分析', exact: true }).click()
+      const panel = chinese.getByRole('region', { name: '安全分析', exact: true })
+      await panel.getByRole('button', { name: '逆向工具箱', exact: true }).click()
+      await panel.getByRole('tab', { name: '设备', exact: true }).click()
+      await panel.getByText('真机采集验证 · 未检查', { exact: true }).waitFor()
+      await panel.screenshot({ path: '.dsh/wireless-devices-zh-dark.png' })
+    } finally { await chinese.close() }
+    expect(tripwire.pageErrors).toEqual([])
   })
   it('browses evidence without rebinding and retains an embedded assistant through collapse and reconnect', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-security-dashboard'))

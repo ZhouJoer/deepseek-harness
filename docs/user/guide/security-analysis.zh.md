@@ -70,6 +70,16 @@ pnpm security
 
 打开**高级详情** → **环境与工具**检查所选环境。缺失安装和设备断连显示为诊断。Android 设备 ID 和 Docker 镜像须在 Host overlay 中明确配置；默认示例只创建本机环境。使用 Ghidra 或设备前，请阅读 [provider 配置](../../../packages/experimental/security-analysis/README.zh.md#configure-analysis-providers)。
 
+<a id="windows-wireless"></a>
+
+### 检查 Windows 设备并分析无线抓包
+
+打开**工具箱 → 设备**，选择本机环境并点击**检查设备**。Python、TShark、Npcap、抓包接口、nRF extcap 和串口分别显示结果。权限错误表示检查失败；安装工具或看到 COM 端口不代表具备采集能力。检查失败保留旧接口及原观测时间。通用串口不会自动认定为 Tufty，也不会打开端口。
+
+通过**添加材料**导入自有 `.pcap` 或 `.pcapng`，在**材料**中选择 **Wi-Fi** 或 **BLE** 和本机环境，点击**分析抓包**查看汇总，或点击**查看帧**取得帧引用。已暂停任务需先恢复；缺少可访问会话的任务需先点击**继续分析**。Windows 离线分析需要 Python 和 TShark，不依赖 Docker、WSL 或专用嗅探硬件。
+
+在**证据**中查看结构化结果，在**工具与进度**中查看执行状态。Wi-Fi 字段包括已记录的 SSID、BSSID、信道、信号强度及安全宣告；BLE 包括已记录的广播、地址、UUID 和 ATT 字段。结果区分 HCI、空口抓包和普通 IP 流量，缺失字段与加密内容保持未知。原文件保留哈希，帧号、时间戳和分析元数据关联结果与抓包；达到限制、取消或失败的结果标记为不完整。此流程不执行扫描、配对、采集、注入、刷固件，也不验证 Tufty 无线采集能力。
+
 <a id="continuous-improvement"></a>
 
 ### 将实际观察转为源码改进

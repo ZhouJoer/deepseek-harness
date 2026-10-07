@@ -4,11 +4,11 @@ import type { Branded } from '@deepseek-ai/dsh-brand'
 /** Identifies a bundled script independently of its installation path. */
 export type AnalysisScriptId = Branded<'SecurityAnalysisScript'>
 /** Built-in scenarios with locale-owned descriptions. */
-export type AnalysisScriptKind = 'captureSummary' | 'extractPackets' | 'mqttSessions' | 'mqttTopics' | 'moduleWatch' | 'functionTrace'
+export type AnalysisScriptKind = 'captureSummary' | 'extractPackets' | 'mqttSessions' | 'mqttTopics' | 'moduleWatch' | 'functionTrace' | 'wirelessCapture'
 /** A CLI argument accepted by a bundled entry point. */
 export interface AnalysisScriptParameter {
   flag: '--input' | '--output' | '--tshark' | '--timeout' | '--max-packets' | '--max-output-bytes' | '--max-decode-bytes'
-    | '--filter' | '--stream' | '--field' | '--mqtt-port' | '--max-events' | '--module' | '--symbol' | '--stack-depth'
+    | '--filter' | '--stream' | '--field' | '--mqtt-port' | '--max-events' | '--module' | '--symbol' | '--stack-depth' | '--protocol' | '--mode'
   required: boolean
   value: string
 }

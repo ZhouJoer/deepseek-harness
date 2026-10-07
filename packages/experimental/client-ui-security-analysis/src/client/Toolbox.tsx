@@ -3,6 +3,7 @@ import { useEffect, useId, useRef, useState } from 'react'
 import { SegmentedTabs } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { AnalysisScript } from '@deepseek-ai/dsh-experimental-security-analysis/client'
 import { ScriptLibrary } from './ScriptLibrary.tsx'
+import { DevicePanel, type DeviceActions } from './DevicePanel.tsx'
 import type { ToolboxDirectory, ToolboxConfiguration, ToolCatalogSnapshot } from '@deepseek-ai/dsh-experimental-security-analysis/client'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import { ToolSettings, type ToolConfigurationActions } from './ToolSettings.tsx'
@@ -11,7 +12,7 @@ import type { NS } from './locales.ts'
 import css from './Workbench.module.css'
 
 /** Inventory and configuration actions supplied by the authenticated Host. */
-export interface ToolboxActions extends ToolConfigurationActions, ToolPackActions {
+export interface ToolboxActions extends ToolConfigurationActions, ToolPackActions, DeviceActions {
   scriptCatalog(this: void): Promise<AnalysisScript[]>
   toolboxDirectory(this: void, environmentId?: string): Promise<ToolboxDirectory>
   toolboxInventory(this: void, environmentId?: string, toolIds?: string[]): Promise<ToolboxDirectory>
@@ -22,15 +23,16 @@ export interface ToolboxActions extends ToolConfigurationActions, ToolPackAction
  * @returns environment selector and categorized installations.
  */
 export function Toolbox(props: ToolboxActions & PropsLocale<typeof NS>) {
-  const [tab, setTab] = useState<'tools' | 'scripts'>('tools')
+  const [tab, setTab] = useState<'tools' | 'scripts' | 'devices'>('tools')
   const id = useId()
   return <section aria-label={props.t('toolbox')}>
     <SegmentedTabs value={tab} onChange={setTab} label={props.t('toolbox')} items={[
       { value: 'tools', label: props.t('scriptToolsTab'), id: id + '-tools', panelId: id + '-tools-panel' },
       { value: 'scripts', label: props.t('scriptLibraryTab'), id: id + '-scripts', panelId: id + '-scripts-panel' },
+      { value: 'devices', label: props.t('deviceTab'), id: id + '-devices', panelId: id + '-devices-panel' },
     ]} />
     <div role="tabpanel" id={id + '-' + tab + '-panel'} aria-labelledby={id + '-' + tab}>
-      {tab === 'tools' ? <ToolInstallations {...props} /> : <ScriptLibrary scriptCatalog={props.scriptCatalog} t={props.t} />}
+      {tab === 'tools' ? <ToolInstallations {...props} /> : tab === 'devices' ? <DevicePanel {...props} /> : <ScriptLibrary scriptCatalog={props.scriptCatalog} t={props.t} />}
     </div>
   </section>
 }

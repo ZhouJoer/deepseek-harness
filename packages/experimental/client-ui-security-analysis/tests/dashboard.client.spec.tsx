@@ -8,6 +8,7 @@ import { en as common } from '@deepseek-ai/dsh-client-locale/src/locales/en.ts'
 import { recordSchema } from '@deepseek-ai/dsh-experimental-security-analysis/src/workbench/model.ts'
 import type { WorkbenchView } from '@deepseek-ai/dsh-experimental-security-analysis/client'
 import { Dashboard } from '../src/client/Dashboard.tsx'
+import { deviceActions } from './device-fixture.client.ts'
 import { en } from '../src/client/locales.ts'
 import type {} from '../src/client/index.ts'
 
@@ -24,6 +25,8 @@ const evidence = recordSchema.parse({ kind: 'evidence', value: { id: 'e1', engag
 function harness(extra: object = {}) {
   const release = vi.fn()
   const api = {
+    ...deviceActions,
+    observe: vi.fn(async (_id: string, _input: string) => ({ revision: 2, records: [alpha, evidence] })),
     projects: vi.fn(async () => JSON.stringify([alpha.value, beta.value])),
     project: vi.fn(async (id: string): Promise<WorkbenchView> => ({ revision: 1, records: id === 'Alpha' ? [alpha, evidence] : [beta] })),
     followActivity: async function* (id: string, signal: AbortSignal) {
@@ -233,4 +236,28 @@ it('retries permanent cleanup with the original request after its task records w
   await waitFor(() => { expect(row.getAttribute('data-deleting')).toBe('true') })
   expect(manageProject.mock.calls[1]).toEqual(manageProject.mock.calls[0])
   expect(api.project).toHaveBeenCalledTimes(1)
+})
+
+it('analyzes imported captures from materials and opens the resulting evidence', async () => {
+  const asset = recordSchema.parse({ kind: 'asset', value: { id: 'capture', engagementId: 'Alpha', label: 'radio.pcapng',
+    artifact: { sha256: 'b'.repeat(64), size: 24, mediaType: 'application/octet-stream' }, format: 'other', identity: 'measured' } })
+  const { api, props } = harness({
+    project: vi.fn(async () => ({ revision: 1, records: [alpha, asset] })),
+    followActivity: async function* () { yield { type: 'snapshot', briefs: [], cursor: 0, view: { revision: 1, records: [alpha, asset] }, usage: [] } },
+    deviceDirectory: vi.fn(async () => ({ environments: [{ id: 'local', label: 'Windows', kind: 'local' }],
+      inventory: { environmentId: 'local', checkedAt: 0, checks: [], devices: [] } })),
+  })
+  render(<Dashboard {...props} />)
+  fireEvent.click(await screen.findByRole('button', { name: /Alpha/ }))
+  fireEvent.click(await screen.findByRole('button', { name: 'Materials' }))
+  await screen.findByRole('option', { name: 'Windows' })
+  expect(api.observe).not.toHaveBeenCalled()
+  expect(screen.getByText('b'.repeat(64))).toBeTruthy()
+  fireEvent.change(screen.getByLabelText('Capture protocol'), { target: { value: 'ble' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Analyze capture' }))
+  await waitFor(() =>{  expect(api.observe).toHaveBeenCalledOnce() })
+  expect(JSON.parse(api.observe.mock.calls[0]![1])).toEqual({ provider: 'packet-capture', operation: 'summary',
+    assetId: 'capture', environmentId: 'local', parameters: { protocol: 'ble' }, impact: 'observe' })
+  await screen.findByText('A recorded observation')
+  expect(api.createSession).not.toHaveBeenCalled()
 })

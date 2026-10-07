@@ -6,7 +6,8 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { WorkspaceId } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import type {} from '@deepseek-ai/dsh-client-ui-workspace/client'
 import type { PropsLocale, PropsRenderSlots, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-import type { WorkbenchView } from '@deepseek-ai/dsh-experimental-security-analysis/client'
+import type { DeviceDirectory, WorkbenchView } from '@deepseek-ai/dsh-experimental-security-analysis/client'
+import { CaptureControls } from './CaptureControls.tsx'
 import { MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
 import { ProjectManagement } from './ProjectManagement.tsx'
 import { Improvements, type ImprovementActions } from './Improvements.tsx'
@@ -22,6 +23,7 @@ type Project = Extract<WorkbenchView['records'][number], { kind: 'engagement' }>
 type Tab = 'overview' | 'activityEntry' | 'assets' | 'findings' | 'evidence' | 'reports' | 'laboratories' | 'improvements'
 /** Native Session ownership and project-scoped reads injected by the plugin. */
 export interface DashboardActions extends ProjectActions, ActivityActions, ImprovementActions {
+  observe(id: SessionId, input: string): Promise<WorkbenchView>
   projectArtifact(projectId: string, hash: string): Promise<string>
   findSession(projectId: string): Promise<SessionId | undefined>
   createSession(workspaceId: WorkspaceId): Promise<SessionId>
@@ -47,6 +49,7 @@ export function Dashboard(props: Props) {
   const [evidenceQuery, setEvidenceQuery] = useState('')
   const [evidenceId, setEvidenceId] = useState('')
   const [view, setView] = useState<WorkbenchView>({ revision: 0, records: [] })
+  const [captureEnvironments, setCaptureEnvironments] = useState<DeviceDirectory['environments']>([])
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [stopping, setStopping] = useState(false)
@@ -116,6 +119,14 @@ export function Dashboard(props: Props) {
     return () => { window.removeEventListener('keydown', close) }
   }, [assistant, advanced])
   useEffect(() => props.subscribeReset(() => { readGeneration.current++; void perform(refresh) }), [selected, props.subscribeReset])
+  useEffect(() => {
+    if (tab !== 'assets') return
+    let active = true
+    setCaptureEnvironments([])
+    void props.deviceDirectory().then((value) => { if (active) setCaptureEnvironments(value.environments) })
+      .catch((error: unknown) => { if (active) setError(String(error)) })
+    return () => { active = false }
+  }, [tab, selected, props.deviceDirectory])
   useEffect(() => {
     if (!sessionId) { setReference(undefined); return }
     let current = true
@@ -274,7 +285,21 @@ export function Dashboard(props: Props) {
                 else await refresh()
               })} /></div>
           </>}
-          {tab === 'assets' && <section className={css.panel}>{assets.length ? assets.map(item => <article className={css.record} key={item.value.id}><h3>{item.value.label}</h3><span className={css.muted}>{'format' in item.value ? item.value.format : item.value.kind}</span>{'artifact' in item.value && <details><summary>{t('advancedDetails')}</summary><code>{item.value.artifact.sha256}</code><p>{item.value.artifact.size} {t('dashboardBytes')}</p></details>}</article>) : <p className={css.empty}>{t('dashboardNoMaterials')}</p>}</section>}
+          {tab === 'assets' && <section className={css.panel}>{assets.length ? assets.map(item => <article className={css.record} key={item.value.id}>
+            <h3>{item.value.label}</h3><span className={css.muted}>{'format' in item.value ? item.value.format : item.value.kind}</span>
+            {'artifact' in item.value && <><code>{item.value.artifact.sha256}</code><p>{item.value.artifact.size} {t('dashboardBytes')}</p></>}
+            {!('kind' in item.value) && <CaptureControls t={t} disabled={busy || project.stopped || Boolean(project.archived)}
+              environments={captureEnvironments.filter(environment => project.environmentIds.includes(environment.id))}
+              analyze={async (operation, protocol, environmentId) => { await perform(async () => {
+                const current = generation.current
+                const id = sessionId ?? await props.findSession(selected)
+                if (current !== generation.current) return
+                if (!id) { setMissingSession(true); return }
+                const next = await props.observe(id, JSON.stringify({ provider: 'packet-capture', operation,
+                  assetId: item.value.id, environmentId, parameters: { protocol }, impact: 'observe' }))
+                if (current === generation.current) { setView(previous => next.revision >= previous.revision ? next : previous); setTab('evidence'); setEvidenceId('') }
+              }) }} />}
+          </article>) : <p className={css.empty}>{t('dashboardNoMaterials')}</p>}</section>}
           {tab === 'findings' && <section className={css.panel}>{findings.length ? findings.map(item => <article className={css.record} key={item.value.id}><span className={css.badge}>{t(item.value.status)}</span><h3>{item.value.title}</h3><p>{item.value.explanation}</p><details><summary>{t('advancedDetails')}</summary><p>{item.value.conditions}</p><p>{item.value.review}</p><div className={css.actions}>{item.value.evidenceIds.map(id => <button key={id} onClick={() => { setTab('evidence'); setEvidenceId(id) }}>{evidence.find(entry => entry.value.id === id)?.value.title ?? id}</button>)}</div></details></article>) : <p className={css.empty}>{t('dashboardNoFindings')}</p>}</section>}
           {tab === 'evidence' && <section className={css.panel}>{chosenEvidence ? <>
             <button className={css.back} onClick={() =>{  setEvidenceId('') }}>{t('dashboardBackEvidence')}</button><h2>{chosenEvidence.title}</h2><p>{chosenEvidence.summary}</p><dl className={css.metadata}><dt>{t('dashboardSource')}</dt><dd>{chosenEvidence.provider} · {chosenEvidence.operation}</dd><dt>{t('dashboardMethod')}</dt><dd>{chosenEvidence.method ?? t('incomplete')}</dd><dt>{t('dashboardToolVersion')}</dt><dd>{chosenEvidence.toolVersion}</dd></dl>

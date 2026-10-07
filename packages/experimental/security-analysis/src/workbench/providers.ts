@@ -186,6 +186,11 @@ export class ProviderRegistry<T extends { id: string }> {
 
 /** Operator-facing environment lifecycle implemented outside the domain owner. */
 export interface EnvironmentManager {
+  /** Inspect Windows interfaces without opening devices.
+   * @param environment - selected deployment. @param signal - cancellation.
+   * @returns separate prerequisite observations, never capture readiness.
+   */
+  devices(environment: SecurityEnvironment, signal: AbortSignal): Promise<import('../device-types.ts').DeviceInventory>
   /**
    * @param environment - configured world.
    * @param signal - cancellation.

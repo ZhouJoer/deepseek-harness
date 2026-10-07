@@ -10,7 +10,7 @@ import { analysisScripts } from '../src/analysis-scripts.ts'
 
 it('ships every catalog resource and returns independent metadata', async () => {
   const entries = analysisScripts()
-  expect(new Set(entries.map(entry => entry.id)).size).toBe(6)
+  expect(new Set(entries.map(entry => entry.id)).size).toBe(7)
   for (const entry of entries) {
     expect(isAbsolute(entry.path)).toBe(true)
     await access(entry.path)
@@ -23,6 +23,12 @@ it('ships every catalog resource and returns independent metadata', async () => 
 it('runs offline fixtures and parameter preparation from an independent working directory', async () => {
   const python = process.env.DSH_SECURITY_SCRIPT_PYTHON ?? (process.platform === 'win32' ? 'python' : 'python3')
   const { stderr } = await promisify(execFile)(python, [fileURLToPath(new URL('./analysis_scripts_test.py', import.meta.url)), '-v'], { timeout: 60_000 })
+  expect(stderr).toContain('OK')
+}, 90_000)
+
+it('decodes synthetic wireless fixtures with TShark when installed', async () => {
+  const python = process.env.DSH_SECURITY_SCRIPT_PYTHON ?? (process.platform === 'win32' ? 'python' : 'python3')
+  const { stderr } = await promisify(execFile)(python, [fileURLToPath(new URL('./wireless_capture_test.py', import.meta.url)), '-v'], { timeout: 60_000 })
   expect(stderr).toContain('OK')
 }, 90_000)
 

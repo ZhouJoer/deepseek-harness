@@ -407,6 +407,10 @@
             "items": {
               "type": "string"
             }
+          },
+          "devices": {
+            "type": "boolean",
+            "description": "Inspect Windows interfaces only; does not open devices or validate capture."
           }
         },
         "required": [
@@ -529,7 +533,7 @@
     },
     {
       "name": "security_static",
-      "description": "Collect read-only source, binary, Ghidra or Android evidence for an imported asset. Raw output is stored before a summary and current project revision are returned. Use that revision for a following command; concurrent changes can still cause a revision conflict.",
+      "description": "Collect read-only source, binary, Ghidra, Android or offline Wi-Fi/BLE packet-capture evidence for an imported asset. Packet capture accepts summary/packets with protocol wifi/ble and never opens live interfaces. Raw output is stored before a summary and current project revision are returned. Use that revision for a following command; concurrent changes can still cause a revision conflict.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -539,7 +543,8 @@
               "binary",
               "ghidra",
               "android",
-              "source"
+              "source",
+              "packet-capture"
             ]
           },
           "operation": {

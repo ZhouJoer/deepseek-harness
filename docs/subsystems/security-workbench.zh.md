@@ -8,6 +8,8 @@
 
 `ToolboxDirectory` 包含已配置的环境选项和一份实测或显式未检测的 `ToolboxInventory`。其中的 `ToolboxTool` 条目分别描述可用性、调用方式和可选 provider 集成。可用 Docker 工具提供宿主 `command` 和 `prefixArgs`，并在 `installation` 中保留原始容器可执行文件与参数，供配置持久化使用。这些只读观察不属于项目证据或执行权限；字段定义见[工具箱类型](../../packages/experimental/security-analysis/src/toolbox-types.ts)。
 
+`DeviceDirectory` 包含已配置的环境选项和缓存或未检测的 `DeviceInventory`。独立前提检查与 branded `RadioDeviceId` 描述软件、驱动及可见接口；观测时间用于区分保留数据和失败的刷新。这些值仅保存在内存中，不代表抓包权限或无线采集就绪。参见[设备类型](../../packages/experimental/security-analysis/src/device-types.ts)。
+
 [记录 schema](../../packages/experimental/security-analysis/src/workbench/model.ts)定义项目、资产、检查、证据、发现、计划、执行、委派和已审核经验。每个命令向 storage-domain 日志追加一个修订，制品字节先于引用发布。Session 日志保留模型可见的工具结果；领域日志负责检查和委派恢复。`SecurityDelegation` 记录分配的问题、固定的项目和资产范围、执行结果、子报告及协调者处理意见。Jobs 管理运行中的执行；采纳报告不代表确认发现。
 
 `ToolCatalogSnapshot` 保存解析后的工具定义、集合、工具包与导入修订版本。`ToolPackPreview` 在显式导入前列出冲突。`ToolPreferences` 包含活跃会话的软偏好，会记录到模型上下文，但不写入项目持久化记录。导入、检测和生命周期语义见[工具配置](../../packages/experimental/security-analysis/README.zh.md)。
@@ -134,6 +136,18 @@ Optional security profile service; default application compositions remain indep
  * @returns environment choices and current optional-tool observations.
  */
 @Remote('toolboxInventory') async toolboxInventory(environmentId?: string, toolIds?: string[]): Promise<ToolboxDirectory>
+
+/** Read the last device inspection without touching hardware or selecting a project.
+ * @param environmentId - selected environment; omission selects the first local environment.
+ * @returns environment choices and unchecked or previously measured interfaces.
+ */
+@Remote('deviceDirectory') deviceDirectory(environmentId?: string): DeviceDirectory
+
+/** Explicitly inspect Windows prerequisites; enumeration does not validate radio capture.
+ * @param environmentId - configured local environment.
+ * @returns settled observations; failed inspections leave the previous directory intact.
+ */
+@Remote('deviceInventory') async deviceInventory(environmentId?: string): Promise<DeviceDirectory>
 
 /** Read editable tool settings independently of a project or conversation.
  * @param environmentId - selected environment.

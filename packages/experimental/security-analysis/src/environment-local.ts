@@ -7,6 +7,8 @@ import type { EnvironmentStatus, SecurityEnvironment } from './workbench/provide
 import type {} from './workbench/index.ts'
 import { inspectToolbox } from './toolbox.ts'
 import type { ToolboxInventory } from './toolbox-types.ts'
+import { inspectDevices, uncheckedDevices } from './device-inventory.ts'
+import type { DeviceInventory } from './device-types.ts'
 
 /** Environment manager configuration. */
 export interface Config {
@@ -41,6 +43,22 @@ export class LocalEnvironmentManager {
     private readonly ctx: Context,
     private readonly config: Config,
   ) {}
+  /** Query interfaces without opening serial ports or initiating radio operations.
+   * @param environment - selected deployment.
+   * @param signal - cancellation.
+   * @returns measured prerequisites; unsupported platforms do not probe tools.
+   */
+  async devices(environment: SecurityEnvironment, signal: AbortSignal): Promise<DeviceInventory> {
+    if (environment.kind !== 'local' || process.platform !== 'win32') {
+      const inventory = uncheckedDevices(environment)
+      for (const check of inventory.checks) check.status = 'unsupported'
+      return inventory
+    }
+    const bounded = AbortSignal.any([signal, AbortSignal.timeout(this.config.timeoutMs)])
+    const inventory = await this.inventory(environment, bounded, ['python', 'tshark'])
+    return inspectDevices(this.ctx, environment, inventory, { durationMs: this.config.timeoutMs,
+      maxOutputBytes: this.config.maxOutputBytes, graceMs: this.config.graceMs }, bounded)
+  }
   /** Inspect optional installations separately from environment readiness.
    * @param environment - configured world.
    * @param signal - cancellation.

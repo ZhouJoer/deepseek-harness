@@ -28,6 +28,8 @@ kind: "package-bundle"
 
 -----
 
+此组合包含固定离线 `packet-capture` provider 和 Windows 设备诊断。Python 与 TShark 需单独安装，浏览页面不会触发探测。导入及分析抓包的步骤见 [Windows 无线流程](../../../docs/user/guide/security-analysis.zh.md#windows-wireless)。
+
 <a id="understand-the-implementation"></a>
 ## 实现
 
