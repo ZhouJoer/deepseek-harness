@@ -19,7 +19,8 @@ function fixture(available = ['python', 'radare2', 'docker']) {
   })
   // The process runner is mocked; inventory uses only the executable resolver on this context.
   const ctx = Object.assign(new Context(), { subprocess: { resolveExecutable } })
-  const inspect = (environment = env, signal = new AbortController().signal) => inspectToolbox(ctx, environment, limits, signal)
+  const inspect = (environment = env, signal = new AbortController().signal, toolIds?: readonly string[]) =>
+    inspectToolbox(ctx, environment, limits, signal, toolIds)
   return { inspect, resolveExecutable }
 }
 beforeEach(() => {
@@ -29,6 +30,42 @@ beforeEach(() => {
       : id === 'r2pipe' || id === 'frida' ? '{"version":"1.0","location":"site-packages"}' : '6.2'))
 })
 describe('tool inventory', () => {
+  it.each([
+    { name: 'analysis-one', workdir: '/work/first', context: 'lab-one' },
+    { name: 'analysis-two', workdir: '/opt/second run', context: 'lab-two' },
+  ])('binds Metasploit to the selected container $name without package inventory', async (container) => {
+    run.mockImplementation(async (_ctx, _env, id, args) => id === 'docker'
+      ? ok(args[0] === 'inspect' ? 'true' : '29.0') : ok('Framework: 6.4'))
+    const environment: SecurityEnvironment = { ...env, id: container.name, kind: 'docker',
+      externalContainer: { name: container.name, workdir: container.workdir }, tools: [
+        { id: 'docker', command: 'docker', prefixArgs: ['--context', container.context], versionArgs: ['--version'], source: 'Host' },
+        { id: 'metasploit', command: '/opt/msf/msfconsole', prefixArgs: ['-n'], versionArgs: ['--version'], source: 'Container' },
+      ] }
+    const inventory = await fixture().inspect(environment, undefined, ['metasploit'])
+    expect(inventory).toMatchObject({ environmentId: container.name, runtime: 'ready',
+      containerId: container.name, workdir: container.workdir })
+    expect(inventory.tools).toMatchObject([{ id: 'metasploit', status: 'available', version: 'Framework: 6.4',
+      command: 'docker', installation: { command: '/opt/msf/msfconsole', prefixArgs: ['-n'] },
+      prefixArgs: ['--context', container.context, 'exec', '-i', '--workdir', container.workdir,
+        container.name, '/opt/msf/msfconsole', '-n'],
+    }])
+    expect(run.mock.calls.map(call => [call[2], call[3]])).toEqual([
+      ['docker', ['info', '--format', '{{.ServerVersion}}']],
+      ['docker', ['inspect', '--format', '{{.State.Running}}', container.name]],
+      ['metasploit', ['--version']],
+    ])
+  })
+  it('returns the configured local Metasploit launcher without Docker arguments', async () => {
+    const command = 'selected-msfconsole'
+    const inventory = await fixture([command]).inspect({ ...env, tools: [
+      { id: 'metasploit', command, prefixArgs: ['-n'], versionArgs: ['--version'], source: 'Local' },
+    ] }, undefined, ['metasploit'])
+    expect(inventory).toMatchObject({ environmentId: 'local', runtime: 'ready', workdir: env.cwd,
+      tools: [{ id: 'metasploit', command, prefixArgs: ['-n'], status: 'available', version: '6.2' }] })
+    expect(inventory.containerId).toBeUndefined()
+    expect(inventory.tools[0]?.installation).toBeUndefined()
+    expect(run.mock.calls.map(call => [call[2], call[3]])).toEqual([['metasploit', ['--version']]])
+  })
   it('discovers tools and binds plugins and modules to the selected executable', async () => {
     const { inspect } = fixture()
     const result = await inspect()

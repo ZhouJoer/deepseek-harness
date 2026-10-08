@@ -421,6 +421,7 @@ describe('security workbench Loader composition', () => {
     expect(request).not.toContain('/tools/radare2')
     expect(request).not.toContain('USBPcapCMD.exe')
     expect(request).not.toContain('pdgj')
+    expect(request).not.toContain('rcTemplate')
     const result = await execute(ctx, agent, 'security_capabilities', { toolIds: ['radare2'], details: true })
     expect(result.isError).toBe(false)
     expect(JSON.stringify(result)).toContain('prefer available radare2/r2')
@@ -429,11 +430,21 @@ describe('security workbench Loader composition', () => {
     expect(JSON.stringify(web.value)).toContain('nuclei')
     expect(JSON.stringify(web.value)).not.toContain('radare2')
     expect(JSON.stringify(web.value)).not.toContain('Prefer native XML')
-    for (const id of ['radare2', 'r2ghidra', 'r2pipe', 'unicorn', 'frida', 'jadx', 'adb', 'curl', 'nmap', 'nuclei', 'tshark', 'file', 'strings', 'readelf', 'objdump', 'nm']) {
+    expect(JSON.stringify(web.value)).not.toContain('rcTemplate')
+    for (const id of ['radare2', 'r2ghidra', 'r2pipe', 'unicorn', 'frida', 'jadx', 'adb', 'curl', 'nmap', 'nuclei', 'metasploit', 'tshark', 'file', 'strings', 'readelf', 'objdump', 'nm']) {
       const detail = await execute(ctx, agent, 'security_capabilities', { toolIds: [id], details: true })
       expect(detail.isError).toBe(false)
       const { catalog } = JSON.parse(detail.content.filter(block => block.type === 'text').map(block => block.text).join('')) as { catalog: { id: string; guide: string }[] }
       expect(catalog.map(({ id, guide }) => ({ id, guide }))).toMatchSnapshot(id)
+      if (id === 'metasploit') {
+        const template = catalog[0]?.guide.match(/```json\n([\s\S]*?)\n```/u)?.[1]
+        expect(template).toBeDefined()
+        expect(JSON.parse(template!)).toMatchObject({
+          recipe: { toolId: 'metasploit', module: null, options: [{ name: null, value: null, reason: null }] },
+          binding: { environmentId: null, command: null, prefixArgs: [], containerId: null, targetOptions: {} },
+          result: { exitCode: null, timedOut: null, negativeControl: { status: 'not-run' }, files: [{ path: null, sha256: null }] },
+        })
+      }
     }
     ctx.securityWorkbench.toolPreferences(agent, JSON.stringify({ toolIds: ['radare2'], tags: [], collectionIds: [] }))
     const scope = scopeOf(agent.ctx)

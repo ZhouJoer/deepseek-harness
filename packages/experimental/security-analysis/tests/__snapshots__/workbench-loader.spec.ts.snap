@@ -50,6 +50,60 @@ exports[`security workbench Loader composition > loads task-specific definitions
 ]
 `;
 
+exports[`security workbench Loader composition > loads task-specific definitions on demand without injecting paths or unrelated guides > metasploit 1`] = `
+[
+  {
+    "guide": "Use the selected configured environment; a Kali image or a previous invocation does not identify the current container, network or module options. Query security_environment with environmentId and toolId metasploit. Reuse a current successful probe for that same environment and installation; recheck after environment or version changes. Probe msfconsole directly, not apt metadata. A failed package inventory does not establish that Metasploit is missing.
+
+Use the returned command and complete prefixArgs, then append the installed version's non-interactive options and -r with the actual runtime rc path. Docker prefixArgs already include the context, exec, workdir, container and executable; never wrap them in another docker exec. Check the selected module's available options and required settings in that same installation. Bind target addresses, ports and TARGETURI from the current task, not from an old container IP. Preserve justified non-default settings with their applicability: CommonsCollections6 replacing CommonsCollections2 for an observed Shiro dependency combination, or a changed Struts2 TARGETURI, is a case-specific observation, not a universal default. An unavailable module, incompatible option or missing target binding blocks that run; do not silently reuse old values.
+
+Read analysisDirectory from security_capabilities. Save a JSON recipe and parameterized rc template under scripts/, and each run's rendered rc, stdout, stderr, result JSON and artifacts under a new outputs/ subdirectory. Fill template placeholders explicitly before execution; retain the exact executed rc bytes. For local execution, use its absolute Host path. For Docker, choose a fresh run directory under the reported container workdir and explicitly copy the rendered rc there using the configured Docker executable and the same context prefix with cp. The Metasploit exec prefix is not a Docker cp prefix. External containers do not mount analysisDirectory. Use the container rc path with -r, copy relevant artifacts back through the same context, and record both Host and container paths. Bound execution and output through the existing native shell; preserve unknown remote completion after cancellation. Do not start, replace or stop an external container to make a recipe work. Native resource scripts are documented at https://docs.rapid7.com/metasploit/resource-scripts.
+
+Use this JSON template as a task file, not an executable API. Null means unmeasured or unbound; replace example entries with actual records. recipe holds reusable intent; binding and result describe one run. targetOptions contains only options supported by the selected module. File paths in recipe and result.files are relative to analysisDirectory; binding paths are absolute in their respective environments. Record SHA-256 from actual file bytes, not model estimates, and exclude the result manifest itself from its file list.
+
+\`\`\`json
+{
+  "recipe": {
+    "toolId": "metasploit",
+    "module": null,
+    "applicability": [],
+    "options": [{ "name": null, "value": null, "reason": null }],
+    "rcTemplate": null,
+    "expectedSignals": [],
+    "negativeControl": { "procedure": null, "expectedSignals": [] }
+  },
+  "binding": {
+    "environmentId": null,
+    "version": null,
+    "command": null,
+    "prefixArgs": [],
+    "containerId": null,
+    "workdir": null,
+    "targetOptions": {},
+    "hostRcPath": null,
+    "runtimeRcPath": null
+  },
+  "result": {
+    "command": null,
+    "args": [],
+    "exitCode": null,
+    "timedOut": null,
+    "cancelled": null,
+    "truncated": null,
+    "observations": [],
+    "negativeControl": { "status": "not-run", "observation": null, "reason": null },
+    "files": [{ "path": null, "sha256": null }],
+    "evidenceIds": []
+  }
+}
+\`\`\`
+
+On reuse, verify saved file hashes, reread the recipe's applicability, bind the current environment and target, and render a new rc without overwriting previous runs. Saved command and args are historical evidence, not the next launcher. Record expected and actual signals separately; an exit code or console match does not confirm a vulnerability. Record whether the negative control ran and what it showed; leave unperformed controls as not-run with a reason. Do not reconstruct missing rc contents, hashes or successful observations from a summary. Capture committed native calls with security_capture_analysis. When authorized and within importRoots, archive the recipe and run files with security_command action import-source; otherwise retain local files and state that they are not archived. Checkpoints reference saved paths and evidence IDs rather than replacing the files. Existing task scope and execution permissions still apply.",
+    "id": "metasploit",
+  },
+]
+`;
+
 exports[`security workbench Loader composition > loads task-specific definitions on demand without injecting paths or unrelated guides > nm 1`] = `
 [
   {

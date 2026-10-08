@@ -76,7 +76,7 @@
         "block": {
           "type": "tool-call",
           "id": "load-analysis-output-guides",
-          "arguments": "{\"toolIds\":[\"r2ghidra\",\"tshark\",\"curl\"],\"details\":true}",
+          "arguments": "{\"toolIds\":[\"r2ghidra\",\"tshark\",\"curl\",\"metasploit\"],\"details\":true}",
           "name": "security_capabilities"
         }
       },
