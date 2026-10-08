@@ -43,6 +43,31 @@ function repository(test: TestContext) {
   return { root, git, write, commit, tree }
 }
 
+function collidingObjects(fixture: ReturnType<typeof repository>) {
+  const tree = fixture.git(['mktree'], '')
+  const commit = fixture.git(['hash-object', '-t', 'commit', '-w', '--stdin'], [
+    `tree ${tree}`,
+    'author test <test@example.invalid> 0 +0000',
+    'committer test <test@example.invalid> 0 +0000',
+    '',
+    'commit 334',
+    '',
+  ].join('\n'))
+  const blob = fixture.git(['hash-object', '-w', '--stdin'], 'blob 7127')
+  expect(commit.slice(0, 7)).toBe(blob.slice(0, 7))
+  expect(commit).not.toBe(blob)
+  return { commit, blob, prefix: commit.slice(0, 7) }
+}
+
+function partialClone(test: TestContext) {
+  const remote = repository(test)
+  remote.git(['config', 'uploadpack.allowFilter', 'true'])
+  const clone = join(remote.root, 'partial-clone')
+  remote.git(['clone', '--filter=blob:none', '--no-local', remote.root, clone])
+  const localObjects = () => remote.git(['-C', clone, 'cat-file', '--batch-all-objects', '--batch-check=%(objectname)', '--unordered']).split('\n').sort()
+  return { ...remote, clone, localObjects }
+}
+
 describe('maintained repository reference policy', () => {
   it('permits only the independent kit repository and its source URLs', () => {
     for (const suffix of ['', '.git', '/tree/main/packages/entry']) {
@@ -78,22 +103,57 @@ describe('maintained repository reference policy', () => {
     ])
   })
 
-  it('does not fetch missing commits from a partial clone\'s promisor remote', (test) => {
+  it('checks commits in alternate object stores', (test) => {
+    const fixture = repository(test)
+    const alternate = repository(test)
+    const commit = alternate.git(['commit-tree', alternate.tree, '-m', 'alternate-only fixture'])
+    fixture.write('.git/objects/info/alternates', `${join(alternate.root, '.git', 'objects').replaceAll('\\', '/')}\n`)
+    fixture.write('alternate.md', `${commit}\n${commit.slice(0, 7)}`)
+
+    expect(scanRepositoryReferences(fixture.root)).toEqual([
+      { file: 'alternate.md', line: 1, kind: 'commit-hash' },
+      { file: 'alternate.md', line: 2, kind: 'commit-hash' },
+    ])
+  })
+
+  it('checks only available history in shallow clones', (test) => {
     const remote = repository(test)
-    remote.git(['config', 'uploadpack.allowFilter', 'true'])
-    const clone = join(remote.root, 'partial-clone')
-    remote.git(['clone', '--filter=blob:none', '--no-local', remote.root, clone])
+    const tip = remote.git(['commit-tree', remote.tree, '-p', remote.commit, '-m', 'shallow tip'])
+    remote.git(['update-ref', 'HEAD', tip])
+    const clone = join(remote.root, 'shallow-clone')
+    remote.git(['clone', '--depth=1', '--no-local', remote.root, clone])
+    remote.write('shallow-clone/history.md', `${remote.commit}\n${tip}`)
+
+    expect(scanRepositoryReferences(clone)).toEqual([
+      { file: 'history.md', line: 2, kind: 'commit-hash' },
+    ])
+  })
+
+  it('does not fetch missing commits from a partial clone\'s promisor remote', (test) => {
+    const remote = partialClone(test)
     const missing = remote.git(['commit-tree', remote.tree, '-p', remote.commit, '-m', 'remote-only fixture'])
     remote.git(['update-ref', 'HEAD', missing])
     remote.write('partial-clone/new.md', missing)
+    const before = remote.localObjects()
+    expect(before).not.toContain(missing)
 
-    expect(scanRepositoryReferences(clone)).toEqual([])
-    expect(execFileSync('git', ['cat-file', '--batch-check'], {
-      cwd: clone,
-      encoding: 'utf8',
-      env: { ...process.env, GIT_NO_LAZY_FETCH: '1' },
-      input: `${missing}\n`,
-    }).trim()).toBe(`${missing} missing`)
+    expect(scanRepositoryReferences(remote.clone)).toEqual([])
+    expect(remote.localObjects()).toEqual(before)
+  })
+
+  it('blocks missing replacement-object transfers despite an explicitly allowed transport', (test) => {
+    const remote = partialClone(test)
+    remote.git(['-C', remote.clone, 'config', 'protocol.file.allow', 'always'])
+    const missing = remote.git(['commit-tree', remote.tree, '-p', remote.commit, '-m', 'remote-only replacement'])
+    remote.git(['update-ref', 'HEAD', missing])
+    const original = remote.git(['-C', remote.clone, 'hash-object', '-w', '--stdin'], 'local replacement source')
+    remote.write(`partial-clone/.git/refs/replace/${original}`, `${missing}\n`)
+    remote.write('partial-clone/replacement.md', original)
+    const before = remote.localObjects()
+    expect(before).not.toContain(missing)
+
+    expect(scanRepositoryReferences(remote.clone)).toEqual([])
+    expect(remote.localObjects()).toEqual(before)
   })
 
   it('accepts blobs, trees, unknown hex, long digests, and identifiers embedded in alphanumeric words', (test) => {
@@ -118,6 +178,72 @@ describe('maintained repository reference policy', () => {
     fixture.git(['update-ref', `refs/heads/${branch}`, fixture.commit])
     fixture.write('branch.md', branch)
     expect(scanRepositoryReferences(fixture.root)).toEqual([])
+  })
+
+  it('preserves hexadecimal branch precedence over abbreviated objects and full-object precedence over branches', (test) => {
+    const fixture = repository(test)
+    const other = fixture.git(['commit-tree', fixture.tree, '-m', 'hexadecimal branch target'])
+    fixture.git(['update-ref', `refs/heads/${fixture.commit.slice(0, 7)}`, other])
+    fixture.git(['update-ref', `refs/heads/${fixture.commit}`, other])
+    fixture.write('branch.md', `${fixture.commit.slice(0, 7)}\n${fixture.commit}`)
+
+    expect(scanRepositoryReferences(fixture.root)).toEqual([
+      { file: 'branch.md', line: 2, kind: 'commit-hash' },
+    ])
+  })
+
+  it('lets Git disambiguate prefixes across all object types and configured object preferences', (test) => {
+    const fixture = repository(test)
+    const { prefix } = collidingObjects(fixture)
+    fixture.write('ambiguous.md', prefix)
+    expect(scanRepositoryReferences(fixture.root)).toEqual([])
+
+    fixture.git(['config', 'core.disambiguate', 'commit'])
+    expect(scanRepositoryReferences(fixture.root)).toEqual([
+      { file: 'ambiguous.md', line: 1, kind: 'commit-hash' },
+    ])
+  })
+
+  it('resolves an ambiguous object prefix through a hexadecimal branch', (test) => {
+    const fixture = repository(test)
+    const { commit, prefix } = collidingObjects(fixture)
+    fixture.git(['update-ref', `refs/heads/${prefix}`, commit])
+    fixture.write('branch.md', prefix)
+
+    expect(scanRepositoryReferences(fixture.root)).toEqual([
+      { file: 'branch.md', line: 1, kind: 'commit-hash' },
+    ])
+  })
+
+  it('uses replacement-object types when deciding whether an identifier denotes a commit', (test) => {
+    const fixture = repository(test)
+    const blob = fixture.git(['hash-object', '-w', '--stdin'], 'replacement blob')
+    fixture.write('replacement.md', `${fixture.commit}\n${blob}`)
+    fixture.git(['replace', '-f', fixture.commit, blob])
+    expect(scanRepositoryReferences(fixture.root)).toEqual([])
+
+    fixture.git(['replace', '-d', fixture.commit])
+    fixture.git(['replace', '-f', blob, fixture.commit])
+    expect(scanRepositoryReferences(fixture.root)).toEqual([
+      { file: 'replacement.md', line: 1, kind: 'commit-hash' },
+      { file: 'replacement.md', line: 2, kind: 'commit-hash' },
+    ])
+  })
+
+  it('resolves absent original objects through replacement refs and hexadecimal branches', (test) => {
+    const fixture = repository(test)
+    const missing = '1234567890abcdef1234567890abcdef12345678'
+    fixture.git(['replace', '-f', missing, fixture.commit])
+    fixture.write('replacement.md', `${missing}\n${missing.slice(0, 7)}`)
+    expect(scanRepositoryReferences(fixture.root)).toEqual([
+      { file: 'replacement.md', line: 1, kind: 'commit-hash' },
+    ])
+
+    fixture.git(['update-ref', `refs/heads/${missing.slice(0, 7)}`, missing])
+    expect(scanRepositoryReferences(fixture.root)).toEqual([
+      { file: 'replacement.md', line: 1, kind: 'commit-hash' },
+      { file: 'replacement.md', line: 2, kind: 'commit-hash' },
+    ])
   })
 
   it('excludes only ignored new files, vendored sources, frozen notes, and deleted files', (test) => {

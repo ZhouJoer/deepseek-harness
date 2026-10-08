@@ -1,6 +1,7 @@
 /** Generic probe arguments and result decoding shared by Host and CLI. @module */
 import { z } from 'zod'
 import type { ToolDefinition } from './tool-definitions.ts'
+import type { ToolboxTool } from './toolbox-types.ts'
 /** Python import and distribution names may differ.
  * @param module - importable module name.
  * @param distribution - package metadata name, defaults to the module name.
@@ -23,7 +24,11 @@ export function probeArguments(tool: ToolDefinition, override?: string[]): strin
  * @param output - bounded successful subprocess output.
  * @returns measured identity, or null when the requested plugin is absent.
  */
-export function probeIdentity(tool: ToolDefinition, output: string): { version: string; location?: string } | null {
+export function probeIdentity(tool: ToolDefinition, output: string): {
+  version: string
+  location?: string
+  python?: ToolboxTool['python']
+} | null {
   if (!output) throw new Error('Version query returned no output')
   if (tool.probe.kind === 'json-plugin') {
     const name = tool.probe.name
@@ -32,7 +37,13 @@ export function probeIdentity(tool: ToolDefinition, output: string): { version: 
     const plugin = plugins.find(item => item.name === name)
     return plugin ? { version: plugin.version ?? '', location: plugin.path ?? '' } : null
   }
-  if (tool.probe.kind === 'identity' || tool.probe.kind === 'python-module')
-    return z.object({ version: z.string(), location: z.string() }).parse(JSON.parse(output))
+  if (tool.probe.kind === 'identity' || tool.probe.kind === 'python-module') {
+    const data: unknown = JSON.parse(output)
+    const identity = z.object({ version: z.string().min(1), location: z.string() }).parse(data)
+    if (tool.probe.kind === 'identity' && tool.id === 'python') return { ...identity,
+      python: z.object({ prefix: z.string(), basePrefix: z.string(),
+        virtualEnvironment: z.boolean(), pipAvailable: z.boolean() }).parse(data) }
+    return identity
+  }
   return { version: output }
 }

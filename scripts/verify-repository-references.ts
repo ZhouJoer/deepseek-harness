@@ -33,7 +33,7 @@ function isMaintained(file: string): boolean {
  * Inspect a maintained source file against known commit identifiers.
  * @param file - Repository-relative path used in diagnostics and exclusions.
  * @param source - File text or a symlink's stored target.
- * @param commits - Lowercase, unambiguous full or abbreviated commit identifiers.
+ * @param commits - Lowercase full or abbreviated identifiers that Git resolves to commits.
  * @returns One finding per line and reference kind; digests and other Git object types are accepted.
  */
 export function findRepositoryReferences(
@@ -74,17 +74,37 @@ function repositoryCommits(repoRoot: string, sources: Iterable<string>): Set<str
   const candidates = [...new Set([...sources].flatMap(source =>
     [...source.matchAll(commitCandidate)].map(match => match[0].toLowerCase())))]
   if (candidates.length === 0) return new Set()
-  const results = execFileSync('git', ['cat-file', '--batch-check=%(objectname) %(objecttype)'], {
+  const options = {
     cwd: repoRoot,
-    env: { ...process.env, GIT_NO_LAZY_FETCH: '1' },
-    encoding: 'utf8',
-    input: `${candidates.join('\n')}\n`,
+    // Older Git versions need the transport restriction because they ignore GIT_NO_LAZY_FETCH.
+    env: { ...process.env, GIT_NO_LAZY_FETCH: '1', GIT_ALLOW_PROTOCOL: '' },
+    encoding: 'utf8' as const,
     maxBuffer: gitOutputLimit,
+  }
+  const objects = execFileSync('git', ['cat-file', '--batch-all-objects', '--batch-check=%(objectname)', '--unordered'], {
+    ...options,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  })
+  const replacements = execFileSync('git', ['replace', '--list'], options)
+  const candidateSet = new Set(candidates)
+  const lengths = new Set(candidates.map(candidate => candidate.length))
+  const available = new Set<string>()
+  // Replacement refs can resolve an original object that is absent from the local store.
+  for (const object of `${objects}${replacements}`.trimEnd().split('\n')) {
+    for (const length of lengths) {
+      const prefix = object.slice(0, length)
+      if (candidateSet.has(prefix)) available.add(prefix)
+    }
+  }
+  const localCandidates = candidates.filter(candidate => available.has(candidate))
+  if (localCandidates.length === 0) return new Set()
+  const results = execFileSync('git', ['cat-file', '--batch-check=%(objectname) %(objecttype)'], {
+    ...options,
+    input: `${localCandidates.join('\n')}\n`,
     stdio: ['pipe', 'pipe', 'pipe'],
   }).trimEnd().split('\n')
-  // Git resolves prefixes across all available objects, including unreachable ones.
-  // Ambiguous prefixes do not identify one object and cannot establish a commit reference.
-  return new Set(candidates.filter((candidate, index) => {
+  // Git owns hexadecimal ref precedence, prefix disambiguation, and replacement types.
+  return new Set(localCandidates.filter((candidate, index) => {
     const [object, type] = results[index]?.split(' ') ?? []
     return type === 'commit' && object?.startsWith(candidate) === true
   }))

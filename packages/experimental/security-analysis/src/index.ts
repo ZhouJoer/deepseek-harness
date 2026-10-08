@@ -1,5 +1,6 @@
 /** Host service exposing the security workbench to tools and generated Remote clients. @module */
 import './service.ts'
+import type { WorkbenchConfiguration } from './workbench-configuration-types.ts'
 import { uncheckedDevices } from './device-inventory.ts'
 import type { DeviceDirectory, DeviceInventory } from './device-types.ts'
 import { installSecurityMethods } from './methods.ts'
@@ -1475,19 +1476,21 @@ export default class SecurityWorkbench extends TypertRemoteService {
    * @returns environment labels, tool identities and registered operations.
    */
   @Remote('configuration')
-  async configuration(agent: Agent): Promise<string> {
+  async configuration(agent: Agent): Promise<WorkbenchConfiguration> {
     const controller = await this.ready
     const cwd = agent.session.header.cwd
     const saved = cwd === undefined ? undefined : this.workspaceIntake?.get(cwd)
     const selected = resolveTaskIntakeResources(this.intakeConfig(cwd), cwd)
-    return JSON.stringify({
+    const maxAttempts = saved?.maxAttempts ?? this.config.taskIntake?.maxAttempts
+    const selectedProject = controller.binding(agent.id)?.engagementId
+    return {
       workspace: cwd === undefined ? null : {
         cwd, revision: saved?.revision ?? 0, configured: saved !== undefined || selected !== undefined,
         environmentIds: saved?.environmentIds ?? selected?.environmentIds ?? [],
-        maxAttempts: saved?.maxAttempts ?? this.config.taskIntake?.maxAttempts,
+        ...(maxAttempts === undefined ? {} : { maxAttempts }),
       },
       materialLimits: { bytes: this.config.maxArtifactBytes, entries: this.config.maxDerivedAssets },
-      selectedProject: controller.binding(agent.id)?.engagementId,
+      ...(selectedProject === undefined ? {} : { selectedProject }),
       projects: controller.projects().map(({ id, title }) => ({ id, title })),
       environments: this.config.environments.map(({ id, kind, label, tools }) => ({
         id,
@@ -1497,7 +1500,7 @@ export default class SecurityWorkbench extends TypertRemoteService {
       })),
       providers: controller.providers.list().map(id => ({ id, operations: controller.providers.get(id).operations })),
       knowledgeIntervalMs: this.config.knowledgeIntervalMs,
-    })
+    }
   }
   /**
    * Save resources explicitly selected by a user for future tasks in this workspace.
@@ -1506,7 +1509,7 @@ export default class SecurityWorkbench extends TypertRemoteService {
    * @returns refreshed configuration; existing project permissions are unchanged.
    */
   @Remote('configureWorkspace')
-  async configureWorkspace(agent: Agent, input: string): Promise<string> {
+  async configureWorkspace(agent: Agent, input: string): Promise<WorkbenchConfiguration> {
     const controller = await this.ready
     const binding = controller.binding(agent.id)
     if (agent.session.header.origin === 'subagent' || (binding && binding.role !== 'coordinator'))

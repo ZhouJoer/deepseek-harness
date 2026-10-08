@@ -12,6 +12,8 @@ export interface ToolboxTool {
   installation?: { command: string; prefixArgs: string[] }
   version: string
   location: string
+  /** Measured Python environment reported by the interpreter identity probe. */
+  python?: { prefix: string; basePrefix: string; virtualEnvironment: boolean; pipAvailable: boolean }
   source: string
   dependency?: string
   detail: string

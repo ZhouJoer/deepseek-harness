@@ -39,6 +39,7 @@ import * as ToolSkill from '@deepseek-ai/dsh-tool-skill'
 import Security from '../src/workbench/index.ts'
 import type { ToolInstallation } from '../src/workbench/providers.ts'
 import { findingHash } from '../src/workbench/assessment.ts'
+import { bindDelegatedChild } from './delegation-fixture.ts'
 import type { SessionBinding } from '../src/workbench/model.ts'
 import type { EvolutionConfig } from '../src/evolution.ts'
 import { evolutionInputSchema } from '../src/evolution-model.ts'
@@ -763,7 +764,7 @@ describe('security workbench Loader composition', () => {
     expect(agent.session.snapshotEvents().filter(event => event.type === 'user/message')
       .some(event => JSON.stringify(event).includes(objective))).toBe(true)
     expect(controller.projects()[0]).toMatchObject({ title: 'Sample analysis', objective, environmentIds: ['local'] })
-    expect(JSON.parse(await ctx.securityWorkbench.configuration(agent))).toMatchObject({ workspace: { configured: false } })
+    expect(await ctx.securityWorkbench.configuration(agent)).toMatchObject({ workspace: { configured: false } })
   })
 
   it('rejects an unknown environment before creating an explicit task', async () => {
@@ -777,7 +778,7 @@ describe('security workbench Loader composition', () => {
 
   it.each(['disabled', 'unmapped'] as const)('starts a task after saving resources for a %s workspace', async (mapping) => {
     const { ctx, agent, controller, model } = await load(false, 0, mapping === 'unmapped' ? { taskIntake: 'other' } : {})
-    expect(JSON.parse(await ctx.securityWorkbench.configuration(agent))).toMatchObject({
+    expect(await ctx.securityWorkbench.configuration(agent)).toMatchObject({
       workspace: { cwd: agent.session.header.cwd, configured: false, revision: 0, environmentIds: [] },
     })
     agent.followup(webPrompt('Inspect the current workspace.'))
@@ -787,7 +788,7 @@ describe('security workbench Loader composition', () => {
     const saved = await ctx.securityWorkbench.configureWorkspace(agent, JSON.stringify({
       expectedRevision: 0, environmentIds: ['local'], maxAttempts: 5,
     }))
-    expect(JSON.parse(saved)).toMatchObject({
+    expect(saved).toMatchObject({
       workspace: { configured: true, revision: 1, environmentIds: ['local'], maxAttempts: 5 },
     })
     expect(controller.projects()).toEqual([])
@@ -804,19 +805,19 @@ describe('security workbench Loader composition', () => {
 
   it.each(['current', 'default'] as const)('keeps an empty resource selection disabled with %s intake', async (taskIntake) => {
     const { ctx, agent, controller } = await load(false, 0, { taskIntake })
-    expect(JSON.parse(await ctx.securityWorkbench.configuration(agent))).toMatchObject({
+    expect(await ctx.securityWorkbench.configuration(agent)).toMatchObject({
       workspace: { configured: true, revision: 0, environmentIds: ['local'] },
     })
     const saved = await ctx.securityWorkbench.configureWorkspace(agent, JSON.stringify({
       expectedRevision: 0, environmentIds: [], maxAttempts: 4,
     }))
-    expect(JSON.parse(saved)).toMatchObject({
+    expect(saved).toMatchObject({
       workspace: { configured: true, revision: 1, environmentIds: [], maxAttempts: 4 },
     })
     await expect(ctx.securityWorkbench.configureWorkspace(agent, JSON.stringify({
       expectedRevision: 0, environmentIds: ['local'], maxAttempts: 2,
     }))).rejects.toThrow('Workspace resource configuration changed')
-    expect(await ctx.securityWorkbench.configuration(agent)).toBe(saved)
+    expect(await ctx.securityWorkbench.configuration(agent)).toEqual(saved)
     agent.followup(webPrompt('Inspect the supplied firmware.'))
     await agent.whenIdle()
     expect(controller.projects()).toEqual([])
@@ -825,7 +826,7 @@ describe('security workbench Loader composition', () => {
 
   it('admits a chat request outside the launch workspace using only the default resources', async () => {
     const { ctx, agent, controller } = await load(false, 0, { taskIntake: 'default' })
-    expect(JSON.parse(await ctx.securityWorkbench.configuration(agent))).toMatchObject({
+    expect(await ctx.securityWorkbench.configuration(agent)).toMatchObject({
       workspace: { configured: true, environmentIds: ['local'] },
     })
     agent.followup(webPrompt('Inspect ctk-1.4.3.apk with static analysis.'))
@@ -880,7 +881,7 @@ describe('security workbench Loader composition', () => {
         action: { kind: 'configureWorkspace', environmentIds: ['local'], maxAttempts: 3 } }),
     })
     expect(denied.isError).toBe(true)
-    expect(await ctx.securityWorkbench.configuration(agent)).toBe(configuration)
+    expect(await ctx.securityWorkbench.configuration(agent)).toEqual(configuration)
     expect(controller.projects()).toEqual([])
   })
 
@@ -900,7 +901,7 @@ describe('security workbench Loader composition', () => {
       await send({ kind: 'import', path, label: 'sample' })
       const asset = controller.view(agent.id).records.find(item => item.kind === 'asset')!
       if (asset.kind !== 'asset') throw new Error('Missing asset')
-      await controller.bindChild(agent.id, child.id, [asset.value.id], 'researcher')
+      await bindDelegatedChild(controller, agent.id, child.id, asset.value.id, 'researcher')
     } else {
       expect(controller.binding(child.id)).toBeUndefined()
     }
@@ -908,7 +909,7 @@ describe('security workbench Loader composition', () => {
     await expect(ctx.securityWorkbench.configureWorkspace(child, JSON.stringify({
       expectedRevision: 0, environmentIds: ['local'], maxAttempts: 4,
     }))).rejects.toThrow('Delegated sessions cannot configure workspace resources')
-    expect(await ctx.securityWorkbench.configuration(agent)).toBe(configuration)
+    expect(await ctx.securityWorkbench.configuration(agent)).toEqual(configuration)
   })
 
   it('admits a new user task in a fork without inheriting its parent project', async () => {
@@ -1075,7 +1076,7 @@ describe('security workbench Loader composition', () => {
     if (asset.kind !== 'asset') throw new Error('Missing asset')
     for (const role of ['reconnaissance', 'reverse-analyst', 'web-analyst', 'researcher', 'reviewer'] as const) {
       const id = SessionId('child-' + role)
-      await controller.bindChild(agent.id, id, [asset.value.id], role)
+      await bindDelegatedChild(controller, agent.id, id, asset.value.id, role)
       const { agent: child } = await ctx.agents.create({ sessionId: id, parentAgent: agent,
         meta: { parentSession: agent.id, origin: 'subagent', delegationDepth: 1 } })
       const visible = ctx.tools.schemas(child).map(tool => tool.name)
@@ -1218,7 +1219,7 @@ it.each(['plain', 'fenced'] as const)('generates a %s JSON brief through the Loa
     conditions: 'A caller supplies another owner invoice.', status: 'suspected', evidenceIds: [observation.value.id], review: '' } })
   const finding = controller.view(agent.id).records.find(item => item.kind === 'finding')!
   if (finding.kind !== 'finding') throw new Error('Missing report finding')
-  await controller.bindChild(agent.id, 'report-reviewer', [asset.value.id], 'reviewer')
+  await bindDelegatedChild(controller, agent.id, 'report-reviewer', asset.value.id, 'reviewer')
   const reviewed = await controller.review('report-reviewer', { findingId: finding.value.id, findingHash: findingHash(finding.value),
     basis: 'static', verdict: 'confirmed', supportingEvidenceIds: [observation.value.id], opposingEvidenceIds: [],
     explanation: 'The complete function implements authentication without object ownership checks.',
@@ -1667,7 +1668,7 @@ it('acknowledges reviews in a large project without turning a committed review i
   const finding = controller.view(agent.id).records.find(item => item.kind === 'finding')!
   if (finding.kind !== 'finding') throw new Error('Missing finding')
   const childId = SessionId('large-reviewer')
-  await controller.bindChild(agent.id, childId, [asset.value.id], 'reviewer')
+  await bindDelegatedChild(controller, agent.id, childId, asset.value.id, 'reviewer')
   const { agent: child } = await ctx.agents.create({ sessionId: childId, parentAgent: agent,
     meta: { cwd: root, parentSession: agent.id, origin: 'subagent', delegationDepth: 1 } })
   const result = await execute(ctx, child, 'security_review', { review: JSON.stringify({
@@ -1721,7 +1722,7 @@ it('reads project artifacts and coordinator IDs without writes, rejecting foreig
     material: { kind: 'text', name: 'owned.txt', text: 'owned' } })
   const asset = controller.projectView(first).records.find(item => item.kind === 'asset')!
   if (asset.kind !== 'asset' || !('artifact' in asset.value)) throw new Error('Expected artifact')
-  await controller.bindChild(agent.id, 'reviewer', [asset.value.id], 'reviewer')
+  await bindDelegatedChild(controller, agent.id, 'reviewer', asset.value.id, 'reviewer')
   const before = controller.projectView(first)
   const events = agent.session.snapshotEvents()
   expect(await ctx.securityWorkbench.projectSessions(first)).toEqual([agent.id])

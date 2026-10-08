@@ -1,7 +1,7 @@
 /** Artifact reachability for irreversible task deletion. @module */
 import type { SecurityRecord, Artifact } from './model.ts'
 import type { ArtifactStore } from './artifacts.ts'
-import { sourceManifestSchema } from './source.ts'
+import { sourceManifest } from './source.ts'
 
 /** Collect all content referenced by task records, including source members.
  * @param store - verified immutable content storage.
@@ -15,7 +15,7 @@ export async function referencedArtifacts(store: ArtifactStore, records: Securit
       if (artifact) artifacts.set(artifact.sha256, artifact)
     if (item.kind === 'plan' && item.value.operation.script) artifacts.set(item.value.operation.script.sha256, item.value.operation.script)
     if (item.kind === 'asset' && 'kind' in item.value && item.value.kind === 'source') {
-      const manifest = sourceManifestSchema.parse(JSON.parse((await store.read(item.value.artifact)).toString('utf8')))
+      const manifest = await sourceManifest(store, item.value)
       for (const file of manifest.files) artifacts.set(file.artifact.sha256, file.artifact)
     }
   }

@@ -1,5 +1,6 @@
 /** Immutable source snapshots and bounded, line-addressed observations. @module */
 import assert from 'node:assert/strict'
+import { isUtf8 } from 'node:buffer'
 import { lstat, readdir, realpath } from 'node:fs/promises'
 import { basename, isAbsolute, join, relative, sep } from 'node:path'
 import { z } from 'zod'
@@ -17,6 +18,23 @@ export const sourceManifestSchema = z.object({
   excluded: z.array(z.object({ path: memberPath, reason: z.string() }).strict()),
 }).strict().refine(value => new Set([...value.files, ...value.excluded].map(item => item.path)).size ===
   value.files.length + value.excluded.length, 'Duplicate source path')
+
+/** Detect UTF-8 source text without accepting NUL bytes.
+ * @param bytes - imported content.
+ * @returns whether source line operations can read the content.
+ */
+export function isSourceText(bytes: Buffer): boolean {
+  return !bytes.includes(0) && isUtf8(bytes)
+}
+
+/** Publish a validated immutable source manifest.
+ * @param store - artifact owner.
+ * @param manifest - measured members and exclusions.
+ * @returns the complete manifest artifact.
+ */
+export function saveSourceManifest(store: ArtifactStore, manifest: z.infer<typeof sourceManifestSchema>): Promise<Artifact> {
+  return store.put(Buffer.from(JSON.stringify(sourceManifestSchema.parse(manifest))), 'application/vnd.dsh.source-tree+json')
+}
 
 /**
  * Snapshot regular files without following links or executing source.
@@ -46,12 +64,7 @@ export async function importSource(store: ArtifactStore, path: string, roots: st
     bytes += imported.artifact.size
     if (bytes > limits.bytes) throw new Error('Source snapshot exceeds the configured byte limit')
     const content = await store.read(imported.artifact)
-    let text = !content.includes(0)
-    if (text) {
-      try { new TextDecoder('utf-8', { fatal: true }).decode(content) }
-      catch (error) { if (!(error instanceof TypeError)) throw error; text = false }
-    }
-    manifest.files.push({ path, artifact: imported.artifact, text })
+    manifest.files.push({ path, artifact: imported.artifact, text: isSourceText(content) })
   }
   const visit = async (directory: string, prefix: string): Promise<void> => {
     const names = (await readdir(directory)).sort()
@@ -78,15 +91,16 @@ export async function importSource(store: ArtifactStore, path: string, roots: st
   } else {
     await visit(root, '')
   }
-  return store.put(Buffer.from(JSON.stringify(sourceManifestSchema.parse(manifest))), 'application/vnd.dsh.source-tree+json')
+  return saveSourceManifest(store, manifest)
 }
 
 /** Read the manifest of the assigned source asset.
- * @param context - admitted asset and artifact store.
+ * @param store - verified artifact owner.
+ * @param asset - assigned source asset.
  * @returns verified source entries. */
-export async function sourceManifest(context: AnalysisContext): Promise<z.infer<typeof sourceManifestSchema>> {
-  if (!('kind' in context.asset) || context.asset.kind !== 'source') throw new Error('Select an imported source file or directory')
-  return sourceManifestSchema.parse(JSON.parse((await context.artifacts.read(context.asset.artifact)).toString('utf8')))
+export async function sourceManifest(store: ArtifactStore, asset: AnalysisContext['asset']): Promise<z.infer<typeof sourceManifestSchema>> {
+  if (!('kind' in asset) || asset.kind !== 'source') throw new Error('Select an imported source file or directory')
+  return sourceManifestSchema.parse(JSON.parse((await store.read(asset.artifact)).toString('utf8')))
 }
 
 /** Source observations use immutable bytes without external execution. */
@@ -106,7 +120,7 @@ export class SourceProvider implements AnalysisProvider {
     return { ...request, parameters: schema.parse(request.parameters) }
   }
   async run(request: AnalysisOperation, context: AnalysisContext): Promise<AnalysisResult> {
-    const manifest = await sourceManifest(context)
+    const manifest = await sourceManifest(context.artifacts, context.asset)
     const query = request.parameters.query
     if (request.operation === 'search') assert(typeof query === 'string', 'Resolved source search requires text')
     const items: object[] = []

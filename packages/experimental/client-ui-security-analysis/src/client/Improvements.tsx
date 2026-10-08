@@ -1,5 +1,6 @@
 /** Lightweight engineering suggestions and portable coding-AI handoff. @module */
 import { useEffect, useState, useSyncExternalStore } from 'react'
+import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { zipSync, strToU8 } from 'fflate/browser'
 import { randomUUID } from '@deepseek-ai/dsh-util-crypto'
 import { Button, Toast } from '@deepseek-ai/dsh-client-ui-primitives'
@@ -10,7 +11,6 @@ import css from './Improvements.module.css'
 
 /** Operator-only improvement RPCs and shell-hosted notifications. */
 export interface ImprovementActions {
-  improvements(projectId?: string): Promise<EvolutionView>
   analyzeImprovements: (input: string) => Promise<EvolutionView>
   updateImprovement(input: string): Promise<EvolutionView>
   exportImprovement(id: string): Promise<EvolutionBundle>
@@ -20,14 +20,13 @@ export interface ImprovementActions {
 /** Create notification state that outlasts panel navigation.
  * @returns controller shared by actions and the shell overlay. */
 export function improvementNotifications() {
-  let current: { id: number; text: string } | null = null
+  const state = createSnapshotStore<{ id: number; text: string } | null>(null)
   let serial = 0
-  const listeners = new Set<() => void>()
   return {
-    read: () => current,
-    subscribe: (listener: () => void) => { listeners.add(listener); return () => { listeners.delete(listener) } },
-    push: (text: string) => { current = { id: ++serial, text }; for (const listener of listeners) listener() },
-    dismiss: () => { current = null; for (const listener of listeners) listener() },
+    read: () => state.getSnapshot(),
+    subscribe: (listener: () => void) => state.subscribe(listener),
+    push: (text: string) => { state.set({ id: ++serial, text }) },
+    dismiss: () => { state.set(null) },
   }
 }
 /** Render feedback outside the navigable panel.

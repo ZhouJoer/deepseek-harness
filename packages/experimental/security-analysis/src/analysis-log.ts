@@ -4,6 +4,8 @@ import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import type { ToolCallId } from '@deepseek-ai/dsh-llm'
 import { z } from 'zod'
 
+class UncapturableAnalysisCall extends Error {}
+
 /** Metadata for one caller-owned interaction that can be captured by itself. */
 interface AnalysisCall {
   callId: ToolCallId
@@ -13,7 +15,7 @@ interface AnalysisCall {
   jobId?: string
 }
 
-/** List committed native interactions without disclosing command or output bodies.
+/** List committed native interactions without disclosing command or output bodies. Malformed job arguments are rejected.
  * @param events - immutable Session observation.
  * @param inherited - fork prefix excluded from caller-owned analysis.
  * @param offset - continuation position within the filtered interactions.
@@ -31,8 +33,7 @@ export function analysisCallPage(events: readonly SessionEvent[], inherited: num
     if (result?.type !== 'tool/result') continue
     try { analysisLog(events, inherited, [event.data.callId]) }
     catch (error) {
-      // Capture validation rejects incomplete or malformed background interactions.
-      if (!(error instanceof Error)) throw error
+      if (!(error instanceof UncapturableAnalysisCall)) throw error
       continue
     }
     const job = event.data.name === 'job_output'
@@ -70,7 +71,7 @@ export function analysisLog(events: readonly SessionEvent[], inherited: number, 
   const pair = (id: string) => {
     const call = calls.find(event => event.data.callId === id)
     const result = results.find(event => event.data.message.toolCallId === id)
-    if (!call || !result || result.seq <= call.seq) throw new Error('Analysis call must have a committed result in this Session; omit callIds to list capturable call IDs. Background job IDs are not call IDs')
+    if (!call || !result || result.seq <= call.seq) throw new UncapturableAnalysisCall('Analysis call must have a committed result in this Session; omit callIds to list capturable call IDs. Background job IDs are not call IDs')
     if (!['bash', 'pwsh', 'job_output'].includes(call.data.name)) throw new Error('Only native shell and job output can be captured')
     selected.add(call.seq); selected.add(result.seq)
     return { call, result }
@@ -85,12 +86,12 @@ export function analysisLog(events: readonly SessionEvent[], inherited: number, 
         const blocks = output?.data.message.content
         return blocks?.length === 1 && blocks[0]?.type === 'text' && blocks[0].text.trim() === 'started background job ' + job
       })
-      if (!start) throw new Error('Background output requires its own recorded shell start')
+      if (!start) throw new UncapturableAnalysisCall('Background output requires its own recorded shell start')
       pair(start.data.callId)
       for (const candidate of calls) {
         if (candidate.data.name !== 'job_output' || candidate.seq > call.seq || candidate.seq < start.seq) continue
-        const args = z.object({ job_id: z.string() }).safeParse(JSON.parse(candidate.data.arguments))
-        if (args.success && args.data.job_id === job) pair(candidate.data.callId)
+        const args = z.object({ job_id: z.string() }).parse(JSON.parse(candidate.data.arguments))
+        if (args.job_id === job) pair(candidate.data.callId)
       }
     } else {
       const blocks = result.data.message.content
@@ -102,7 +103,7 @@ export function analysisLog(events: readonly SessionEvent[], inherited: number, 
         const args = z.object({ job_id: z.string() }).parse(JSON.parse(candidate.data.arguments))
         return blocks.length === 1 && blocks[0]?.type === 'text'
           && blocks[0].text.trim() === 'started background job ' + args.job_id
-      })) throw new Error('Capture background output after collecting it with job_output')
+      })) throw new UncapturableAnalysisCall('Capture background output after collecting it with job_output')
     }
   }
   return events.filter(event => selected.has(event.seq))

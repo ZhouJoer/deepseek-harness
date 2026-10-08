@@ -159,7 +159,7 @@ Deliverable: bounded collaboration with traceable child results. Acceptance: sim
 
 ### 5. Finish the workspace, conversation and result interface
 
-Dependency: stage 2; can proceed alongside stages 3 and 4 after task and result fields settle. Primary locations: [Workbench](../../packages/experimental/client-ui-security-analysis/src/client/Workbench.tsx), [Projects](../../packages/experimental/client-ui-security-analysis/src/client/Projects.tsx), [UI registration](../../packages/experimental/client-ui-security-analysis/src/client/index.ts), locale dictionaries and the security Web composition.
+Dependency: stage 2; can proceed alongside stages 3 and 4 after task and result fields settle. Primary locations: [Workbench](../../packages/experimental/client-ui-security-analysis/src/client/Workbench.tsx), [Dashboard](../../packages/experimental/client-ui-security-analysis/src/client/Dashboard.tsx), [UI registration](../../packages/experimental/client-ui-security-analysis/src/client/index.ts), locale dictionaries and the security Web composition.
 
 - [ ] S5.1 Consolidate workspace materials, environments and resources into reusable configuration; remove duplicate project setup from the routine task path.
 - [ ] S5.2 Use one conversation for task creation, clarification, new resources, scope changes, pause and continuation; keep technical controls in an optional detail view.

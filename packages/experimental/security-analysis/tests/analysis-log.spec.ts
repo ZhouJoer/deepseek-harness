@@ -54,3 +54,15 @@ it('exposes capturable call IDs separately from background job identities', () =
   expect(() => analysisCallPage(events, 2, 0, 20)).toThrow('output budget')
   expect(analysisCallPage(events, 2, 10, 4096)).toEqual({ calls: [], nextOffset: null })
 })
+
+it('reports malformed committed job arguments instead of hiding the interaction', () => {
+  const malformed = call(2, 'output', 'job_output', {})
+  const events = [call(0, 'start'), result(1, 'start', 'started background job job-1'), malformed, result(3, 'output', 'output')]
+  expect(() => analysisCallPage(events, 0, 0, 4096)).toThrow()
+  malformed.data.arguments = '{'
+  expect(() => analysisCallPage(events, 0, 0, 4096)).toThrow(SyntaxError)
+  expect(() => analysisLog(events, 0, ['output'])).toThrow(SyntaxError)
+  malformed.data.arguments = '{}'
+  const later = [...events, call(4, 'later', 'job_output', { job_id: 'job-1' }), result(5, 'later', 'more output')]
+  expect(() => analysisLog(later, 0, ['later'])).toThrow()
+})

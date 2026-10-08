@@ -16,6 +16,7 @@ import { BinaryProvider } from '../src/workbench/binary.ts'
 import type { SecurityCommand } from '../src/workbench/controller.ts'
 import type { AnalysisOperation } from '../src/workbench/model.ts'
 import { findingHash } from '../src/workbench/assessment.ts'
+import { bindDelegatedChild } from './delegation-fixture.ts'
 import { refineKnowledge, refinementSchema } from '../src/workbench/knowledge.ts'
 import { SecuritySearchIndex } from '../src/workbench/search.ts'
 
@@ -130,7 +131,7 @@ describe('security workbench', () => {
     expect(controller.checkpointId('parent')).toBe(id)
     await send({ ...checkpoint, id, summary: 'Two entry points identified' })
     expect(controller.view('parent').records.filter(item => item.kind === 'checkpoint')).toHaveLength(1)
-    await controller.bindChild('parent', 'child', [assetId], 'reverse-analyst')
+    await bindDelegatedChild(controller, 'parent', 'child', assetId, 'reverse-analyst')
     await send({ ...checkpoint, phase: 'assessment', title: 'Access checks', reason: 'Inspect the discovered entry' })
     await send({ ...checkpoint, title: 'Supplemental reconnaissance', reason: 'Assessment found another caller' })
     expect(controller.checkpointId('child')).toBe(id)
@@ -153,10 +154,11 @@ describe('security workbench', () => {
     expect(first.value.planId).toBeUndefined()
     expect(await artifacts.read(first.value.artifact)).toEqual(bytes)
     await expect(controller.captureAnalysis('parent', 'foreign', ['script-call'], bytes, signal)).rejects.toThrow('scope')
-    await controller.bindChild('parent', 'reviewer', [assetId], 'reviewer')
+    const assignment = await bindDelegatedChild(controller, 'parent', 'reviewer', assetId, 'reviewer')
     await expect(controller.captureAnalysis('reviewer', assetId, ['call'], bytes, signal)).rejects.toThrow('role')
-    await controller.saveChildReport('reviewer', { summary: 'Script log reviewed', evidenceIds: [first.value.id],
-      uncertainty: 'No complete implementation evidence', nextSteps: ['Inspect the implementation'] })
+    await controller.settleDelegation(assignment.id, { status: 'completed', report: {
+      summary: 'Script log reviewed', evidenceIds: [first.value.id],
+      uncertainty: 'No complete implementation evidence', nextSteps: ['Inspect the implementation'] } })
     await send({ kind: 'finding', finding: { assetId, title: 'Script hypothesis', explanation: 'Script observation requires confirmation',
       conditions: 'Unverified input conditions', evidenceIds: [first.value.id], status: 'suspected', review: '' } })
     const finding = controller.view('parent').records.find(item => item.kind === 'finding')!
@@ -546,11 +548,11 @@ describe('security workbench', () => {
 
   it('requires an operator for approval and narrows child authority independently of ancestry', async () => {
     const { controller, send, assetId } = await harness()
-    await controller.bindChild('parent', 'child', [assetId], 'reconnaissance')
+    await bindDelegatedChild(controller, 'parent', 'child', assetId, 'reconnaissance')
     expect(controller.binding('child')?.role).toBe('reconnaissance')
     await expect(send({ kind: 'stop' }, false, 'child')).rejects.toThrow(/role/)
     await expect(send({ kind: 'approve', planId: 'unknown' })).rejects.toThrow(/operator/)
-    await expect(controller.bindChild('child', 'grandchild', [assetId], 'reviewer')).rejects.toThrow(/Nested/)
+    await expect(bindDelegatedChild(controller, 'child', 'grandchild', assetId, 'reviewer')).rejects.toThrow('Coordinator role required')
     expect(controller.view('unbound').records).toEqual([])
   })
 
@@ -648,6 +650,85 @@ describe('security workbench', () => {
 
   })
 
+  it.each(['throw', 'failure', 'cancelled', 'cancelled-before-commit', 'incomplete'] as const)('retains %s static observations without replaying their provider', async (outcome) => {
+    const { controller, artifacts, assetId } = await harness()
+    const abort = new AbortController()
+    const bytes = Buffer.from('partial original observations')
+    if (outcome === 'cancelled-before-commit') {
+      const put = artifacts.put.bind(artifacts)
+      vi.spyOn(artifacts, 'put').mockImplementationOnce(async (...args) => {
+        const artifact = await put(...args)
+        abort.abort(new Error('Collection cancelled before commit'))
+        return artifact
+      })
+    }
+    const run = vi.fn(async () => {
+      if (outcome === 'throw') throw new Error('Provider rejected collection')
+      if (outcome === 'cancelled') abort.abort(new Error('Collection cancelled'))
+      return { bytes, mediaType: 'text/plain', summary: 'Partial observations', incomplete: true,
+        toolVersion: 'fixture', ...(outcome === 'failure' ? { failure: 'Provider failed after collection' } : {}) }
+    })
+    controller.providers.register({ id: 'ghidra', operations: ['functions'], resolve: request => request, run })
+    const operation: AnalysisOperation = { provider: 'ghidra', operation: 'functions', environmentId: 'local',
+      assetId, parameters: {}, impact: 'observe' }
+    const collect = () => controller.observe('parent', operation, 'failed-static', abort.signal)
+    for (let attempt = 0; attempt < 2; attempt++) {
+      if (outcome === 'incomplete') await expect(collect()).resolves.toMatchObject({ kind: 'evidence', value: { incomplete: true } })
+      else await expect(collect()).rejects.toThrow(/Provider|cancelled/)
+    }
+    expect(run).toHaveBeenCalledTimes(1)
+    const evidence = controller.view('parent').records.filter(item => item.kind === 'evidence')
+    expect(evidence).toHaveLength(1)
+    expect(await artifacts.read(evidence[0]!.value.artifact)).toEqual(outcome === 'throw'
+      ? Buffer.from('Provider rejected collection') : bytes)
+    expect(evidence[0]!.value.failure === undefined).toBe(outcome === 'incomplete')
+    await expect(controller.manageEnvironment('local', async () => 'released')).resolves.toBe('released')
+  })
+
+  it.each(['throw', 'failure', 'cancelled', 'cancelled-before-commit', 'incomplete'] as const)('retains %s execution output and replays its settled status', async (outcome) => {
+    const { controller, artifacts, send, assetId, journal } = await harness()
+    const abort = new AbortController()
+    const bytes = Buffer.from('original validation output')
+    if (outcome === 'cancelled-before-commit') {
+      const put = artifacts.put.bind(artifacts)
+      vi.spyOn(artifacts, 'put').mockImplementationOnce(async (...args) => {
+        const artifact = await put(...args)
+        abort.abort(new Error('Validation cancelled before commit'))
+        return artifact
+      })
+    }
+    const run = vi.fn(async () => {
+      if (outcome === 'throw') throw new Error('Provider rejected validation')
+      if (outcome === 'cancelled') abort.abort(new Error('Validation cancelled'))
+      return { bytes, mediaType: 'text/plain', summary: 'Partial validation', incomplete: true,
+        toolVersion: 'fixture', ...(outcome === 'failure' ? { failure: 'Provider failed after validation' } : {}) }
+    })
+    controller.providers.register({ id: 'fixture', operations: ['inspect'], resolve: request => request, run })
+    await send({ kind: 'check', check: { assetId, title: 'Inspect', phase: 'validation', criterion: 'Record observations', dependencies: [], evidenceIds: [] } })
+    const check = controller.view('parent').records.find(item => item.kind === 'check')!
+    if (check.kind !== 'check') throw new Error('Expected check')
+    await send({ kind: 'plan', checkId: check.value.id, operation: { provider: 'fixture', operation: 'inspect',
+      environmentId: 'local', assetId, parameters: {}, impact: 'observe' }, hypothesis: 'Inspect target',
+    expectedObservation: 'Bounded observations', impact: 'Read only', cleanup: 'None', durationMs: 100 })
+    const plan = controller.view('parent').records.find(item => item.kind === 'plan')!
+    if (plan.kind !== 'plan') throw new Error('Expected plan')
+    await send({ kind: 'approve', planId: plan.value.id }, true)
+    const execute = () => controller.execute('parent', plan.value.id, 'failed-execution', journal.view().revision, 'validation', abort.signal)
+    for (let attempt = 0; attempt < 2; attempt++) {
+      if (outcome === 'incomplete') await expect(execute()).resolves.toHaveProperty('records')
+      else await expect(execute()).rejects.toThrow(/Provider|cancelled/)
+    }
+    expect(run).toHaveBeenCalledTimes(1)
+    const evidence = controller.view('parent').records.filter(item => item.kind === 'evidence')
+    expect(evidence).toHaveLength(1)
+    expect(await artifacts.read(evidence[0]!.value.artifact)).toEqual(outcome === 'throw'
+      ? Buffer.from('Provider rejected validation') : bytes)
+    expect(controller.view('parent').records.find(item => item.kind === 'execution')).toMatchObject({
+      value: { status: outcome === 'incomplete' ? 'completed' : outcome.startsWith('cancelled') ? 'interrupted' : 'failed' },
+    })
+    await expect(controller.manageEnvironment('local', async () => 'released')).resolves.toBe('released')
+  })
+
   it('rebuilds Chinese and identifier search from committed records', async () => {
     const { root, journal, send } = await harness()
     await send({
@@ -736,7 +817,7 @@ describe('security workbench', () => {
       'static',
       new AbortController().signal,
     )
-    const rejected = expect(observation).resolves.toMatchObject({ kind: 'evidence', value: { incomplete: true, failure: 'cancelled' } })
+    const rejected = expect(observation).rejects.toThrow('cancelled')
     await began
     const stopping = send({ kind: 'stop' })
     await aborted
@@ -749,6 +830,9 @@ describe('security workbench', () => {
     release()
     await stopping
     await rejected
+    expect(controller.view('parent').records.find(item => item.kind === 'evidence')).toMatchObject({
+      value: { incomplete: true, failure: 'cancelled' },
+    })
     await expect(
       controller.observe(
         'parent',
@@ -826,7 +910,7 @@ async function reviewedFixture(incomplete = false, phase: 'validation' | 'recon'
   await send({ kind: 'finding', finding: { assetId, title: 'Fixture claim', explanation: 'Response content', conditions: 'Owned fixture', evidenceIds: [evidence.value.id], status: 'suspected', review: '' } })
   const finding = controller.view('parent').records.find(item => item.kind === 'finding')!
   if (finding.kind !== 'finding') throw new Error('Missing finding')
-  await controller.bindChild('parent', 'reviewer', [assetId], 'reviewer')
+  await bindDelegatedChild(controller, 'parent', 'reviewer', assetId, 'reviewer')
   const review = async (verdict: 'confirmed' | 'refuted' | 'inconclusive') => {
     const view = await controller.review('reviewer', { findingId: finding.value.id, findingHash: findingHash(finding.value), basis: 'runtime', verdict,
       supportingEvidenceIds: verdict === 'confirmed' ? [evidence.value.id] : [], opposingEvidenceIds: verdict === 'refuted' ? [evidence.value.id] : [],
@@ -908,7 +992,7 @@ it.each([{ operation: 'hex', accepted: true }, { operation: 'strings', accepted:
       evidenceIds: [observed.value.id], status: 'suspected', review: '' } })
     const finding = controller.view('parent').records.find(item => item.kind === 'finding')
     if (finding?.kind !== 'finding') throw new Error('Missing finding')
-    await controller.bindChild('parent', 'static-reviewer', [assetId], 'reviewer')
+    await bindDelegatedChild(controller, 'parent', 'static-reviewer', assetId, 'reviewer')
     const reviewed = await controller.review('static-reviewer', { findingId: finding.value.id,
       findingHash: findingHash(finding.value), basis: 'static', verdict: 'confirmed',
       supportingEvidenceIds: [observed.value.id], opposingEvidenceIds: [],
@@ -1033,12 +1117,14 @@ it('bounds framed input before dispatch and does not commit an aborted result', 
   expect(() => refinementSchema.parse({ entries: [], evidence: [] })).toThrow()
 })
 
-it('persists scoped child summaries and keeps legacy file assets readable on reopen', async () => {
+it('keeps historical child summaries and file assets readable on reopen', async () => {
   const { controller, journal, ctx, assetId } = await harness()
-  await controller.bindChild('parent', 'source-reviewer', [assetId], 'reviewer')
+  await bindDelegatedChild(controller, 'parent', 'source-reviewer', assetId, 'reviewer')
   const report = { summary: 'No complete validation evidence.', evidenceIds: [], uncertainty: 'Offline pending', nextSteps: ['Run an approved plan'] }
-  await controller.saveChildReport('source-reviewer', report)
-  await expect(controller.saveChildReport('source-reviewer', { ...report, evidenceIds: ['foreign'] })).rejects.toThrow(/foreign/)
+  const binding = controller.binding('source-reviewer')!
+  await journal.commit(randomUUID(), undefined, { historicalReport: report }, () => [
+    { kind: 'binding', value: { ...binding, report } },
+  ])
   expect(controller.view('parent').records.filter(item => item.kind === 'binding').map(item => item.value.report)).toContainEqual(report)
   const records = journal.view()
   await journal.close()

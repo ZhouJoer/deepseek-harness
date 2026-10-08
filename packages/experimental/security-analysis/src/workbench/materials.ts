@@ -4,8 +4,8 @@ import { lstat } from 'node:fs/promises'
 import { basename } from 'node:path'
 import { z } from 'zod'
 import { ArtifactStore, detectFileFormat } from './artifacts.ts'
-import { importSource, sourceManifestSchema } from './source.ts'
-import type { FileAsset, SourceAsset } from './model.ts'
+import { importSource, isSourceText, saveSourceManifest, sourceManifestSchema } from './source.ts'
+import type { Artifact, FileAsset, SourceAsset } from './model.ts'
 
 const name = sourceManifestSchema.shape.files.element.shape.path
 /** Explicit UI material selection; host paths authorize only the selected file or tree. */
@@ -33,7 +33,7 @@ export async function prepareMaterials(store: ArtifactStore, input: z.infer<type
       artifact: await importSource(store, input.path, [input.path], limits) }]
     if (!selected.isFile()) throw new Error('Select a regular file or directory')
     const measured = await store.import(input.path, [input.path])
-    return [await file(basename(input.path), await store.read(measured.artifact))]
+    return [await file(basename(input.path), await store.read(measured.artifact), measured.artifact, measured.format)]
   }
   if (input.kind === 'files' && (input.files.length > limits.entries
     || input.files.reduce((sum, item) => sum + item.base64.length, 0) > 4 * Math.ceil(limits.bytes / 3) + 4 * input.files.length))
@@ -52,25 +52,16 @@ export async function prepareMaterials(store: ArtifactStore, input: z.infer<type
     const first = files[0]
     assert(first)
     const members = await Promise.all(files.map(async item => ({ path: item.name,
-      artifact: await store.put(item.bytes, 'application/octet-stream'), text: isText(item.bytes) })))
+      artifact: await store.put(item.bytes, 'application/octet-stream'), text: isSourceText(item.bytes) })))
     return [{ kind: 'source', label: first.name.slice(0, first.name.indexOf('/') < 0 ? first.name.length : first.name.indexOf('/')), identity: 'measured',
-      artifact: await store.put(Buffer.from(JSON.stringify(sourceManifestSchema.parse({ version: 1, files: members, excluded: [] }))),
-        'application/vnd.dsh.source-tree+json') }]
+      artifact: await saveSourceManifest(store, { version: 1, files: members, excluded: [] }) }]
   }
-  return Promise.all(files.map(item => file(item.name, item.bytes)))
+  return Promise.all(files.map(async item => file(item.name, item.bytes,
+    await store.put(item.bytes, 'application/octet-stream'), detectFileFormat(item.bytes, item.name))))
 
-  async function file(label: string, bytes: Buffer): Promise<MaterialAsset> {
-    const artifact = await store.put(bytes, 'application/octet-stream')
-    const format = detectFileFormat(bytes, label)
-    if (format !== 'other' || !isText(bytes)) return { label, artifact, format, identity: 'measured' }
-    const manifest = sourceManifestSchema.parse({ version: 1, files: [{ path: label, artifact, text: true }], excluded: [] })
+  async function file(label: string, bytes: Buffer, artifact: Artifact, format: FileAsset['format']): Promise<MaterialAsset> {
+    if (format !== 'other' || !isSourceText(bytes)) return { label, artifact, format, identity: 'measured' }
     return { kind: 'source', label, identity: 'measured',
-      artifact: await store.put(Buffer.from(JSON.stringify(manifest)), 'application/vnd.dsh.source-tree+json') }
+      artifact: await saveSourceManifest(store, { version: 1, files: [{ path: label, artifact, text: true }], excluded: [] }) }
   }
-}
-
-function isText(bytes: Buffer): boolean {
-  if (bytes.includes(0)) return false
-  try { new TextDecoder('utf-8', { fatal: true }).decode(bytes); return true }
-  catch (error) { if (!(error instanceof TypeError)) throw error; return false }
 }

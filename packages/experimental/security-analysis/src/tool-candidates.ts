@@ -7,7 +7,7 @@ import type { ToolDefinition } from './tool-definitions.ts'
  * @param directories - explicit recursive search roots selected by the operator.
  * @returns distinct executable file candidates; configured pins are handled by the caller.
  */
-export function toolCandidates(tool: ToolDefinition, directories: string[] = []): string[] {
+export function toolCandidates(tool: ToolDefinition, directories: readonly string[] = []): string[] {
   const roots = (process.env.PATH ?? '').split(delimiter).filter(Boolean)
   for (const location of tool.searchPaths) {
     const root = process.env[location.environment]

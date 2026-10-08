@@ -159,7 +159,7 @@ Web、固件和 IoT 作为专长与方法提示，不对应强制创建的团队
 
 ### 5. 完成工作区、对话与结果界面
 
-依赖：阶段 2；任务和结果字段稳定后，可与阶段 3、4 并行。主要位置：[Workbench](../../packages/experimental/client-ui-security-analysis/src/client/Workbench.tsx)、[Projects](../../packages/experimental/client-ui-security-analysis/src/client/Projects.tsx)、[UI 注册](../../packages/experimental/client-ui-security-analysis/src/client/index.ts)、本地化字典与安全 Web 组合。
+依赖：阶段 2；任务和结果字段稳定后，可与阶段 3、4 并行。主要位置：[Workbench](../../packages/experimental/client-ui-security-analysis/src/client/Workbench.tsx)、[Dashboard](../../packages/experimental/client-ui-security-analysis/src/client/Dashboard.tsx)、[UI 注册](../../packages/experimental/client-ui-security-analysis/src/client/index.ts)、本地化字典与安全 Web 组合。
 
 - [ ] S5.1 将工作区材料、环境和资源整合为可复用配置，移除日常任务路径中的重复项目设置。
 - [ ] S5.2 用同一对话承载任务创建、澄清、补充资源、修改范围、暂停和继续；技术控制放入可选详情视图。

@@ -94,6 +94,7 @@ export class AndroidProvider implements AnalysisProvider {
         summary: result.stdout.slice(0, 4096),
         incomplete: result.truncated,
         toolVersion,
+        method: 'device' as const,
         observationKind: 'inventory' as const,
       }
     }
@@ -144,6 +145,7 @@ export class AndroidProvider implements AnalysisProvider {
         summary: 'JADX produced ' + String(files.length) + ' source/resource files',
         incomplete,
         toolVersion,
+        method: 'static' as const,
         observationKind: 'implementation' as const,
       }
     } finally {

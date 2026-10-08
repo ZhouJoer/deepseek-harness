@@ -1,5 +1,6 @@
 /** Bounded, read-only discovery in the selected execution environment. @module */
 import type { Context } from '@deepseek-ai/cordis'
+import { SubprocessExecutableNotFoundError } from '@deepseek-ai/dsh-subprocess'
 import type { SecurityEnvironment, ToolInstallation } from './workbench/providers.ts'
 import { runProcess, requireProcessSuccess, toolInvocation, installation } from './workbench/process.ts'
 import type { ToolboxInventory, ToolboxTool } from './toolbox-types.ts'
@@ -17,17 +18,19 @@ class MissingContainerTool extends Error {}
 /** Configured per-process bounds shared with environment health checks. */
 export interface InventoryLimits { durationMs: number; maxOutputBytes: number; graceMs: number }
 
-/** Inspect tools without installing software or starting containers.
+/** Inspect tools without installing software or starting containers. A failed selected executable is never replaced.
  * @param ctx - Host subprocess service.
  * @param environment - explicit execution world and installation overrides.
  * @param limits - process deadline and output bounds.
  * @param signal - caller cancellation.
  * @param toolIds - optional tool selection; required runtime dependencies are also inspected.
  * @param catalog - captured current definitions; built-ins when omitted.
+ * @param searchDirectories - operator-selected local recursive search roots.
  * @returns separate runtime and optional-tool observations.
  */
 export async function inspectToolbox(ctx: Context, environment: SecurityEnvironment, limits: InventoryLimits,
-  signal: AbortSignal, toolIds?: readonly string[], catalog: readonly ToolDefinition[] = toolboxCatalog): Promise<ToolboxInventory> {
+  signal: AbortSignal, toolIds?: readonly string[], catalog: readonly ToolDefinition[] = toolboxCatalog,
+  searchDirectories: readonly string[] = []): Promise<ToolboxInventory> {
   environment = { ...environment, tools: structuredClone(environment.tools) }
   const resolved = resolveCatalog([{ ...builtinToolPack, tools: [...catalog], collections: [] }], environment.tools)
   const entries = orderTools(resolved.tools, toolIds).filter(tool => environment.kind !== 'docker' || tool.id !== 'docker')
@@ -40,8 +43,11 @@ export async function inspectToolbox(ctx: Context, environment: SecurityEnvironm
     const selected = environment.tools.find(item => item.id === tool.id)
     const tools = [...environment.tools.filter(item => item.id !== tool.id), { ...selected, ...tool }]
     const result = await runProcess(ctx, { ...environment, tools }, tool.id, args, { ...limits, signal, stopContainerOnAbort: false })
+    const missingCommand = [result.stdout, result.stderr].some(output =>
+      output.startsWith('OCI runtime exec failed: exec failed: ') &&
+      output.includes(`exec: ${JSON.stringify(tool.command)}: executable file not found in $PATH`))
     if (environment.kind === 'docker' && tool.id !== 'docker' && !result.timedOut && !result.cancelled &&
-      (result.exitCode === 127 || (result.exitCode === 126 && result.stderr.includes('executable file not found'))))
+      !result.truncated && result.signal === null && (result.exitCode === 126 || result.exitCode === 127) && missingCommand)
       throw new MissingContainerTool(JSON.stringify(result))
     requireProcessSuccess(result)
     if (result.truncated) throw new Error('Tool inventory output exceeded its limit')
@@ -76,7 +82,7 @@ export async function inspectToolbox(ctx: Context, environment: SecurityEnvironm
     if (entry.dependencies.some(id => inventory.tools.find(tool => tool.id === id)?.status !== 'available')) {
       row.detail = 'dependency-unavailable'; continue
     }
-    let executableFound = false
+    let executableSelected = false
     try {
       if (entry.dependency) {
         const dependency = inventory.tools.find(tool => tool.id === entry.dependency)
@@ -88,7 +94,7 @@ export async function inspectToolbox(ctx: Context, environment: SecurityEnvironm
           continue
         }
         row.command = dependency.command
-        executableFound = true
+        executableSelected = true
         row.source = dependency.source
         if (dependency.prefixArgs) row.prefixArgs = dependency.prefixArgs
         const prefixArgs = dependency.prefixArgs ?? []
@@ -99,27 +105,37 @@ export async function inspectToolbox(ctx: Context, environment: SecurityEnvironm
         row.status = 'available'
         continue
       }
-      const candidates = configured ? [configured.command] : [...entry.commands, ...(environment.kind === 'docker' ? [] : toolCandidates(entry))]
+      const candidates = configured ? [configured.command] : [...entry.commands, ...(environment.kind === 'docker' ? [] : toolCandidates(entry, searchDirectories))]
       if (!candidates.length) { row.detail = 'configuration-required'; continue }
       let lastError: unknown
       for (const candidate of candidates) {
         try {
           row.command = environment.kind === 'docker' ? candidate : await ctx.subprocess.resolveExecutable(candidate, {}, signal)
-          executableFound = true
+          executableSelected = true
+          if (environment.kind !== 'docker' && process.platform === 'win32' && /\.(cmd|bat|ps1)$/i.test(row.command))
+            throw new Error('Select the interpreter executable and supply its launcher arguments')
           row.location = row.command
           const tool = { id: entry.id, command: row.command, versionArgs: configured?.versionArgs ?? entry.args, source: row.source }
           const identity = probeIdentity(entry, await run(tool, probeArguments(entry, tool.versionArgs)))
           if (!identity) { row.status = 'missing'; break }
           row.version = identity.version; row.location = identity.location ?? row.command
+          if (identity.python) row.python = identity.python
           row.status = 'available'
           break
-        } catch (error) { signal.throwIfAborted(); lastError = error }
+        } catch (error) {
+          signal.throwIfAborted()
+          if (configured || !(error instanceof MissingContainerTool
+            || !executableSelected && error instanceof SubprocessExecutableNotFoundError)) throw error
+          lastError = error
+        }
       }
-      if (row.status !== 'available') throw lastError
+      if (row.status === 'not-checked') throw lastError
     } catch (error) {
       signal.throwIfAborted()
       row.detail = error instanceof Error ? error.message : String(error)
-      row.status = configured || (executableFound && !(error instanceof MissingContainerTool) && !/ModuleNotFoundError|PackageNotFoundError/.test(row.detail)) ? 'error' : 'missing'
+      const missing = !executableSelected && error instanceof SubprocessExecutableNotFoundError || error instanceof MissingContainerTool
+        || !!entry.dependency && /ModuleNotFoundError|PackageNotFoundError/.test(row.detail)
+      row.status = !configured && missing ? 'missing' : 'error'
     }
   }
   if (environment.kind === 'docker' && inventory.runtime === 'ready') {

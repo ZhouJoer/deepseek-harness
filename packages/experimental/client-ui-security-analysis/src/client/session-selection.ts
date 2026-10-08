@@ -9,7 +9,8 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 export function selectCoordinator(
   ids: readonly SessionId[], directory: SessionListState, archived: readonly SessionId[],
 ): SessionId | undefined {
-  return ids.filter(id => directory.ids.includes(id) && !archived.includes(id) && directory.byId[id]?.origin !== 'subagent')
-    .sort((a, b) => Number(Boolean(directory.byId[b]?.retainedBy.mainView)) - Number(Boolean(directory.byId[a]?.retainedBy.mainView))
-      || (directory.byId[b]?.updatedAt ?? 0) - (directory.byId[a]?.updatedAt ?? 0))[0]
+  return Object.values(directory.byId)
+    .filter(row => ids.includes(row.id) && directory.ids.includes(row.id) && !archived.includes(row.id) && row.origin !== 'subagent')
+    .sort((a, b) => Number(Boolean(b.retainedBy.mainView)) - Number(Boolean(a.retainedBy.mainView))
+      || b.updatedAt - a.updatedAt || ids.indexOf(a.id) - ids.indexOf(b.id))[0]?.id
 }

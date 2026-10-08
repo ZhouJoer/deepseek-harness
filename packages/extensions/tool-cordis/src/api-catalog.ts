@@ -2099,13 +2099,13 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'matching committed records and the observed revision.',
       },
       {
-        signature: '@Remote(\'configuration\') async configuration(agent: Agent): Promise<string>',
+        signature: '@Remote(\'configuration\') async configuration(agent: Agent): Promise<WorkbenchConfiguration>',
         description: 'List operator-configured environments before project creation.',
         parameters: [{ name: 'agent', description: 'authenticated Web session.' }],
         returns: 'environment labels, tool identities and registered operations.',
       },
       {
-        signature: '@Remote(\'configureWorkspace\') async configureWorkspace(agent: Agent, input: string): Promise<string>',
+        signature: '@Remote(\'configureWorkspace\') async configureWorkspace(agent: Agent, input: string): Promise<WorkbenchConfiguration>',
         description: 'Save resources explicitly selected by a user for future tasks in this workspace.',
         parameters: [{ name: 'agent', description: 'authenticated Web session identifying the workspace.' }, { name: 'input', description: 'JSON containing environmentIds, maxAttempts, and expectedRevision.' }],
         returns: 'refreshed configuration; existing project permissions are unchanged.',
@@ -6740,6 +6740,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface SecurityJournal {\n    view(): WorkbenchView;\n    subscribe(project: string, listener: () => void): () => void;\n    subscribeSelection(session: string, listener: () => void): () => void;\n    replay(operationId: string, input: unknown): WorkbenchView | undefined;\n    commit(operationId: string, expectedRevision: number | undefined, input: unknown, produce: (view: WorkbenchView) => Promise<SecurityRecord[]> | SecurityRecord[]): Promise<WorkbenchView>;\n    purge(operationId: string, expectedRevision: number, projectId: string, plan: (removed: SecurityRecord[], retained: SecurityRecord[]) => Promise<string[]>): Promise<WorkbenchView>;\n    pendingPurges(): {\n        projectId: string;\n        artifacts: string[];\n    }[];\n    finishPurge(projectId: string): Promise<void>;\n    close(): Promise<void>;\n}',
   },
   {
+    name: 'SecurityRecord',
+    declaration: 'export type SecurityRecord = z.infer<typeof recordSchema>;',
+  },
+  {
     name: 'SecurityToolUsage',
     declaration: 'export interface SecurityToolUsage {\n    checkpointId: string;\n    tool: string;\n    verified: boolean;\n    total: number;\n    running: number;\n    completed: number;\n    failed: number;\n    cancelled: number;\n    unknown: number;\n    incomplete: number;\n}',
   },
@@ -7937,7 +7941,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ToolboxTool',
-    declaration: 'export interface ToolboxTool {\n    id: string;\n    category: \'runtime\' | \'reverse\' | \'device\' | \'web\' | \'utility\' | \'custom\';\n    status: \'available\' | \'missing\' | \'error\' | \'not-checked\';\n    command: string;\n    prefixArgs?: string[];\n    installation?: {\n        command: string;\n        prefixArgs: string[];\n    };\n    version: string;\n    location: string;\n    source: string;\n    dependency?: string;\n    detail: string;\n    installUrl: string;\n    invocation: \'shell\' | \'plugin\' | \'python\' | \'provider\';\n    provider?: string;\n}',
+    declaration: 'export interface ToolboxTool {\n    id: string;\n    category: \'runtime\' | \'reverse\' | \'device\' | \'web\' | \'utility\' | \'custom\';\n    status: \'available\' | \'missing\' | \'error\' | \'not-checked\';\n    command: string;\n    prefixArgs?: string[];\n    installation?: {\n        command: string;\n        prefixArgs: string[];\n    };\n    version: string;\n    location: string;\n    python?: {\n        prefix: string;\n        basePrefix: string;\n        virtualEnvironment: boolean;\n        pipAvailable: boolean;\n    };\n    source: string;\n    dependency?: string;\n    detail: string;\n    installUrl: string;\n    invocation: \'shell\' | \'plugin\' | \'python\' | \'provider\';\n    provider?: string;\n}',
   },
   {
     name: 'ToolCallBlock',
@@ -8302,6 +8306,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'WeeklyScheduleRecord',
     declaration: 'export interface WeeklyScheduleRecord {\n    readonly id: ScheduleId;\n    readonly kind: \'weekly\';\n    readonly title: string;\n    readonly prompt: string;\n    readonly time: string;\n    readonly timeZone: string;\n    readonly weekdays: number[];\n    readonly scheduledAt: string;\n}',
+  },
+  {
+    name: 'WorkbenchConfiguration',
+    declaration: 'export interface WorkbenchConfiguration {\n    workspace: {\n        cwd: string;\n        revision: number;\n        configured: boolean;\n        environmentIds: string[];\n        maxAttempts?: number;\n    } | null;\n    materialLimits: {\n        bytes: number;\n        entries: number;\n    };\n    selectedProject?: string;\n    projects: {\n        id: string;\n        title: string;\n    }[];\n    environments: {\n        id: string;\n        kind: \'local\' | \'docker\' | \'android\';\n        label: string;\n        tools: string[];\n    }[];\n    providers: {\n        id: string;\n        operations: readonly string[];\n    }[];\n    knowledgeIntervalMs: number;\n}',
   },
   {
     name: 'WorkbenchOptions',

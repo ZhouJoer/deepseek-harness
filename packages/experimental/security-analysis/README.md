@@ -57,6 +57,8 @@ JADX accepts APK/DEX assets and reports incomplete decompilation explicitly. adb
 
 ### Tool inventory and acceptance
 
+Host and CLI tool checks share executable discovery, dependency ordering and probe decoding. Discovery continues only when a candidate executable is absent. A selected executable's failed query, timeout, empty response or invalid JSON reports an error without trying another installation; failed checks do not save configuration. Python identities include interpreter location, environment prefixes and pip availability.
+
 | Tool | Operations and impact | Execution and cleanup | Verified combination |
 |---|---|---|---|
 | Built-in binary | Measured identity, bounded hex and ASCII/UTF-16LE strings | Immutable artifact reads; bounded output, no target execution | PE/ELF headers and byte-page fixtures |
@@ -94,6 +96,8 @@ A reviewer can inspect existing evidence before a finding exists and return a st
 The built-in `binary` provider needs no external installation. Call `security_static` with `provider: "binary"`, the assigned asset/environment and `operation: "identity"`, `"hex"` or `"strings"`. Identity reports measured SHA-256 and selected PE/ELF header fields. Hex/string parameters accept byte `offset` and `length`; strings also accept `minLength` and `encoding` (`ascii` or `utf16le`, printable ASCII characters only). Omitted length is one eighth of the output budget. Partial pages retain offsets and incompleteness; overlap pages to inspect strings crossing a page edge. These observations do not establish full file validity, reachability or a vulnerability.
 
 ### Evidence and recovery
+
+Failed or cancelled observations and approved executions save available bytes and failure diagnostics before rejecting. Repeating the same operation reports its saved failure without invoking the provider again. Incomplete observations without a failure remain readable; an evidence record alone does not establish success.
 
 `security_capture_analysis(assetId)` lists capturable call IDs from the caller's own Session without saving evidence; optional `jobId` filters collected background output, and `offset` follows the returned `nextOffset`. Commands and output bodies are omitted. Background job IDs are not call IDs. Pass the returned IDs to `security_capture_analysis(assetId, callIds)` to save committed native `bash`, `pwsh` and `job_output` events from the caller's own Session as immutable script analysis logs. Background capture includes the recorded shell start and collected output up to the selected call. Repeating the same selection returns the same evidence and links it to every matching activity record. Generated scripts need not be imported to capture these calls. Failed, truncated, spilled or unfinished results remain explicit; spill paths are not read. The asset association is analyst-declared, and logs are auxiliary evidence: they can support findings, subreports, search and independent review, but alone cannot satisfy complete implementation evidence or approved runtime validation.
 
@@ -207,7 +211,6 @@ Tool definitions and workflow guidance remain stable. Skill catalogs are logged 
 - Immutable source and binary reads run independently. Providers identify shared external instances for exclusive leases; Ghidra leases use the actual loopback origin. Automatic GUI provisioning, rich component/JNI linking, remote labs, semantic search, device-specific IoT validation, fastboot writes and John password auditing remain unavailable.
 - Android split APK validation is refused because one imported base APK cannot establish the complete installed package identity. Local attach refuses platforms that cannot provide a start identity or executable identity.
 - Refinement processes a complete project knowledge set; exceeding `knowledgeInputBytes` fails without truncation. Automatic runs require a running Host and a configured model. Semantic equivalence is model-assessed; shared results still require operator review.
-- `/legacy` retains the isolated prototype for its recorded Sessions. Do not load it together with the workbench; both register security tool names.
 
 <a id="dev-note"></a>
 ### Dev Note

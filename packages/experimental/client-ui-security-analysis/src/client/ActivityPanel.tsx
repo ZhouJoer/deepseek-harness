@@ -13,8 +13,8 @@ export interface ActivityActions {
    * @param address - committed direct-parent history address.
    */
   openChild(this: void, address: NonNullable<SecurityDelegation['child']>): void
-  followActivity(project: string, signal: AbortSignal): AsyncIterable<SecurityActivityFrame>
-  activityDetails(project: string, checkpoint: string, offset: number, through?: number): Promise<SecurityActivityPage>
+  followActivity(this: void, project: string, signal: AbortSignal): AsyncIterable<SecurityActivityFrame>
+  activityDetails(this: void, project: string, checkpoint: string, offset: number, through?: number): Promise<SecurityActivityPage>
   subscribeReset(this: void, listener: () => void): () => void
 }
 type Props = ActivityActions & PropsLocale<typeof NS> & {

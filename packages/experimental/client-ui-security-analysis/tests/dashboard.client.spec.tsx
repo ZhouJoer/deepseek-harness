@@ -48,6 +48,17 @@ function harness(extra: object = {}) {
   // The fixture supplies only framework seats consumed by this component.
   return { api, release, props: api as Parameters<typeof Dashboard>[0] }
 }
+it('reuses a configured laboratory image only after an explicit project action', async () => {
+  const laboratory = vi.fn(async () => ({ revision: 2, records: [alpha] }))
+  const { api, props } = harness({ laboratory })
+  render(<Dashboard {...props} />)
+  fireEvent.click((await screen.findByText('Alpha')).closest('button')!)
+  fireEvent.click(await screen.findByRole('button', { name: en.laboratories }))
+  expect(laboratory).not.toHaveBeenCalled()
+  fireEvent.click(screen.getByRole('button', { name: en.reuseToolbox }))
+  await waitFor(() => { expect(laboratory).toHaveBeenCalledWith('Alpha', 'reuse', '') })
+  expect(api.createSession).not.toHaveBeenCalled()
+})
 it('filters tasks and reads history without creating or binding a Session', async () => {
   const { api, props } = harness()
   render(<Dashboard {...props} />)

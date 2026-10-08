@@ -18,7 +18,6 @@ import {
   validationPlanSchema,
   evidenceSchema,
   bindingSchema,
-  childReportSchema,
   delegationSchema,
   knowledgeEntrySchema,
   operationSchema,
@@ -34,7 +33,7 @@ import {
 } from './model.ts'
 import type { SecurityJournal } from './journal.ts'
 import type { SecurityActivityStore } from './activity.ts'
-import { canObserve, toolsForRole, resolveTask, type DelegatedRole } from './roles.ts'
+import { canObserve, toolsForRole, resolveTask } from './roles.ts'
 import { findingHash } from './assessment.ts'
 import { reportPrompt, renderReport, type ReportLimits } from './report.ts'
 import { importSource } from './source.ts'
@@ -195,6 +194,14 @@ export class SecurityController {
     string,
     { project: string; environment: string; plan: string; controller: AbortController; done: Promise<void> }
   >()
+  private lease(project: string, environment: string, plan: string, key: string | null) {
+    const id = key ?? randomUUID()
+    if (this.active.has(environment) || this.active.has(id)) throw new Error('Analysis instance is already leased')
+    const controller = new AbortController()
+    const settled = Promise.withResolvers<void>()
+    this.active.set(id, { project, environment, plan, controller, done: settled.promise })
+    return { signal: controller.signal, release: () => { this.active.delete(id); settled.resolve() } }
+  }
   constructor(
     private readonly journal: SecurityJournal,
     readonly artifacts: ArtifactStore,
@@ -225,8 +232,8 @@ export class SecurityController {
     try {
       const result = await provider.run(operation, context)
       if (activity) await this.activity?.finish(activity.id, {
-        status: context.signal.aborted ? 'cancelled' : result.failure ? 'failed' : 'completed',
-        incomplete: result.incomplete || !!result.failure || context.signal.aborted,
+        status: context.signal.aborted ? 'cancelled' : result.failure !== undefined ? 'failed' : 'completed',
+        incomplete: result.incomplete || result.failure !== undefined || context.signal.aborted,
         detail: (result.failure ?? result.summary).slice(0, this.options.maxOutputBytes),
       })
       return result
@@ -456,23 +463,6 @@ export class SecurityController {
     return record.value
   }
 
-  /** Save a legacy child summary without treating it as original evidence.
-   * @param sessionId - child Session bound by the Host.
-   * @param input - structured report returned by the child.
-   * @returns completion after the summary is persisted. */
-  async saveChildReport(sessionId: string, input: unknown): Promise<void> {
-    const report = childReportSchema.parse(input)
-    await this.journal.commit(randomUUID(), undefined, { sessionId, report }, (view) => {
-      const binding = view.records.find(item => item.kind === 'binding' && item.value.sessionId === sessionId)
-      if (binding?.kind !== 'binding' || binding.value.active === false || binding.value.role === 'coordinator') throw new Error('A delegated Session is required')
-      for (const id of report.evidenceIds) {
-        if (!view.records.some(item => item.kind === 'evidence' && item.value.id === id &&
-          item.value.engagementId === binding.value.engagementId && binding.value.assetIds.includes(item.value.assetId)))
-          throw new Error('Child report cites unavailable or foreign evidence')
-      }
-      return [{ kind: 'binding', value: { ...binding.value, report } }]
-    })
-  }
   /** List projects for operator selection.
    * @param includeArchived - include removed projects for explicit restoration.
    * @returns project labels available to the local operator, never delegated tool callers. */
@@ -1220,35 +1210,6 @@ export class SecurityController {
       await this.journal.finishPurge(purge.projectId)
     }
   }
-  /**
-   * Publish a child role before a delegated session can receive tools.
-   * @param parentId - coordinating session.
-   * @param childId - exact child session.
-   * @param assetIds - narrowed parent asset set.
-   * @param role - child role.
-   * @returns completion after authority is durable.
-   */
-  async bindChild(
-    parentId: string,
-    childId: string,
-    assetIds: string[],
-    role: DelegatedRole,
-  ): Promise<void> {
-    const view = this.journal.view()
-    const parent = this.requireBinding(view, parentId)
-    if (parent.role !== 'coordinator') throw new Error('Nested delegation is disabled')
-    const allowed = this.view(parentId)
-      .records.filter(item => item.kind === 'asset')
-      .map(item => item.value.id)
-    if (!assetIds.length || assetIds.some(id => !allowed.some(assetId => assetId === id)))
-      throw new Error('Invalid delegated assets')
-    await this.journal.commit(randomUUID(), view.revision, { childId, assetIds, role }, () => [
-      {
-        kind: 'binding',
-        value: { sessionId: childId, engagementId: parent.engagementId, assetIds, role, checkpointId: this.checkpointId(parentId) },
-      },
-    ])
-  }
   /** Read reviewed cross-project reference material.
    * @returns published knowledge, which is never executable authority. */
   sharedKnowledge(): SecurityRecord[] {
@@ -1263,7 +1224,7 @@ export class SecurityController {
    * @param expectedRevision - state observed before execution.
    * @param callId - originating logged tool call.
    * @param signal - owning tool or job cancellation.
-   * @returns project view after the execution and evidence settle.
+   * @returns project view after evidence settles; failed or cancelled executions reject after saving diagnostics, including retries.
    */
   async execute(
     sessionId: string,
@@ -1286,6 +1247,7 @@ export class SecurityController {
     if (prior?.kind === 'execution') {
       if (prior.value.planId !== planId || prior.value.engagementId !== binding.engagementId)
         throw new Error('Execution identity was reused')
+      if (prior.value.status === 'failed' || prior.value.status === 'interrupted') throw new Error(prior.value.detail)
       return this.view(sessionId)
     }
     const entry = initial.records.find(
@@ -1300,16 +1262,9 @@ export class SecurityController {
     if (sample?.kind !== 'asset') throw new Error('Plan asset is unavailable')
     const provider = this.providers.get(plan.operation.provider)
     const key = provider.resourceKey ? provider.resourceKey(plan.operation, sample.value) : environment.id
-    const lease = key ?? randomUUID()
-    if (this.active.has(environment.id) || this.active.has(lease)) throw new Error('Analysis instance is already leased')
-    const controller = new AbortController()
-    const combined = AbortSignal.any([signal, controller.signal])
-    let settle!: () => void
-    const done = new Promise<void>((resolve) => {
-      settle = resolve
-    })
-    this.active.set(lease, { project: binding.engagementId, environment: environment.id, plan: planId, controller, done })
-    let started = false
+    const lease = this.lease(binding.engagementId, environment.id, planId, key)
+    const combined = AbortSignal.any([signal, lease.signal])
+    let state: 'pending' | 'running' | 'settled' = 'pending'
     try {
       combined.throwIfAborted()
       await this.journal.commit(operationId + ':start', expectedRevision, { sessionId, planId }, (view) => {
@@ -1345,7 +1300,7 @@ export class SecurityController {
           },
         ]
       })
-      started = true
+      state = 'running'
       combined.throwIfAborted()
       const context = {
         environment,
@@ -1359,9 +1314,11 @@ export class SecurityController {
       if (JSON.stringify(resolved) !== JSON.stringify(plan.operation))
         throw new Error('Provider resolution changed; prepare a new plan')
       const result = await this.runObserved(sessionId, callId, provider, resolved, context)
+      let failure: string | undefined
       const artifact = await this.artifacts.put(result.bytes, result.mediaType)
       const evidenceId = randomUUID()
       await this.journal.commit(operationId + ':settle', undefined, { operationId, artifact }, (view) => {
+        failure = result.failure ?? (combined.aborted ? String(combined.reason) : undefined)
         const item = view.records.find(item => item.kind === 'check' && item.value.id === plan.checkId)
         if (item?.kind !== 'check') throw new Error('Executing check disappeared')
         return [
@@ -1381,8 +1338,8 @@ export class SecurityController {
               toolVersion: result.toolVersion,
               request: plan.operation.parameters,
               source: { sessionId, callId, channel: callId.startsWith('operator:') ? 'operator' : 'tool' },
-              incomplete: result.incomplete || !!result.failure || combined.aborted,
-              failure: result.failure, cleanup: result.cleanup, method: result.method, observationKind: result.observationKind,
+              incomplete: result.incomplete || failure !== undefined,
+              failure, cleanup: result.cleanup, method: result.method, observationKind: result.observationKind,
               createdAt: Date.now(),
             }),
           },
@@ -1390,7 +1347,7 @@ export class SecurityController {
             kind: 'check',
             value: {
               ...item.value,
-              status: combined.aborted ? 'interrupted' : result.failure ? 'blocked' : 'planned',
+              status: combined.aborted ? 'interrupted' : failure !== undefined ? 'blocked' : 'planned',
               evidenceIds: [...item.value.evidenceIds, evidenceId],
               rationale: 'Review collected evidence against the check criterion',
             },
@@ -1402,15 +1359,17 @@ export class SecurityController {
               engagementId: binding.engagementId,
               assetId: sample.value.id,
               planId,
-              status: combined.aborted ? 'interrupted' : result.failure ? 'failed' : 'completed',
-              detail: JSON.stringify({ failure: result.failure, cleanup: result.cleanup, cancelled: combined.aborted }),
+              status: combined.aborted ? 'interrupted' : failure !== undefined ? 'failed' : 'completed',
+              detail: JSON.stringify({ failure, cleanup: result.cleanup, cancelled: combined.aborted }),
             },
           },
         ]
       })
+      state = 'settled'
+      if (failure !== undefined) throw new Error(failure)
       return this.view(sessionId)
     } catch (error) {
-      if (started) {
+      if (state === 'running') {
         const detail = error instanceof Error ? error.message : String(error)
         const failure = await this.artifacts.put(Buffer.from(detail), 'text/plain')
         await this.journal.commit(operationId + ':failed', undefined, { operationId, detail }, (view) => {
@@ -1434,6 +1393,7 @@ export class SecurityController {
                 request: plan.operation.parameters,
                 source: { sessionId, callId },
                 incomplete: true,
+                failure: detail,
                 createdAt: Date.now(),
               }),
             },
@@ -1457,8 +1417,7 @@ export class SecurityController {
       }
       throw error
     } finally {
-      this.active.delete(lease)
-      settle()
+      lease.release()
     }
   }
   /** Cancel active provider work and await cleanup.
@@ -1477,7 +1436,7 @@ export class SecurityController {
    * @param operation - static provider request.
    * @param callId - originating logged call.
    * @param signal - owner cancellation.
-   * @returns committed evidence.
+   * @returns committed evidence; failed or cancelled collection rejects after saving diagnostics, including identical retries.
    */
   async observe(
     sessionId: string,
@@ -1507,7 +1466,6 @@ export class SecurityController {
     const view = this.view(sessionId)
     const binding = this.binding(sessionId)
     if (!binding) throw new Error('Select a security project first')
-    if (this.project(this.journal.view(), binding.engagementId).stopped) throw new Error('Project is stopped')
     const sample = view.records.find(item => item.kind === 'asset' && item.value.id === operation.assetId)
     if (sample?.kind !== 'asset') throw new Error('Asset is outside the session scope')
     if (!canObserve(binding.role, operation.provider, operation.operation))
@@ -1518,52 +1476,49 @@ export class SecurityController {
       item.value.source.sessionId === sessionId && item.value.source.callId === callId && !item.value.planId)
     if (previous?.kind === 'evidence') {
       if (previous.value.requestHash !== fingerprint) throw new Error('Observation callId was already used for different input')
+      if (previous.value.failure !== undefined) throw new Error(previous.value.failure)
       return previous
     }
+    if (this.project(this.journal.view(), binding.engagementId).stopped) throw new Error('Project is stopped')
     const environment = this.environment(binding.engagementId, operation.environmentId)
     const provider = this.providers.get(operation.provider)
     const key = provider.resourceKey ? provider.resourceKey(operation, sample.value) : environment.id
-    const lease = key ?? randomUUID()
-    if (this.active.has(environment.id) || this.active.has(lease)) throw new Error('Environment is already leased by another operation')
-    const abort = new AbortController()
-    const combined = AbortSignal.any([signal, abort.signal, AbortSignal.timeout(this.options.maxDurationMs)])
-    const settled = Promise.withResolvers<void>()
-    this.active.set(lease, { project: binding.engagementId, environment: environment.id, plan: '', controller: abort, done: settled.promise })
+    const lease = this.lease(binding.engagementId, environment.id, '', key)
+    const combined = AbortSignal.any([signal, lease.signal, AbortSignal.timeout(this.options.maxDurationMs)])
     try {
       combined.throwIfAborted()
       const context = { environment, asset: sample.value, artifacts: this.artifacts, signal: combined,
         durationMs: this.options.maxDurationMs, maxOutputBytes: this.options.maxOutputBytes }
       const resolved = provider.resolve(operation, context)
       if (resolved.impact !== 'observe') throw new Error('Static observations cannot modify analysis state or targets')
-      let result: import('./providers.ts').AnalysisResult
+      let result: AnalysisResult
       try { result = await this.runObserved(sessionId, callId, provider, resolved, context) }
       catch (error) {
         const bytes = Buffer.from(error instanceof Error ? error.message : String(error))
           .subarray(0, Math.min(this.options.maxOutputBytes, this.options.maxArtifactBytes))
         result = { bytes, mediaType: 'text/plain', summary: bytes.toString('utf8'), incomplete: true,
-          failure: bytes.toString('utf8'), toolVersion: 'unavailable after failure', method: 'static' }
+          failure: bytes.toString('utf8'), toolVersion: 'unavailable after failure' }
       }
       const artifact = await this.artifacts.put(result.bytes, result.mediaType)
-      const record: SecurityRecord = {
-        kind: 'evidence',
-        value: evidenceSchema.parse({
+      const committed = await this.journal.commit(sessionId + ':' + callId, undefined, { operation }, () => {
+        const failure = result.failure ?? (combined.aborted ? String(combined.reason) : undefined)
+        return [{ kind: 'evidence', value: evidenceSchema.parse({
           id: randomUUID(), engagementId: binding.engagementId, assetId: sample.value.id,
           title: operation.provider + ' ' + operation.operation, summary: result.summary,
           artifact, provider: operation.provider, operation: operation.operation, toolVersion: result.toolVersion,
           request: resolved.parameters, requestHash: fingerprint,
           source: { sessionId, callId, channel: callId.startsWith('operator:') ? 'operator' : 'tool' },
-          incomplete: result.incomplete || !!result.failure || combined.aborted,
-          failure: result.failure, cleanup: result.cleanup, method: result.method ?? 'static', observationKind: result.observationKind, createdAt: Date.now(),
-        }),
-      }
-      const committed = await this.journal.commit(sessionId + ':' + callId, undefined, { operation }, () => [record])
+          incomplete: result.incomplete || failure !== undefined,
+          failure, cleanup: result.cleanup, method: result.method, observationKind: result.observationKind, createdAt: Date.now(),
+        }) }]
+      })
       const saved = committed.records.find(item => item.kind === 'evidence' &&
         item.value.source.sessionId === sessionId && item.value.source.callId === callId && !item.value.planId)
-      if (!saved) throw new Error('Observation commit did not publish its evidence')
+      if (saved?.kind !== 'evidence') throw new Error('Observation commit did not publish its evidence')
+      if (saved.value.failure !== undefined) throw new Error(saved.value.failure)
       return saved
     } finally {
-      this.active.delete(lease)
-      settled.resolve()
+      lease.release()
     }
   }
 }

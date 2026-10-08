@@ -135,6 +135,8 @@ The credential-free dsh dependency-layout and dsh/vendor pack rehearsals use the
 
 The root [contributor instructions](../AGENTS.md#commands) summarize common commands, while [`package.json`](../package.json) and [scripts/run-gates.ts](../scripts/run-gates.ts) own the current script and gate inventories. Select the smallest checks that cover the changed surface. Documentation changes use `pnpm run doc-sync`; package-public behavior changes also update the owning README or JSDoc, and built-artifact checks require `pnpm run build` first.
 
+The [repository reference check](../scripts/verify-repository-references.ts) uses locally available Git objects, including unreachable objects and alternate object stores. It blocks network and local-file transfers in partial clones; missing history does not require fetching before documentation checks.
+
 ### Profile runs
 
 Run the repository build separately before using these source-checkout demos:

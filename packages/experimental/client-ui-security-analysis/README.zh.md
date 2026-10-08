@@ -26,6 +26,8 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用
 
+新分析需要已保存资源设置或 Host 的 `taskIntake.maxAttempts` 提供工作区尝试次数。缺少次数时，创建页打开工作区资源表单，保存设置前禁用开始分析。高级工作台共用相同表单和次数。
+
 在专用 profile 中按顺序组合 `@deepseek-ai/dsh-base`、应用 bundle、`@deepseek-ai/dsh-experimental-security-profile`。Web 还需在最后加入 `@deepseek-ai/dsh-experimental-security-web-profile`。使用 `dsh --profile <name>` 启动。详见[安全分析](../security-analysis/README.zh.md)。
 
 工具箱的**分析脚本**标签展示内置流量、MQTT 和原生进程观察脚本。可搜索名称、用途或依赖，按分类筛选，展开查看分析思路、参数、安装路径、示例、输出和限制。浏览无需选择项目或环境，不检测或执行工具。关联技能向 Agent 提供同一组资源；执行及输出规则见[脚本库](../security-analysis/README.zh.md#use-this-package)。

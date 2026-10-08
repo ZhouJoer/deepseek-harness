@@ -9,14 +9,13 @@ const toolTemplate = '../apps/cli/config/examples/security-analysis/cordis.yml'
 const overlays = [
   '../packages/experimental/security-profile/cordis.patch.yml',
   '../packages/experimental/security-web-profile/cordis.patch.yml',
-  toolTemplate,
 ]
 const toolPatch = prepareSecurityToolsPatch(fileURLToPath(new URL(toolTemplate, import.meta.url)))
 const args = [
   '--profile', 'security',
   ...existsSync(resolveProfileDir('security')) ? [] : ['--from-default-profile', 'web'],
   ...overlays.flatMap(path => ['--patch', fileURLToPath(new URL(path, import.meta.url))]),
-  ...toolPatch ? ['--patch', toolPatch] : [],
+  '--patch', toolPatch,
   ...process.argv.slice(2),
 ]
 process.argv = [process.execPath, fileURLToPath(new URL('../apps/cli/src/bin.ts', import.meta.url)), ...args]

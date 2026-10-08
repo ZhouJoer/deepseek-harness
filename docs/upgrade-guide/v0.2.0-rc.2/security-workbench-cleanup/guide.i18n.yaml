@@ -1,0 +1,16 @@
+# Bilingual-pair consistency record for guide.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/upgrade-guide/v0.2.0-rc.2/security-workbench-cleanup/guide.md
+/:
+  en: d0376e7bafa8245e
+  zh: ea4e3b4c018b8e0b
+/security-workbench-entry-points-and-failures:
+  en: 2432875039c2f879
+  zh: 1e3189b3978a6e71
+/security-workbench-entry-points-and-failures/change:
+  en: 276803d87200616a
+  zh: 5c884729f4337422
+/security-workbench-entry-points-and-failures/migration:
+  en: 8adbfc4e2b1e8cbe
+  zh: d254334d75a72feb

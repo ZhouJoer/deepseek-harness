@@ -7706,9 +7706,6 @@ importers:
 
   packages/experimental/client-ui-security-analysis:
     devDependencies:
-      fflate:
-        specifier: ^0.8.3
-        version: 0.8.3
       '@deepseek-ai/cordis':
         specifier: workspace:~
         version: link:../../../vendor/cordis
@@ -7727,6 +7724,9 @@ importers:
       '@deepseek-ai/dsh-client-locale':
         specifier: workspace:*
         version: link:../../client/locale
+      '@deepseek-ai/dsh-client-store':
+        specifier: workspace:*
+        version: link:../../client/store
       '@deepseek-ai/dsh-client-test-runtime':
         specifier: workspace:*
         version: link:../../test-support/client-runtime
@@ -7778,6 +7778,9 @@ importers:
       '@types/react':
         specifier: ~18.3.1
         version: 18.3.31
+      fflate:
+        specifier: ^0.8.3
+        version: 0.8.3
       react:
         specifier: ^18.2.0
         version: 18.3.1
@@ -8057,9 +8060,6 @@ importers:
         specifier: ^4.4.3
         version: 4.4.3
     devDependencies:
-      '@deepseek-ai/dsh-llm-deepseek-api-key':
-        specifier: workspace:*
-        version: link:../../llm/llm-deepseek-api-key
       '@deepseek-ai/cordis':
         specifier: workspace:~
         version: link:../../../vendor/cordis
@@ -8096,6 +8096,9 @@ importers:
       '@deepseek-ai/dsh-llm':
         specifier: workspace:*
         version: link:../../llm/llm
+      '@deepseek-ai/dsh-llm-deepseek-api-key':
+        specifier: workspace:*
+        version: link:../../llm/llm-deepseek-api-key
       '@deepseek-ai/dsh-pwsh-local':
         specifier: workspace:*
         version: link:../../shell/pwsh-local

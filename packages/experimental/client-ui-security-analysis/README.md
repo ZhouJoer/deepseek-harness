@@ -26,6 +26,8 @@ Choose **Add materials** in the task overview to upload files or a folder, paste
 <a id="use-this-package"></a>
 ## Use this package
 
+New analysis requires a workspace attempt limit from saved resource settings or Host `taskIntake.maxAttempts`. When it is missing, the creation page opens the workspace resource form and keeps Start analysis disabled until the settings are saved. The advanced workbench uses the same form and limit.
+
 Compose `@deepseek-ai/dsh-base`, an application bundle, and `@deepseek-ai/dsh-experimental-security-profile` in a dedicated profile. For Web, append `@deepseek-ai/dsh-experimental-security-web-profile`. Launch through `dsh --profile <name>`. See [security analysis](../security-analysis/README.md).
 
 The Toolbox's **Analysis scripts** tab lists built-in packet, MQTT and native-process observation scripts. Search names, purposes or dependencies, filter categories, and expand a script for its method, parameters, installed path, example, output and limitations. Browsing needs no project or environment and does not probe or execute tools. The associated skill supplies the Agent with the same resources; [the script library](../security-analysis/README.md#use-this-package) owns execution and output rules.

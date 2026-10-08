@@ -7,7 +7,9 @@ import { en as common } from '@deepseek-ai/dsh-client-locale/src/locales/en.ts'
 import { recordSchema } from '@deepseek-ai/dsh-experimental-security-analysis/src/workbench/model.ts'
 import type { WorkbenchView } from '@deepseek-ai/dsh-experimental-security-analysis/client'
 import { DashboardSession } from '../src/client/DashboardSession.tsx'
+import type { WorkbenchActions } from '../src/client/Workbench.tsx'
 import { en } from '../src/client/locales.ts'
+import { workbenchConfiguration } from './configuration-fixture.client.ts'
 import type {} from '../src/client/index.ts'
 afterEach(cleanup)
 const prepared: WorkbenchView = { revision: 1, records: [recordSchema.parse({ kind: 'engagement',
@@ -18,9 +20,10 @@ function harness(extra: object = {}) {
     t: makeTranslate(en, common), changed: vi.fn(), started: vi.fn(),
     useSession: (select: (value: object) => unknown) => select({ running: false, blank: true, promptAttempted: false }),
     useConversation: (select: (value: object) => unknown) => select({ activeTargets: new Set() }),
-    configuration: vi.fn(async () => JSON.stringify({ environments: [{ id: 'local', label: 'Local', kind: 'local' }] })),
+    configuration: vi.fn(async () => workbenchConfiguration()),
+    configureWorkspace: vi.fn(async () => workbenchConfiguration()),
     load: vi.fn(async () => ({ revision: 0, records: [] })),
-    importMaterials: vi.fn(async () => prepared), sendAnalysis: vi.fn(async () => {}), renderFactorySlot: () => null,
+    importMaterials: vi.fn<WorkbenchActions['importMaterials']>(async () => prepared), sendAnalysis: vi.fn(async () => {}), renderFactorySlot: () => null,
     ...extra,
   }
   // Unused framework seats and advanced actions do not participate in this creation fixture.
@@ -49,5 +52,49 @@ it('does not send after the creation view leaves while material preparation is p
   await waitFor(() => { expect(api.importMaterials).toHaveBeenCalledTimes(1) })
   mounted.unmount()
   await act(async () => { pending.resolve(prepared); await pending.promise })
+  expect(api.sendAnalysis).not.toHaveBeenCalled()
+})
+
+it('requires a saved attempt limit before creating an analysis', async () => {
+  const configuration = workbenchConfiguration({ workspace: {
+    cwd: '/workspace', revision: 0, configured: false, environmentIds: ['local'],
+  } })
+  const configureWorkspace = vi.fn<WorkbenchActions['configureWorkspace']>()
+    .mockRejectedValueOnce(new Error('Settings conflict'))
+    .mockResolvedValue(workbenchConfiguration({ workspace: {
+      cwd: '/workspace', revision: 1, configured: true, environmentIds: ['local'], maxAttempts: 6,
+    } }))
+  const { api, props } = harness({ configuration: vi.fn(async () => configuration), configureWorkspace })
+  render(<DashboardSession {...props} />)
+  await screen.findByText(en.missingAttemptLimit)
+  const start = screen.getByRole<HTMLButtonElement>('button', { name: 'Start analysis' })
+  expect(start.disabled).toBe(true)
+  fireEvent.click(start)
+  expect(api.importMaterials).not.toHaveBeenCalled()
+  expect(api.sendAnalysis).not.toHaveBeenCalled()
+  fireEvent.change(screen.getByLabelText('Attempt limit per check'), { target: { value: '6' } })
+  fireEvent.click(screen.getByRole('button', { name: en.saveWorkspaceResources }))
+  await screen.findByText('Error: Settings conflict')
+  expect(screen.getByLabelText<HTMLInputElement>('Attempt limit per check').value).toBe('6')
+  expect(start.disabled).toBe(true)
+  fireEvent.click(screen.getByRole('button', { name: en.saveWorkspaceResources }))
+  await waitFor(() => { expect(screen.queryByText(en.missingAttemptLimit)).toBeNull() })
+  expect(JSON.parse(configureWorkspace.mock.calls[0]![1])).toEqual({
+    expectedRevision: 0, environmentIds: ['local'], maxAttempts: 6,
+  })
+  fireEvent.change(screen.getByLabelText('What would you like to analyze?'), { target: { value: 'Inspect code' } })
+  fireEvent.click(start)
+  await waitFor(() => { expect(api.started).toHaveBeenCalledWith('task') })
+  expect(JSON.parse(api.importMaterials.mock.calls[0]![1])).toMatchObject({ resources: { maxAttempts: 6 } })
+})
+
+it('does not create an analysis without a workspace', async () => {
+  const { api, props } = harness({ configuration: vi.fn(async () => workbenchConfiguration({ workspace: null })) })
+  render(<DashboardSession {...props} />)
+  await screen.findByText(en.missingAnalysisWorkspace)
+  const start = screen.getByRole<HTMLButtonElement>('button', { name: 'Start analysis' })
+  expect(start.disabled).toBe(true)
+  fireEvent.click(start)
+  expect(api.importMaterials).not.toHaveBeenCalled()
   expect(api.sendAnalysis).not.toHaveBeenCalled()
 })

@@ -1,4 +1,5 @@
 /** Browser-safe security workbench types. @module */
+export type { WorkbenchConfiguration } from './workbench-configuration-types.ts'
 export type { DeviceDirectory, DeviceInventory, DeviceCheck, RadioDevice, RadioDeviceId } from './device-types.ts'
 export type { EvolutionView, EvolutionRun, EvolutionProposal, EvolutionProposalId, EvolutionRunId, EvolutionSource, EvolutionReceipt, EvolutionBundle } from './evolution-model.ts'
 export type { AnalysisScript, AnalysisScriptId, AnalysisScriptKind, AnalysisScriptParameter } from './analysis-script-types.ts'

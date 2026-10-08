@@ -6,11 +6,12 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import { MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
-import type { SecurityCommand, WorkbenchView } from '@deepseek-ai/dsh-experimental-security-analysis/client'
+import type { SecurityCommand, WorkbenchView, WorkbenchConfiguration } from '@deepseek-ai/dsh-experimental-security-analysis/client'
 import type { NS, SecurityKey } from './locales.ts'
 import css from './Workbench.module.css'
 import { ToolPreferences, type ToolPreferenceActions } from './ToolPreferences.tsx'
 import { AnalysisStart } from './AnalysisStart.tsx'
+import { WorkspaceResources } from './WorkspaceResources.tsx'
 import { MaterialPanel } from './MaterialPanel.tsx'
 import { ProjectManagement, projectLabel } from './ProjectManagement.tsx'
 import { KnowledgePanel } from './KnowledgePanel.tsx'
@@ -27,8 +28,8 @@ export interface WorkbenchActions extends ActivityActions, ToolPreferenceActions
   load(sessionId: SessionId): Promise<WorkbenchView>
   refine(sessionId: SessionId): Promise<WorkbenchView>
   command(sessionId: SessionId, command: string): Promise<WorkbenchView>
-  configuration(sessionId: SessionId): Promise<string>
-  configureWorkspace(sessionId: SessionId, input: string): Promise<string>
+  configuration(sessionId: SessionId): Promise<WorkbenchConfiguration>
+  configureWorkspace(sessionId: SessionId, input: string): Promise<WorkbenchConfiguration>
   environment(sessionId: SessionId, id: string, action: 'inspect' | 'start' | 'stop'): Promise<string>
   execute(sessionId: SessionId, planId: string, operationId: string, revision: number): Promise<WorkbenchView>
   search(sessionId: SessionId, query: string, shared: boolean): Promise<WorkbenchView>
@@ -40,14 +41,6 @@ export type WorkbenchProps = Pick<PropsRuntime<'conversation.input.dock'>, 'sess
   PropsLocale<typeof NS> &
   WorkbenchActions & { autoOpen?: boolean }
 type Tab = 'overview' | 'assets' | 'checks' | 'findings' | 'environments' | 'knowledge' | 'evidence' | 'reviews' | 'reports'
-interface Configuration {
-  materialLimits?: { bytes: number; entries: number }
-  workspace?: { cwd: string; revision: number; environmentIds: string[]; maxAttempts?: number; configured: boolean } | null
-  knowledgeIntervalMs?: number
-  projects?: { id: string; title: string }[]
-  environments: { id: string; kind: 'local' | 'docker' | 'android'; label: string; tools: string[] }[]
-  providers: { id: string; operations: string[] }[]
-}
 const tabKeys: Tab[] = ['overview', 'findings', 'evidence', 'reports']
 const advancedTabKeys: Tab[] = ['assets', 'checks', 'environments', 'reviews', 'knowledge']
 const ids = (text: string): string[] =>
@@ -63,14 +56,13 @@ export function Workbench(props: WorkbenchProps) {
   const [open, setOpen] = useState(props.autoOpen ?? false)
   const [tab, setTab] = useState<Tab>('overview')
   const [view, setView] = useState<WorkbenchView>({ revision: 0, records: [] })
-  const [configuration, setConfiguration] = useState<Configuration>({ environments: [], providers: [] })
+  const [configuration, setConfiguration] = useState<WorkbenchConfiguration>()
   const [draft, setDraft] = useState<Record<string, string>>({})
   const [error, setError] = useState('')
   const [detail, setDetail] = useState('')
   const [detailFormat, setDetailFormat] = useState<'raw' | 'markdown'>('raw')
   const [busy, setBusy] = useState(0)
   const [shared, setShared] = useState(false)
-  const [workspaceDraft, setWorkspaceDraft] = useState<string[] | undefined>()
   const [searchResults, setSearchResults] = useState<WorkbenchView | undefined>()
   const generation = useRef(0)
   const activeSession = useRef(sessionId)
@@ -81,14 +73,13 @@ export function Workbench(props: WorkbenchProps) {
     generation.current++
     setOpen(props.autoOpen ?? false)
     setView({ revision: 0, records: [] })
-    setConfiguration({ environments: [], providers: [] })
+    setConfiguration(undefined)
     setDraft({})
     setError('')
     setDetail('')
     setSearchResults(undefined)
     setTab('overview')
     setShared(false)
-    setWorkspaceDraft(undefined)
   }, [sessionId])
   const perform = async (action: () => Promise<void>) => {
     setBusy(count => count + 1)
@@ -106,7 +97,7 @@ export function Workbench(props: WorkbenchProps) {
     const [next, config] = await Promise.all([props.load(sessionId), props.configuration(sessionId)])
     if (generation.current === current && activeSession.current === sessionId) {
       setView(next)
-      setConfiguration(JSON.parse(config) as Configuration)
+      setConfiguration(config)
     }
   }
   useEffect(() => { if (props.autoOpen) void perform(load) }, [sessionId, props.autoOpen])
@@ -123,8 +114,7 @@ export function Workbench(props: WorkbenchProps) {
   useEffect(() => props.subscribeReset(() => {
     generation.current++
     setView({ revision: 0, records: [] })
-    setConfiguration({ environments: [], providers: [] })
-    setWorkspaceDraft(undefined)
+    setConfiguration(undefined)
     setDetail('')
     setSearchResults(undefined)
     if (open) void perform(load)
@@ -188,58 +178,15 @@ export function Workbench(props: WorkbenchProps) {
       </select>
     </label>
   )
-  const workspace = configuration.workspace
-  const selectedEnvironments = workspaceDraft ?? workspace?.environmentIds ?? []
-  const workspaceAttempts = Number(draft.workspaceAttempts ?? workspace?.maxAttempts)
-  const unavailableEnvironments = selectedEnvironments.filter(id =>
-    !configuration.environments.some(environment => environment.id === id))
-  const workspaceControls = workspace && (
-    <div className={css.resourceForm}>
-      <fieldset>
-        <legend>{t('workspaceResources')}</legend>
-        {configuration.environments.map(environment => (
-          <label key={environment.id} className={css.resourceOption}>
-            <input type="checkbox" checked={selectedEnvironments.includes(environment.id)} disabled={busy > 0}
-              onChange={(event) => {
-                setWorkspaceDraft(event.target.checked
-                  ? [...selectedEnvironments, environment.id]
-                  : selectedEnvironments.filter(id => id !== environment.id))
-              }} />
-            <span>{environment.label}</span>
-          </label>
-        ))}
-        {unavailableEnvironments.map(id => (
-          <label key={id} className={css.resourceOption}>
-            <input type="checkbox" checked disabled={busy > 0} onChange={() => {
-              setWorkspaceDraft(selectedEnvironments.filter(selected => selected !== id))
-            }} />
-            <span>{id} · {t('unavailableEnvironment')}</span>
-          </label>
-        ))}
-        {configuration.environments.length === 0 && <p>{t('noWorkspaceResources')}</p>}
-      </fieldset>
-      <details>
-        <summary>{t('executionLimits')}</summary>
-        <label className={css.field}>{t('attemptLimit')}
-          <input type="number" min={1} step={1} disabled={busy > 0}
-            value={draft.workspaceAttempts ?? workspace.maxAttempts ?? ''}
-            onChange={(event) => { setDraft(old => ({ ...old, workspaceAttempts: event.target.value })) }} />
-        </label>
-      </details>
-      <p className={css.summaryHint}>{t('workspaceResourcesHint')}</p>
-      <button disabled={busy > 0 || !Number.isSafeInteger(workspaceAttempts) || workspaceAttempts < 1}
-        onClick={() => void perform(async () => {
-          const current = ++generation.current
-          const configured = await props.configureWorkspace(sessionId, JSON.stringify({
-            expectedRevision: workspace.revision, environmentIds: selectedEnvironments, maxAttempts: workspaceAttempts,
-          }))
-          if (activeSession.current === sessionId && generation.current === current) {
-            setConfiguration(JSON.parse(configured) as Configuration)
-            setWorkspaceDraft(undefined)
-          }
-        })}>{t('saveWorkspaceResources')}</button>
-    </div>
-  )
+  const workspace = configuration?.workspace
+  const maxAttempts = workspace?.maxAttempts
+  const workspaceControls = workspace && <WorkspaceResources
+    key={`${workspace.cwd}:${workspace.revision}`} workspace={workspace} environments={configuration.environments}
+    disabled={busy > 0} t={t} save={input => perform(async () => {
+      const current = ++generation.current
+      const configured = await props.configureWorkspace(sessionId, JSON.stringify(input))
+      if (activeSession.current === sessionId && generation.current === current) setConfiguration(configured)
+    })} />
   const assets = view.records.filter(item => item.kind === 'asset')
   const checks = view.records.filter(item => item.kind === 'check')
   const project = view.records.find(item => item.kind === 'engagement')
@@ -282,7 +229,10 @@ export function Workbench(props: WorkbenchProps) {
         }}>{t('startWithMaterials')}</button>
         <span className={css.launchHint}>{t('workflowHint')}</span>
       </div>}
-      {open && (
+      {open && !configuration && (error ? <p role="alert">{error}
+        <button disabled={busy > 0} onClick={() => void perform(load)}>{t('refresh')}</button>
+      </p> : <progress aria-label={t('dashboardLoading')} />)}
+      {open && configuration && (
         <section className={css.panel} role="dialog" aria-label={t('title')}>
           <header className={css.header}>
             <strong title={project?.kind === 'engagement' ? project.value.title : undefined}>
@@ -429,13 +379,15 @@ export function Workbench(props: WorkbenchProps) {
                       </>
                     ) : (
                       <>
-                        <AnalysisStart key={sessionId} t={t} disabled={busy > 0 || running}
+                        {maxAttempts === undefined && <p role="alert" className={css.error}>{t(workspace ? 'missingAttemptLimit' : 'missingAnalysisWorkspace')}</p>}
+                        <AnalysisStart key={sessionId} t={t} disabled={busy > 0 || running || maxAttempts === undefined}
                           limits={configuration.materialLimits} environments={configuration.environments}
                           prepare={async (input) => {
+                            if (maxAttempts === undefined) throw new Error(t(workspace ? 'missingAttemptLimit' : 'missingAnalysisWorkspace'))
                             await props.importMaterials(sessionId, JSON.stringify({
                               operationId: input.operationId, expectedRevision: view.revision,
                               material: input.material, title: input.title, objective: input.objective,
-                              resources: { environmentIds: [input.environmentId], maxAttempts: workspace?.maxAttempts ?? 3 },
+                              resources: { environmentIds: [input.environmentId], maxAttempts },
                             }))
                           }}
                           send={async (objective) => {
@@ -446,14 +398,14 @@ export function Workbench(props: WorkbenchProps) {
                         <button onClick={() => { setOpen(false) }}>{t('backToConversation')}</button>
                       </>
                     )}
-                    <details className={css.secondaryDetails}>
+                    <details className={css.secondaryDetails} open={maxAttempts === undefined}>
                       <summary>{t('manualSetup')}</summary>
                       <p>{t('leftProjectHint')}</p>
-                      {workspace && <details><summary>{t('editWorkspaceResources')}</summary>
+                      {workspace && <details open={maxAttempts === undefined}><summary>{t('editWorkspaceResources')}</summary>
                         {workspace.configured && workspace.environmentIds.length === 0 && <p>{t('workspaceIntakeDisabled')}</p>}
                         {workspaceControls}</details>}
                       <div className={css.form}>
-                        {select('project', (configuration.projects ?? []).map(item => ({ id: item.id, label: item.title })))}
+                        {select('project', configuration.projects.map(item => ({ id: item.id, label: item.title })))}
                         <button disabled={busy > 0 || !draft.project}
                           onClick={() => void perform(() => command({ kind: 'select', engagementId: draft.project ?? '' }))}>
                           {t('selectProject')}
@@ -466,11 +418,16 @@ export function Workbench(props: WorkbenchProps) {
                           {field('name')}
                           {field('objective', true)}
                           {select('environment', configuration.environments.map(item => ({ id: item.id, label: item.label })))}
-                          <button disabled={busy > 0 || !draft.name?.trim() || !draft.objective?.trim() || !draft.environment}
-                            onClick={() => void perform(() => command({
-                              kind: 'create', title: draft.name ?? '', objective: draft.objective ?? '',
-                              environmentIds: [draft.environment ?? ''], maxAttempts: 3,
-                            }))}>{t('create')}</button>
+                          <button
+                            disabled={busy > 0 || maxAttempts === undefined
+                              || !draft.name?.trim() || !draft.objective?.trim() || !draft.environment}
+                            onClick={() => void perform(async () => {
+                              if (maxAttempts === undefined) throw new Error(t(workspace ? 'missingAttemptLimit' : 'missingAnalysisWorkspace'))
+                              await command({
+                                kind: 'create', title: draft.name ?? '', objective: draft.objective ?? '',
+                                environmentIds: [draft.environment ?? ''], maxAttempts,
+                              })
+                            })}>{t('create')}</button>
                         </div>
                       )}
                     </details>
@@ -819,7 +776,7 @@ export function Workbench(props: WorkbenchProps) {
                 </article>
               ))}
                 {tab === 'knowledge' && project?.kind === 'engagement' && <KnowledgePanel
-                  key={project.value.id} t={t} view={view} busy={busy > 0} intervalMs={configuration.knowledgeIntervalMs ?? 0}
+                  key={project.value.id} t={t} view={view} busy={busy > 0} intervalMs={configuration.knowledgeIntervalMs}
                   command={async (action) => {
                     let saved = false
                     await perform(async () => { await command(action); saved = true })

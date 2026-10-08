@@ -68,7 +68,7 @@ export class OfflineProvider implements AnalysisProvider {
   async run(request: AnalysisOperation, context: AnalysisContext): Promise<AnalysisResult> {
     const args = parameters.parse(request.parameters)
     if (!request.script) throw new Error('Missing approved script')
-    const manifest = await sourceManifest(context)
+    const manifest = await sourceManifest(context.artifacts, context.asset)
     const input = await context.artifacts.materialize(request.script)
     const directory = dirname(input)
     const container = 'dsh-offline-' + randomUUID()

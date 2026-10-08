@@ -1,29 +1,28 @@
 /** Manage definition packs and inspect installations in selected security environments. @module */
-import { existsSync, readFileSync, statSync } from 'node:fs'
-import { dirname, isAbsolute, join, resolve } from 'node:path'
+import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+import { dirname, join, resolve } from 'node:path'
 import { parseArgs } from 'node:util'
-import { execa } from 'execa'
 import { Context } from '@deepseek-ai/cordis'
 import LocalSubprocess from '@deepseek-ai/dsh-subprocess-local'
 import { ToolCatalog } from '../packages/experimental/security-analysis/src/tool-catalog.ts'
-import { discoverTools, orderTools } from '../packages/experimental/security-analysis/src/tool-definitions.ts'
-import { probeArguments, probeIdentity } from '../packages/experimental/security-analysis/src/tool-probes.ts'
-import { toolCandidates } from '../packages/experimental/security-analysis/src/tool-candidates.ts'
-import { scrubbedParentEnv } from '../packages/subprocess/subprocess/src/index.ts'
+import { discoverTools, type ToolDefinition } from '../packages/experimental/security-analysis/src/tool-definitions.ts'
 import { inspectToolbox } from '../packages/experimental/security-analysis/src/toolbox.ts'
 import type { ToolCatalogSnapshot } from '../packages/experimental/security-analysis/src/tool-catalog.ts'
+import type { SecurityEnvironment } from '../packages/experimental/security-analysis/src/workbench/providers.ts'
+import type { ToolboxInventory } from '../packages/experimental/security-analysis/src/toolbox-types.ts'
 import { readSecurityEnvironments, readSecurityTools, securityToolsFile, standaloneTool, writeSecurityEnvironments, writeSecurityToolsFile } from './security-tools-config.ts'
 
-async function probe(command: string, args: string[]): Promise<string> {
-  if (process.platform === 'win32' && /\.(cmd|bat|ps1)$/i.test(command))
-    throw new Error('Select the interpreter executable and supply its launcher arguments with --arg')
-  const result = await execa(command, args, {
-    timeout: 15000, maxBuffer: 65536, stdin: 'ignore', windowsHide: true,
-    env: scrubbedParentEnv(), extendEnv: false,
-  })
-  const version = (result.stdout || result.stderr).trim()
-  if (!version) throw new Error('Version query returned no output')
-  return version
+async function inspectTools(environment: SecurityEnvironment, requested: string[], catalog: ToolDefinition[],
+  directories: readonly string[] = []): Promise<ToolboxInventory> {
+  const ctx = new Context()
+  try {
+    await ctx.plugin(LocalSubprocess)
+    return await inspectToolbox(ctx, environment, { durationMs: 15000, maxOutputBytes: 65536, graceMs: 3000 },
+      new AbortController().signal, requested, catalog, directories)
+  } finally {
+    await ctx.fiber.dispose()
+  }
 }
 
 interface EnvironmentSelection {
@@ -72,15 +71,7 @@ async function manageEnvironmentTools(action: string, selected: string[], option
       }]
     }
     const requested = ids.length ? ids : definitions.filter(tool => tool.commands.length || tool.dependency).map(tool => tool.id)
-    const ctx = new Context()
-    let inventory
-    try {
-      await ctx.plugin(LocalSubprocess)
-      inventory = await inspectToolbox(ctx, environment, { durationMs: 15000, maxOutputBytes: 65536, graceMs: 3000 },
-        new AbortController().signal, requested, catalog)
-    } finally {
-      await ctx.fiber.dispose()
-    }
+    const inventory = await inspectTools(environment, requested, catalog)
     for (const tool of inventory.tools)
       console.log(`${tool.id}: ${tool.status} | ${JSON.stringify([tool.command, ...tool.prefixArgs ?? []])}${tool.version ? ' | ' + tool.version : ''}${tool.detail ? ' | ' + tool.detail : ''}`)
     console.log(`Environment ${environment.id}: ${inventory.runtime}${inventory.detail ? ' | ' + inventory.detail : ''}`)
@@ -182,96 +173,48 @@ export async function manageSecurityTools(args: string[]): Promise<void> {
   } else if (action === 'remove') {
     pins = Object.fromEntries(Object.entries(pins).filter(([id]) => id !== selected[0]))
   } else {
-    const requestedPath = action === 'set' ? selected[1] : undefined
+    if (action === 'set') {
+      const [id, command] = selected
+      assert(id !== undefined && command !== undefined, 'Validated set requires a tool ID and command')
+      pins[id] = { command: resolve(command), prefixArgs: values.arg ?? [], versionArgs: values['version-arg'] ?? toolDefinition(id).args }
+    }
     const custom = [...new Set([...Object.keys(pins), ...ids])]
       .filter(id => !toolboxCatalog.some(tool => tool.id === id)).map(toolDefinition)
     const definitions = [...toolboxCatalog, ...custom]
     const filtered = discoverTools(definitions, snapshot.collections, { tags: values.tag, collectionIds: values.collection })
     const requested = ids.length ? ids : filtered.filter(tool => tool.commands.length || tool.dependency).map(tool => tool.id)
-    const ordered = orderTools(definitions, requested).map(tool => tool.id)
-    const resolved = new Map<string, { command: string; prefixArgs: string[] }>()
-    for (const id of ordered) {
-      const entry = toolboxCatalog.find(tool => tool.id === id)
-      if (entry?.platforms.length && !entry.platforms.includes(process.platform as 'win32' | 'linux' | 'darwin')) {
-        unchecked++; console.log(id + ': not checked | unsupported-platform'); continue
-      }
-      if (entry?.dependencies.some(id => !resolved.has(id))) {
-        unchecked++; console.log(id + ': not checked | dependency-unavailable'); continue
-      }
-      if (entry?.dependency) {
-        const runtime = resolved.get(entry.dependency)
-        if (!runtime) {
-          unchecked++
-          console.log(`${id}: not checked | ${entry.dependency} is unavailable; configure its executable first`)
-          continue
-        }
-        try {
-          const output = await probe(runtime.command, [...runtime.prefixArgs,
-            ...probeArguments(entry)])
-          const identity = probeIdentity(entry, output)
-          if (!identity) { missing++; console.log(id + ': optional/missing | via ' + runtime.command); continue }
-          resolved.set(id, runtime)
-          available++
-          console.log(id + ': available | via ' + runtime.command + ' | ' + identity.version)
-          if (identity.location) console.log('  module: ' + identity.location)
-        } catch (error) {
-          const detail = error instanceof Error ? error.message : String(error)
-          const absent = /ModuleNotFoundError|PackageNotFoundError/.test(detail)
-          if (absent) missing++
-          else unhealthy = true
-          console.log(`${id}: ${absent ? 'optional/missing' : 'probe error'} | via ${runtime.command} | ${detail.split('\n').filter(Boolean).at(-1)}`)
-        }
-        continue
-      }
-      const explicit = requestedPath === undefined ? pins[id]?.command : resolve(requestedPath)
-      const prefixArgs = action === 'set' ? values.arg ?? [] : pins[id]?.prefixArgs ?? []
-      const definition = toolDefinition(id)
-      const versionArgs = probeArguments(definition, values['version-arg'] ?? pins[id]?.versionArgs)
-      const paths = explicit ? [explicit] : toolCandidates(definition, values.dir ?? [])
-      let failure = 'Executable not found; use --dir or set ID PATH'
-      let found = false
-      for (const command of paths) {
-        try {
-          if (!isAbsolute(command) || !existsSync(command) || !statSync(command).isFile()) throw new Error('Executable file does not exist')
-          const version = await probe(command, [...prefixArgs, ...versionArgs])
-          if (definition.probe.kind === 'identity') {
-            const identity = JSON.parse(version) as {
-              version: string
-              location: string
-              prefix: string
-              basePrefix: string
-              virtualEnvironment: boolean
-              pipAvailable: boolean
-            }
-            console.log(`${id}: available | ${identity.location} | ${identity.version}`)
-            console.log(`  environment: ${identity.virtualEnvironment ? 'virtualenv' : 'base'} | ${identity.prefix}`)
-            console.log(`  base: ${identity.basePrefix} | pip: ${identity.pipAvailable ? 'available' : 'missing'}`)
-          } else console.log(`${id}: available | ${command} | ${version.split(/\r?\n/)[0]}`)
-          if (action === 'set' || values.save) pins[id] = { command, prefixArgs, versionArgs }
-          resolved.set(id, { command, prefixArgs })
-          available++
-          found = true
-          break
-        } catch (error) {
-          failure = error instanceof Error ? error.message : String(error)
-        }
-      }
-      if (!found) {
-        if (action !== 'doctor' && (action === 'set' || explicit)) throw new Error(`${id}: ${failure}`)
-        if (explicit) unhealthy = true
-        else missing++
-        console.log(`${id}: ${explicit ? 'invalid configuration' : 'optional/missing'} | ${failure.split('\n')[0]}`)
+    const inventory = await inspectTools({ id: 'local', kind: 'local', label: 'Local', cwd: process.cwd(),
+      tools: Object.entries(pins).map(([id, pin]) => ({ id, ...pin, source: 'Local tool configuration' })) }, requested, definitions, values.dir)
+    for (const tool of inventory.tools) {
+      const { id, status } = tool
+      if (status === 'available') {
+        available++
+        console.log(`${id}: available | ${tool.dependency ? 'via ' : ''}${tool.python ? tool.location : tool.command} | ${tool.version.split(/\r?\n/)[0]}`)
+        if (tool.python) {
+          console.log(`  environment: ${tool.python.virtualEnvironment ? 'virtualenv' : 'base'} | ${tool.python.prefix}`)
+          console.log(`  base: ${tool.python.basePrefix} | pip: ${tool.python.pipAvailable ? 'available' : 'missing'}`)
+        } else if (tool.dependency && tool.location) console.log('  module: ' + tool.location)
+        if (!tool.dependency && (action === 'set' || values.save)) pins[id] = { command: tool.command,
+          prefixArgs: tool.prefixArgs ?? [], versionArgs: pins[id]?.versionArgs ?? toolDefinition(id).args }
+      } else {
+        if (status === 'error') unhealthy = true
+        else if (status === 'missing') missing++
+        else unchecked++
+        const label = status === 'error' ? pins[id] ? 'invalid configuration' : 'probe error'
+          : status === 'missing' ? 'optional/missing' : 'not checked'
+        console.log(`${id}: ${label} | ${tool.detail || status}`)
+        if (action === 'set' && id === ids[0]) unhealthy = true
       }
     }
   }
   if (action === 'doctor') {
     console.log(`Tool check: ${available} available, ${missing} optional tools missing, ${unchecked} dependencies unchecked. Configured paths: ${file}`)
-    if (unhealthy) {
-      console.error('Fix invalid configurations with set or remove, or repair the reported runtime/module. No configuration changes were saved.')
-      process.exitCode = 1
-      return
-    }
     if (!values.save) console.log('To discover portable tools and save paths: pnpm security:doctor --dir DIRECTORY --save')
+  }
+  if (unhealthy) {
+    console.error('Fix invalid configurations with set or remove, or repair the reported runtime/module. No configuration changes were saved.')
+    process.exitCode = 1
+    return
   }
   if (action === 'set' || action === 'remove' || values.save) {
     writeSecurityToolsFile(file, JSON.stringify(pins, null, 2) + '\n')

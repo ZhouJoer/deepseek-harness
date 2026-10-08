@@ -56,10 +56,6 @@
       "types": "./lib/types/operator-commands.d.ts",
       "default": "./lib/commands.js"
     },
-    "./legacy": {
-      "types": "./lib/types/legacy.d.ts",
-      "default": "./lib/legacy.js"
-    },
     "./web": {
       "types": "./lib/types/web-provider.d.ts",
       "default": "./lib/web.js"
@@ -85,7 +81,6 @@
     "lib/frida.js",
     "lib/android.js",
     "lib/commands.js",
-    "lib/legacy.js",
     "lib/web.js",
     "lib/laboratory.js",
     "lib/offline.js",
@@ -128,7 +123,6 @@
     "@deepseek-ai/dsh-subprocess": "workspace:*",
     "@deepseek-ai/dsh-subagent": "workspace:*",
     "@deepseek-ai/dsh-jobs": "workspace:*",
-    "@deepseek-ai/dsh-user-approval": "workspace:*",
     "@deepseek-ai/dsh-typert-protocol": "workspace:*",
     "@deepseek-ai/dsh-commands": "workspace:*",
     "@deepseek-ai/dsh-session": "workspace:*",

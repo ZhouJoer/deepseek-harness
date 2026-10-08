@@ -2,8 +2,9 @@
 import { useEffect, useRef, useState } from 'react'
 import type { PropsLocale, PropsRenderFactories, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ConversationViewsProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
-import type { WorkbenchView } from '@deepseek-ai/dsh-experimental-security-analysis/client'
+import type { WorkbenchView, WorkbenchConfiguration } from '@deepseek-ai/dsh-experimental-security-analysis/client'
 import { AnalysisStart } from './AnalysisStart.tsx'
+import { WorkspaceResources } from './WorkspaceResources.tsx'
 import { Workbench, type WorkbenchActions } from './Workbench.tsx'
 import type { NS } from './locales.ts'
 import css from './Dashboard.module.css'
@@ -26,11 +27,8 @@ export function DashboardSession(props: PropsRuntime<'security.workbench.session
   const { t, sessionId } = props
   const session = props.useSession(value => value)
   const conversation = props.useConversation(value => value)
-  const [configuration, setConfiguration] = useState<{
-    environments: { id: string; label: string; kind: string }[]
-    materialLimits?: { bytes: number; entries: number }
-    workspace?: { maxAttempts?: number }
-  }>()
+  const [configuration, setConfiguration] = useState<WorkbenchConfiguration>()
+  const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const prepared = useRef<WorkbenchView>()
   const priorRunning = useRef(session.running)
@@ -39,29 +37,51 @@ export function DashboardSession(props: PropsRuntime<'security.workbench.session
     const current = ++generation.current
     setError('')
     try {
-      const value = JSON.parse(await props.configuration(sessionId)) as NonNullable<typeof configuration>
+      const value = await props.configuration(sessionId)
       if (generation.current === current) setConfiguration(value)
     } catch (error) { if (generation.current === current) setError(String(error)) }
   }
-  useEffect(() => { if (props.creating) void load(); return () => { generation.current++ } }, [sessionId, props.creating])
+  useEffect(() => {
+    setConfiguration(undefined); setSaving(false)
+    if (props.creating) void load()
+    return () => { generation.current++ }
+  }, [sessionId, props.creating])
   useEffect(() => {
     if (priorRunning.current && !session.running) props.changed()
     priorRunning.current = session.running
   }, [session.running])
   const active = conversation.activeTargets.size > 0 || (!session.blank && !session.awaitingFirstTurn) || session.running
   const hero = !active && !session.promptAttempted
+  const workspace = configuration?.workspace
+  const maxAttempts = workspace?.maxAttempts
   return <>
     {props.creating && <div className={css.creation}>
       {error && <p role="alert">{error}<button onClick={() => void load()}>{t('refresh')}</button></p>}
-      <AnalysisStart t={t} disabled={!configuration} environments={configuration?.environments ?? []} limits={configuration?.materialLimits}
+      {configuration && maxAttempts === undefined && <>
+        <p role="alert">{t(workspace ? 'missingAttemptLimit' : 'missingAnalysisWorkspace')}</p>
+        {workspace && <WorkspaceResources key={`${workspace.cwd}:${workspace.revision}`}
+          t={t} workspace={workspace} environments={configuration.environments} disabled={saving}
+          save={async (input) => {
+            const current = generation.current
+            setSaving(true); setError('')
+            try {
+              const next = await props.configureWorkspace(sessionId, JSON.stringify(input))
+              if (current === generation.current) setConfiguration(next)
+            } catch (error) { if (current === generation.current) setError(String(error)) }
+            finally { if (current === generation.current) setSaving(false) }
+          }} />}
+      </>}
+      <AnalysisStart t={t} disabled={!configuration || maxAttempts === undefined || saving}
+        environments={configuration?.environments ?? []} limits={configuration?.materialLimits}
         prepare={async (input) => {
+          if (maxAttempts === undefined) throw new Error(t(workspace ? 'missingAttemptLimit' : 'missingAnalysisWorkspace'))
           const generationAtStart = generation.current
           const current = await props.load(sessionId)
           if (generationAtStart !== generation.current) throw new Error(t('analysisSessionChanged'))
           prepared.current = await props.importMaterials(sessionId, JSON.stringify({
             operationId: input.operationId, expectedRevision: current.revision, material: input.material,
             title: input.title, objective: input.objective,
-            resources: { environmentIds: [input.environmentId], maxAttempts: configuration?.workspace?.maxAttempts ?? 3 },
+            resources: { environmentIds: [input.environmentId], maxAttempts },
           }))
           if (generationAtStart !== generation.current) throw new Error(t('analysisSessionChanged'))
         }}

@@ -1,16 +1,20 @@
 /** Tool diagnostics report broken saved paths without losing working installations. @module */
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { chmod, copyFile, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, extname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { execa } from 'execa'
-import { expect, it, vi } from 'vitest'
+import { expect, it, onTestFinished } from 'vitest'
 import { load } from 'js-yaml'
 import { entryListSchema } from '@deepseek-ai/cordis-plugin-include'
 import { prepareSecurityToolsPatch, readSecurityEnvironments, writeSecurityEnvironments } from './security-tools-config.ts'
-import { manageSecurityTools } from './security-tools.ts'
 
-it('doctor reports every selected installation and preserves the file when a saved path is invalid', async () => {
+const cliDeadlineMs = 30_000
+
+// Each child owns a deadline; the case also allows temporary-file setup and cleanup.
+function cliTestOptions(calls: number) { return { timeout: calls * cliDeadlineMs + 10_000 } }
+
+it('doctor reports every selected installation and preserves the file when a saved path is invalid', cliTestOptions(1), async ({ signal }) => {
   const directory = await mkdtemp(join(tmpdir(), 'dsh-tool-doctor-'))
   const file = join(directory, 'tools.json')
   const saved = JSON.stringify({
@@ -19,12 +23,7 @@ it('doctor reports every selected installation and preserves the file when a sav
   })
   try {
     await writeFile(file, saved)
-    const result = await execa(process.execPath, ['--import', import.meta.resolve('tsx/esm'),
-      fileURLToPath(new URL('./security-tools.ts', import.meta.url)), 'doctor', 'broken-tool', 'working-tool',
-      '--config', file, '--save'], {
-      cwd: directory, reject: false, timeout: 30_000, stdin: 'ignore',
-      env: { TSX_TSCONFIG_PATH: fileURLToPath(new URL('../tsconfig.base.json', import.meta.url)) },
-    })
+    const result = await executeTools(directory, ['doctor', 'broken-tool', 'working-tool', '--config', file, '--save'], signal)
     expect(result.exitCode, result.stderr).toBe(1)
     expect(result.stdout).toContain('broken-tool: invalid configuration')
     expect(result.stdout).toContain('working-tool: available')
@@ -33,17 +32,13 @@ it('doctor reports every selected installation and preserves the file when a sav
   } finally {
     await rm(directory, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 })
   }
-}, 40_000)
+})
 
-it('set registers a previously unknown executable without requiring a definition first', async () => {
+it('set registers a previously unknown executable without requiring a definition first', cliTestOptions(1), async ({ signal }) => {
   const directory = await mkdtemp(join(tmpdir(), 'dsh-tool-set-'))
   const file = join(directory, 'tools.json')
   try {
-    const result = await execa(process.execPath, ['--import', import.meta.resolve('tsx/esm'),
-      fileURLToPath(new URL('./security-tools.ts', import.meta.url)), 'set', 'new-command', process.execPath, '--config', file], {
-      cwd: directory, reject: false, timeout: 30_000, stdin: 'ignore',
-      env: { TSX_TSCONFIG_PATH: fileURLToPath(new URL('../tsconfig.base.json', import.meta.url)) },
-    })
+    const result = await executeTools(directory, ['set', 'new-command', process.execPath, '--config', file], signal)
     expect(result.exitCode, result.stderr).toBe(0)
     expect(JSON.parse(await readFile(file, 'utf8'))).toMatchObject({ 'new-command': { command: process.execPath, versionArgs: ['--version'] } })
   } finally {
@@ -51,36 +46,70 @@ it('set registers a previously unknown executable without requiring a definition
   }
 })
 
-async function executeTools(directory: string, args: string[]) {
-  return executeToolProcess(directory, [fileURLToPath(new URL('./security-tools.ts', import.meta.url)), ...args])
-}
+it('discovers a portable executable through an explicit search directory and saves the measured path', cliTestOptions(1), async ({ signal }) => {
+  const directory = await mkdtemp(join(tmpdir(), 'dsh-portable-tools-'))
+  const file = join(directory, 'tools.json'), command = join(directory, 'portable-fixture-node' + extname(process.execPath))
+  try {
+    await copyFile(process.execPath, command)
+    await chmod(command, 0o755)
+    const result = await executeTools(directory, ['scan', 'portable-fixture-node', '--dir', directory, '--config', file, '--save'], signal)
+    expect(result.exitCode, result.stderr).toBe(0)
+    expect(result.stdout).toContain('portable-fixture-node: available')
+    expect(JSON.parse(await readFile(file, 'utf8'))).toMatchObject({ 'portable-fixture-node': {
+      command, prefixArgs: [], versionArgs: ['--version'],
+    } })
+  } finally {
+    await rm(directory, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 })
+  }
+})
 
-async function executeToolProcess(directory: string, args: string[]) {
-  const result = await execa(process.execPath, ['--import', import.meta.resolve('tsx/esm'), ...args], {
-    cwd: directory, reject: false, timeout: 30_000, stdin: 'ignore',
+it('prints the complete Python environment from a launcher and preserves configuration after a failed probe', cliTestOptions(2), async ({ signal }) => {
+  const directory = await mkdtemp(join(tmpdir(), 'dsh-python-tools-'))
+  const file = join(directory, 'tools.json'), launcher = join(directory, 'python-fixture.mjs')
+  try {
+    await writeFile(launcher, `console.log(JSON.stringify(${JSON.stringify({ version: '3.13', location: process.execPath,
+      prefix: directory, basePrefix: '/python-base', virtualEnvironment: true, pipAvailable: true })}))\n`)
+    const selected = ['--config', file]
+    const result = await executeTools(directory, ['set', 'python', process.execPath, '--arg=' + launcher, ...selected], signal)
+    expect(result.exitCode, result.stderr).toBe(0)
+    expect(result.stdout).toContain('environment: virtualenv | ' + directory)
+    expect(result.stdout).toContain('base: /python-base | pip: available')
+    const saved = await readFile(file, 'utf8')
+    expect(JSON.parse(saved)).toMatchObject({ python: { command: process.execPath, prefixArgs: [launcher] } })
+    await writeFile(launcher, 'console.log("malformed identity")\n')
+    const failed = await executeTools(directory, ['scan', 'python', '--save', ...selected], signal)
+    expect(failed.exitCode).toBe(1)
+    expect(failed.stdout).toContain('python: invalid configuration')
+    expect(failed.stderr).toContain('No configuration changes were saved')
+    expect(await readFile(file, 'utf8')).toBe(saved)
+  } finally {
+    await rm(directory, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 })
+  }
+})
+
+async function executeTools(directory: string, args: string[], signal: AbortSignal) {
+  const child = execa(process.execPath, ['--import', import.meta.resolve('tsx/esm'),
+    fileURLToPath(new URL('./security-tools.ts', import.meta.url)), ...args], {
+    cwd: directory, reject: false, timeout: cliDeadlineMs, stdin: 'ignore', cancelSignal: signal, killSignal: 'SIGKILL',
     env: { TSX_TSCONFIG_PATH: fileURLToPath(new URL('../tsconfig.base.json', import.meta.url)) },
   })
-  expect(result.timedOut).toBe(false)
-  expect(result.signal).toBeUndefined()
+  const closed = new Promise<void>(resolve => child.nodeChildProcess.once('close', () => { resolve() }))
+  const completed = Promise.all([child, closed])
+  onTestFinished(async () => { child.kill('SIGKILL'); await completed })
+  const [result] = await completed
+  expect(result.timedOut, result.stderr).toBe(false)
+  expect(result.isCanceled, result.stderr).toBe(false)
+  expect(result.signal, result.stderr).toBeUndefined()
   return result
 }
 
-async function executeToolSequence(file: string, actions: string[][]) {
-  const steps: { error: string | null; exitCode: typeof process.exitCode; contents: string }[] = []
-  const stdout: string[] = [], previousExitCode = process.exitCode
-  const log = vi.spyOn(console, 'log').mockImplementation((...values: unknown[]) => { stdout.push(values.map(String).join(' ')) })
-  try {
-    for (const args of actions) {
-      process.exitCode = 0
-      let error: string | null = null
-      try { await manageSecurityTools(args) } catch (failure) { error = String(failure) }
-      steps.push({ error, exitCode: process.exitCode, contents: await readFile(file, 'utf8') })
-    }
-    return { steps, stdout: stdout.join('\n') }
-  } finally {
-    process.exitCode = previousExitCode
-    log.mockRestore()
+async function executeToolSequence(file: string, actions: string[][], signal: AbortSignal) {
+  const steps: { exitCode: number | undefined; stdout: string; stderr: string; contents: string }[] = []
+  for (const args of actions) {
+    const { exitCode, stdout, stderr } = await executeTools(dirname(file), args, signal)
+    steps.push({ exitCode, stdout, stderr, contents: await readFile(file, 'utf8') })
   }
+  return { steps, stdout: steps.map(step => step.stdout).join('\n') }
 }
 
 async function dockerFixture(directory: string, running = true) {
@@ -106,7 +135,7 @@ else throw new Error('Unexpected request: ' + JSON.stringify(request))
   return { file, log, saved }
 }
 
-it('imports portable definitions and saves container discovery without pinning the Host launcher', async () => {
+it('imports portable definitions and saves container discovery without pinning the Host launcher', cliTestOptions(3), async ({ signal }) => {
   const directory = await mkdtemp(join(tmpdir(), 'dsh-remote-tools-'))
   try {
     const { file, log } = await dockerFixture(directory)
@@ -119,9 +148,9 @@ it('imports portable definitions and saves container discovery without pinning t
       ['import', pack, ...selection],
       ['doctor', 'inspection', '--save', ...selection],
       ['doctor', 'inspection', ...selection],
-    ])
-    expect(result.steps.map(({ error, exitCode }) => ({ error, exitCode }))).toEqual([
-      { error: null, exitCode: 0 }, { error: null, exitCode: 0 }, { error: null, exitCode: 0 },
+    ], signal)
+    expect(result.steps.map(({ stderr, exitCode }) => ({ stderr, exitCode }))).toEqual([
+      { stderr: '', exitCode: 0 }, { stderr: '', exitCode: 0 }, { stderr: '', exitCode: 0 },
     ])
     expect(result.stdout.match(/inspection: available/g)).toHaveLength(2)
     const saved = JSON.parse(result.steps[1]?.contents ?? '') as { environments: { cwd: string; tools: object[] }[] }
@@ -139,7 +168,7 @@ it('imports portable definitions and saves container discovery without pinning t
   }
 })
 
-it('sets and removes a custom container command without requiring a Host executable path', async () => {
+it('sets and removes a custom container command without requiring a Host executable path', cliTestOptions(3), async ({ signal }) => {
   const directory = await mkdtemp(join(tmpdir(), 'dsh-remote-set-'))
   try {
     const { file, log } = await dockerFixture(directory)
@@ -149,11 +178,12 @@ it('sets and removes a custom container command without requiring a Host executa
       ['remove', 'docker', ...selection],
       ['set', 'custom-tool', 'alternate-console', '--arg=--quiet', ...selection],
       ['remove', 'custom-tool', ...selection],
-    ])
-    expect(result.steps[0]?.error).toContain('Docker environments require a configured docker tool')
+    ], signal)
+    expect(result.steps[0]?.exitCode).toBe(1)
+    expect(result.steps[0]?.stderr).toContain('Docker environments require a configured docker tool')
     expect(result.steps[0]?.contents).toBe(original)
-    expect(result.steps.slice(1).map(({ error, exitCode }) => ({ error, exitCode }))).toEqual([
-      { error: null, exitCode: 0 }, { error: null, exitCode: 0 },
+    expect(result.steps.slice(1).map(({ stderr, exitCode }) => ({ stderr, exitCode }))).toEqual([
+      { stderr: '', exitCode: 0 }, { stderr: '', exitCode: 0 },
     ])
     const saved = JSON.parse(result.steps[1]?.contents ?? '') as { environments: { tools: object[] }[] }
     expect(saved.environments[0]?.tools).toContainEqual({ id: 'custom-tool', command: 'alternate-console',
@@ -165,11 +195,11 @@ it('sets and removes a custom container command without requiring a Host executa
   }
 })
 
-it('reports a stopped external container without saving installations or starting it', async () => {
+it('reports a stopped external container without saving installations or starting it', cliTestOptions(1), async ({ signal }) => {
   const directory = await mkdtemp(join(tmpdir(), 'dsh-remote-stopped-'))
   try {
     const { file, log, saved } = await dockerFixture(directory, false)
-    const result = await executeTools(directory, ['doctor', 'metasploit', '--save', '--environment', 'remote', '--environments', file])
+    const result = await executeTools(directory, ['doctor', 'metasploit', '--save', '--environment', 'remote', '--environments', file], signal)
     expect(result.exitCode).toBe(1)
     expect(result.stdout).toContain('Environment remote: stopped')
     expect(result.stderr).toContain('No configuration changes were saved')

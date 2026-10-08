@@ -66,7 +66,7 @@ const responseSchema = z
     messages: z.array(z.json()),
     incomplete: z.boolean(),
     cleanup: z.string(),
-    version: z.string().optional(),
+    version: z.string().min(1),
   })
   .strict()
 
@@ -220,7 +220,7 @@ export class FridaProvider implements AnalysisProvider {
       mediaType: 'application/json',
       summary: JSON.stringify({ identity: result.identity, events: result.messages.length, cleanup: result.cleanup }),
       incomplete: result.incomplete,
-      toolVersion: result.version ?? 'Frida version unavailable',
+      toolVersion: result.version,
     }
   }
   private async verifyAndroidPackage(packageName: string, context: AnalysisContext): Promise<void> {

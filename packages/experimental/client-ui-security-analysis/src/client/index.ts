@@ -8,9 +8,10 @@ import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { MainPanelId } from '@deepseek-ai/dsh-client-ui-layout/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
-import { ProjectIcon, type ProjectActions } from './Projects.tsx'
+import { ProjectIcon, type ProjectActions } from './project-actions.tsx'
 import { SecurityToolRow, securityToolNames } from './SecurityToolRow.tsx'
 import type { WorkbenchActions } from './Workbench.tsx'
 import { selectCoordinator } from './session-selection.ts'
@@ -91,9 +92,9 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
         if (!session) throw new Error(scoped.locale.bind(NS)('analysisSessionChanged'))
         await unwrap(session.prompt([{ type: 'text', text: objective }], 'queue'))
       },
-      manageProject: (id, input) => unwrap(remote.manageProject(id, input)),
+      manageProject: projectActions.manageProject,
       importMaterials: (id, input) => unwrap(remote.importMaterials(id, input)),
-      subscribeReset: listener => scoped.on('connection/reset', listener),
+      subscribeReset: projectActions.subscribeReset,
       load: id => unwrap(remote.view(id)),
       observe: (id, input) => unwrap(remote.observe(id, input)),
       refine: id => unwrap(remote.refineKnowledge(id)),
@@ -104,11 +105,16 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       execute: (id, plan, operation, revision) => unwrap(remote.execute(id, plan, operation, revision)),
       search: (id, query, shared) => unwrap(remote.search(id, query, shared)),
       artifact: (id, hash) => unwrap(remote.artifact(id, hash)),
-      report: (project, id, format) => unwrap(remote.report(project, id, format)),
+      report: projectActions.report,
+    }
+    const changeProjectState = async (id: SessionId, kind: 'stop' | 'resume') => {
+      await scoped.sessions.using(id, { source: 'securityWorkbench' }, async () => {
+        const view = await actions.load(id)
+        await actions.command(id, JSON.stringify({ operationId: randomUUID(), expectedRevision: view.revision, action: { kind } }))
+      })
     }
     const dashboardActions: DashboardActions = {
       observe: (id, input) => scoped.sessions.using(id, { source: 'securityWorkbench' }, () => unwrap(remote.observe(id, input))),
-      improvements: id => unwrap(remote.improvements(id)),
       analyzeImprovements: input => unwrap(remote.analyzeImprovements(input)),
       updateImprovement: input => unwrap(remote.updateImprovement(input)),
       exportImprovement: id => unwrap(remote.exportImprovement(id)),
@@ -116,8 +122,8 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       notifyImprovement: notifications.push,
       ...projectActions,
       openChild: actions.openChild,
-      followActivity: (id, signal) => remote.followActivity(id, signal),
-      activityDetails: (id, checkpoint, offset, through) => unwrap(remote.activityDetails(id, checkpoint, offset, through)),
+      followActivity: actions.followActivity,
+      activityDetails: actions.activityDetails,
       projectArtifact: (id, hash) => unwrap(remote.projectArtifact(id, hash)),
       findSession: async (projectId) => {
         const [ids] = await Promise.all([unwrap(remote.projectSessions(projectId)), scoped.sessions.refresh()])
@@ -134,18 +140,8 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
             action: { kind: 'select', engagementId: projectId } })))
         })
       },
-      stopProject: async (id) => {
-        await scoped.sessions.using(id, { source: 'securityWorkbench' }, async () => {
-          const view = await unwrap(remote.view(id))
-          await unwrap(remote.command(id, JSON.stringify({ operationId: randomUUID(), expectedRevision: view.revision, action: { kind: 'stop' } })))
-        })
-      },
-      resumeProject: async (id) => {
-        await scoped.sessions.using(id, { source: 'securityWorkbench' }, async () => {
-          const view = await unwrap(remote.view(id))
-          await unwrap(remote.command(id, JSON.stringify({ operationId: randomUUID(), expectedRevision: view.revision, action: { kind: 'resume' } })))
-        })
-      },
+      stopProject: id => changeProjectState(id, 'stop'),
+      resumeProject: id => changeProjectState(id, 'resume'),
       createWorkspace: async path => (await scoped.workspaces.create({ path })).workspaceId,
     }
     scoped.slots.inject('main', () => scoped.slots.register({

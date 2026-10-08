@@ -1,26 +1,16 @@
 // @vitest-environment jsdom
-import { deviceActions } from './device-fixture.client.ts'
+import { workbenchConfiguration } from './configuration-fixture.client.ts'
 /** Operator gestures, authoritative state and stale-session isolation. @module */
 import { afterEach, it, expect, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import type { SecurityCommand, WorkbenchView } from '@deepseek-ai/dsh-experimental-security-analysis/client'
+import type { SecurityCommand, WorkbenchView, WorkbenchConfiguration } from '@deepseek-ai/dsh-experimental-security-analysis/client'
 import { recordSchema } from '@deepseek-ai/dsh-experimental-security-analysis/src/workbench/model.ts'
 import { Workbench, type WorkbenchActions, type WorkbenchProps } from '../src/client/Workbench.tsx'
-import { Projects } from '../src/client/Projects.tsx'
 import type {} from '../src/client/index.ts'
 import { en, zh } from '../src/client/locales.ts'
-
-const unusedProjectAction = async () => { throw new Error('Unexpected advanced project action') }
-const unusedProjectActions = {
-  manageProject: unusedProjectAction, toolboxDirectory: unusedProjectAction, toolboxInventory: unusedProjectAction,
-  scriptCatalog: unusedProjectAction,
-  toolboxConfiguration: unusedProjectAction, configureTool: unusedProjectAction, toolboxFiles: unusedProjectAction,
-  toolCatalog: unusedProjectAction, previewToolPack: unusedProjectAction, importToolPack: unusedProjectAction,
-  exportToolPack: unusedProjectAction,
-}
 
 afterEach(cleanup)
 const project = recordSchema.parse({ kind: 'engagement', value: { id: 'project', title: 'Owned lab', objective: 'Review the sample', environmentIds: ['local'], stopped: false, maxAttempts: 3 } })
@@ -39,8 +29,8 @@ function actions(overrides: Partial<WorkbenchActions> = {}) {
     observe: vi.fn(async () => view),
     subscribeReset: () => () => {},
     refine: vi.fn(async () => view), load: vi.fn(async () => view), command: vi.fn(async () => view),
-    configuration: vi.fn(async () => JSON.stringify({ environments: [{ id: 'local', label: 'Lab', tools: [], kind: 'local' }], providers: [] })),
-    configureWorkspace: vi.fn(async () => '{}'),
+    configuration: vi.fn(async () => workbenchConfiguration({ environments: [{ id: 'local', label: 'Lab', tools: [], kind: 'local' }], providers: [] })),
+    configureWorkspace: vi.fn(async () => workbenchConfiguration()),
     environment: vi.fn(async () => '{}'), execute: vi.fn(async () => view), search: vi.fn(async () => ({ revision: 8, records: [] })),
     artifact: vi.fn(async () => '{}'), report: vi.fn(async () => '# Target security\n\n## Key risk\n- Password exposure'), ...overrides,
   }
@@ -63,7 +53,7 @@ it('clears checks and findings after leaving, then exposes project creation', as
     load: vi.fn(async () => prior),
     command: vi.fn<WorkbenchActions['command']>(async (_id, input) =>
       (JSON.parse(input) as SecurityCommand).action.kind === 'leave' ? empty : prior),
-    configuration: vi.fn(async () => JSON.stringify({ projects: [{ id: 'project', title: 'Owned lab' }],
+    configuration: vi.fn(async () => workbenchConfiguration({ projects: [{ id: 'project', title: 'Owned lab' }],
       environments: [{ id: 'local', label: 'Lab', kind: 'local', tools: [] }], providers: [] })),
   })
   render(<Workbench {...props(api)} />)
@@ -85,7 +75,7 @@ it('clears checks and findings after leaving, then exposes project creation', as
   expect((JSON.parse(vi.mocked(api.command).mock.calls[0]![1]) as SecurityCommand).action).toEqual({ kind: 'leave' })
 })
 
-it('renders saved Markdown reports from the report read API in both project views', async () => {
+it('renders saved Markdown reports from the report read API', async () => {
   const artifact = { sha256: 'a'.repeat(64), size: 20, mediaType: 'text/markdown' }
   const saved = recordSchema.parse({ kind: 'report', value: { id: 'brief', engagementId: 'project', revision: 8,
     markdown: artifact, json: { ...artifact, mediaType: 'application/json' }, createdAt: 1 } })
@@ -102,15 +92,7 @@ it('renders saved Markdown reports from the report read API in both project view
   expect(api.artifact).not.toHaveBeenCalled()
   workbench.unmount()
 
-  const projectProps = { ...unusedProjectActions, ...deviceActions, projects: async () => JSON.stringify([{ id: 'project', title: 'Owned lab' }]),
-    project: async () => projectView, laboratory: async () => projectView, report,
-    subscribeReset: () => () => {}, t: makeTranslate(zh, commonZh) } as Parameters<typeof Projects>[0]
-  render(<Projects {...projectProps} />)
-  await screen.findByRole('option', { name: 'Owned lab' })
-  fireEvent.change(screen.getByRole('combobox'), { target: { value: 'project' } })
-  fireEvent.click(screen.getByRole('button', { name: '报告' }))
-  fireEvent.click(await screen.findByRole('button', { name: 'Markdown 报告' }))
-  await screen.findByRole('heading', { name: 'Target security' })
+
 })
 
 it('keeps authoritative project state when an evidence search returns no matches', async () => {
@@ -150,22 +132,6 @@ it('submits explicit approval for the displayed plan identity', async () => {
   fireEvent.click(screen.getByRole('button', { name: '批准此版本' }))
   await waitFor(() =>{  expect(api.command).toHaveBeenCalled() })
   expect(JSON.parse(vi.mocked(api.command).mock.calls[0]?.[1] ?? '{}')).toMatchObject({ expectedRevision: 8, action: { kind: 'approve', planId: 'plan' } })
-})
-
-it('reuses the configured local image through an explicit operator gesture', async () => {
-  const laboratory = vi.fn(async () => view)
-  const projectProps = { ...unusedProjectActions, ...deviceActions, projects: async () => JSON.stringify([{ id: 'project', title: 'Owned lab' }]), project: async () => view,
-    laboratory, report: async () => '', subscribeReset: () => () => {}, t: makeTranslate(zh, commonZh) } as Parameters<typeof Projects>[0]
-  render(<Projects {...projectProps} />)
-  await screen.findByRole('option', { name: 'Owned lab' })
-  await waitFor(() => { expect(screen.getByRole('combobox').hasAttribute('disabled')).toBe(false) })
-  fireEvent.change(screen.getByRole('combobox'), { target: { value: 'project' } })
-  fireEvent.click(await screen.findByText('高级详情'))
-  fireEvent.click(screen.getByRole('button', { name: '工具箱与靶场' }))
-  await waitFor(() => { expect(screen.getByRole('button', { name: '复用本地 Kali 镜像' }).hasAttribute('disabled')).toBe(false) })
-  expect(laboratory).not.toHaveBeenCalled()
-  fireEvent.click(screen.getByRole('button', { name: '复用本地 Kali 镜像' }))
-  await waitFor(() => { expect(laboratory).toHaveBeenCalledWith('project', 'reuse', '') })
 })
 
 it('separates concise knowledge cards from legacy text and evidence', async () => {
@@ -308,15 +274,16 @@ it('does not submit an analysis objective after its preparation outlives the sel
 
 it('saves workspace environment choices and can disable intake without changing an existing project', async () => {
   const configuration = {
+    ...workbenchConfiguration(),
     workspace: { cwd: '/workspace', revision: 0, environmentIds: [] as string[], maxAttempts: 5, configured: false },
     environments: [{ id: 'local', label: 'Lab', kind: 'local', tools: [] }], providers: [],
-  }
+  } satisfies WorkbenchConfiguration
   const api = actions({
     load: vi.fn(async () => ({ revision: 0, records: [] })),
-    configuration: vi.fn(async () => JSON.stringify(configuration)),
+    configuration: vi.fn(async () => workbenchConfiguration(configuration)),
     configureWorkspace: vi.fn<WorkbenchActions['configureWorkspace']>(async (_session, input) => {
       const request = JSON.parse(input) as { expectedRevision: number; environmentIds: string[]; maxAttempts: number }
-      return JSON.stringify({ ...configuration, workspace: { ...configuration.workspace, configured: true,
+      return workbenchConfiguration({ ...configuration, workspace: { ...configuration.workspace, configured: true,
         revision: request.expectedRevision + 1, environmentIds: request.environmentIds, maxAttempts: request.maxAttempts } })
     }),
   })
@@ -343,14 +310,22 @@ it('saves workspace environment choices and can disable intake without changing 
 it('requires an explicit attempt limit when no deployment default is configured', async () => {
   const api = actions({
     load: vi.fn(async () => ({ revision: 0, records: [] })),
-    configuration: vi.fn(async () => JSON.stringify({
+    configuration: vi.fn(async () => workbenchConfiguration({
       workspace: { cwd: '/workspace', revision: 0, environmentIds: [], configured: false },
       environments: [{ id: 'local', label: 'Lab', kind: 'local', tools: [] }], providers: [],
     })),
+    configureWorkspace: vi.fn(async () => workbenchConfiguration({ workspace: {
+      cwd: '/workspace', revision: 1, environmentIds: ['local'], maxAttempts: 4, configured: true,
+    } })),
   })
   render(<Workbench {...props(api)} />)
   fireEvent.click(screen.getByRole('button', { name: '安全分析' }))
   await screen.findByRole('heading', { name: '新建分析' })
+  expect(screen.getByText(zh.missingAttemptLimit)).toBeDefined()
+  const start = screen.getByRole<HTMLButtonElement>('button', { name: zh.startAnalysis })
+  expect(start.disabled).toBe(true)
+  fireEvent.click(start)
+  expect(api.importMaterials).not.toHaveBeenCalled()
   fireEvent.click(screen.getByText('高级设置与历史任务'))
   fireEvent.click(screen.getByText('调整可用环境'))
   const save = await screen.findByRole('button', { name: '保存工作区配置' })
@@ -360,14 +335,38 @@ it('requires an explicit attempt limit when no deployment default is configured'
   fireEvent.click(screen.getByText('执行限制'))
   fireEvent.change(screen.getByLabelText('每项检查的尝试上限'), { target: { value: '4' } })
   expect(save.hasAttribute('disabled')).toBe(false)
+  fireEvent.click(save)
+  await waitFor(() => { expect(screen.queryByText(zh.missingAttemptLimit)).toBeNull() })
+  fireEvent.change(screen.getByLabelText(zh.analysisRequest), { target: { value: 'Inspect the sample' } })
+  fireEvent.click(start)
+  await waitFor(() => { expect(api.importMaterials).toHaveBeenCalledOnce() })
+  expect(JSON.parse(vi.mocked(api.importMaterials).mock.calls[0]![1])).toMatchObject({ resources: { maxAttempts: 4 } })
+})
+
+it('uses the configured attempt limit for manual project creation', async () => {
+  const api = actions({ load: vi.fn(async () => ({ revision: 0, records: [] })),
+    configuration: vi.fn(async () => workbenchConfiguration({ workspace: {
+      cwd: '/workspace', revision: 0, environmentIds: ['local'], maxAttempts: 7, configured: true,
+    } })),
+  })
+  render(<Workbench {...props(api)} />)
+  fireEvent.click(screen.getByRole('button', { name: zh.title }))
+  await screen.findByRole('heading', { name: zh.newAnalysis })
+  fireEvent.click(screen.getByText(zh.manualSetup))
+  fireEvent.change(screen.getByLabelText(zh.name), { target: { value: 'Manual analysis' } })
+  fireEvent.change(screen.getByLabelText(zh.objective), { target: { value: 'Inspect the sample' } })
+  fireEvent.change(screen.getAllByLabelText(zh.environment).at(-1)!, { target: { value: 'local' } })
+  fireEvent.click(screen.getByRole('button', { name: zh.create }))
+  await waitFor(() => { expect(api.command).toHaveBeenCalledOnce() })
+  expect(JSON.parse(vi.mocked(api.command).mock.calls[0]![1])).toMatchObject({ action: { kind: 'create', maxAttempts: 7 } })
 })
 
 it('ignores a saved workspace response after switching conversations', async () => {
-  let release!: (value: string) => void
-  const saved = new Promise<string>((resolve) => { release = resolve })
+  let release!: (value: WorkbenchConfiguration) => void
+  const saved = new Promise<WorkbenchConfiguration>((resolve) => { release = resolve })
   const api = actions({
     load: vi.fn(async () => ({ revision: 0, records: [] })),
-    configuration: vi.fn<WorkbenchActions['configuration']>(async session => JSON.stringify({
+    configuration: vi.fn<WorkbenchActions['configuration']>(async session => workbenchConfiguration({
       workspace: { cwd: '/' + session, revision: 0, environmentIds: [], maxAttempts: 3, configured: false },
       environments: [{ id: session, label: session, kind: 'local', tools: [] }], providers: [],
     })),
@@ -381,7 +380,7 @@ it('ignores a saved workspace response after switching conversations', async () 
   fireEvent.click(await screen.findByRole('checkbox', { name: 'parent' }))
   fireEvent.click(screen.getByRole('button', { name: '保存工作区配置' }))
   rendered.rerender(<Workbench {...props(api, 'other')} />)
-  release(JSON.stringify({
+  release(workbenchConfiguration({
     workspace: { cwd: '/parent', revision: 1, environmentIds: ['parent'], maxAttempts: 3, configured: true },
     environments: [{ id: 'parent', label: 'parent', kind: 'local', tools: [] }], providers: [],
   }))
@@ -433,13 +432,14 @@ it('does not refresh a closed panel or mistake a conversation switch for a finis
 
 it('lets the operator remove a saved environment that the deployment no longer provides', async () => {
   const configuration = {
+    ...workbenchConfiguration(),
     workspace: { cwd: '/workspace', revision: 2, environmentIds: ['retired'], maxAttempts: 3, configured: true },
     environments: [{ id: 'local', label: 'Lab', kind: 'local', tools: [] }], providers: [],
-  }
+  } satisfies WorkbenchConfiguration
   const api = actions({
     load: vi.fn(async () => ({ revision: 0, records: [] })),
-    configuration: vi.fn(async () => JSON.stringify(configuration)),
-    configureWorkspace: vi.fn<WorkbenchActions['configureWorkspace']>(async () => JSON.stringify({
+    configuration: vi.fn(async () => workbenchConfiguration(configuration)),
+    configureWorkspace: vi.fn<WorkbenchActions['configureWorkspace']>(async () => workbenchConfiguration({
       ...configuration, workspace: { ...configuration.workspace, revision: 3, environmentIds: [] },
     })),
   })
@@ -456,16 +456,17 @@ it('lets the operator remove a saved environment that the deployment no longer p
 
 it('waits for a workspace save before refreshing a completed turn and keeps the saved revision', async () => {
   let configuration = {
+    ...workbenchConfiguration(),
     workspace: { cwd: '/workspace', revision: 1, environmentIds: ['local'], maxAttempts: 3, configured: true },
     environments: [{ id: 'local', label: 'Lab', kind: 'local', tools: [] }], providers: [],
-  }
-  let release!: (value: string) => void
-  const saved = new Promise<string>((resolve) => { release = resolve })
+  } satisfies WorkbenchConfiguration
+  let release!: (value: WorkbenchConfiguration) => void
+  const saved = new Promise<WorkbenchConfiguration>((resolve) => { release = resolve })
   const save = vi.fn<WorkbenchActions['configureWorkspace']>()
     .mockImplementationOnce(() => saved)
-    .mockImplementation(async () => JSON.stringify(configuration))
+    .mockImplementation(async () => workbenchConfiguration(configuration))
   const load = vi.fn<WorkbenchActions['load']>(async () => ({ revision: 0, records: [] }))
-  const api = actions({ load, configuration: vi.fn(async () => JSON.stringify(configuration)), configureWorkspace: save })
+  const api = actions({ load, configuration: vi.fn(async () => workbenchConfiguration(configuration)), configureWorkspace: save })
   const rendered = render(<Workbench {...props(api, 'parent', true)} />)
   fireEvent.click(screen.getByRole('button', { name: '安全分析' }))
   fireEvent.click(await screen.findByText('调整可用环境'))
@@ -476,7 +477,7 @@ it('waits for a workspace save before refreshing a completed turn and keeps the 
   expect(screen.getByRole('button', { name: '刷新' }).hasAttribute('disabled')).toBe(true)
   await act(async () => {
     configuration = { ...configuration, workspace: { ...configuration.workspace, revision: 2, environmentIds: [] } }
-    release(JSON.stringify(configuration))
+    release(workbenchConfiguration(configuration))
     await saved
   })
   await waitFor(() => {

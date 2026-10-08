@@ -1,0 +1,13 @@
+version: 1
+scenario: security-observation-failure
+profile: headless
+composition: security-workbench
+recording: authored
+header:
+  class: security-workbench
+  systemPromptSource: security-workbench
+  toolSchemasSource: security-workbench
+replay:
+  override: true
+environment:
+  DSH_SECURITY_OBSERVATION_FAILURE: '1'

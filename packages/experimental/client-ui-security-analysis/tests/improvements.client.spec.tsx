@@ -21,7 +21,7 @@ function harness() {
   let aborted = false
   const update = vi.fn(async (_input: string) => view)
   const api: ImprovementActions = {
-    improvements: async () => view, analyzeImprovements: vi.fn(async () => view), updateImprovement: update,
+    analyzeImprovements: vi.fn(async () => view), updateImprovement: update,
     exportImprovement: vi.fn(async () => ({ markdown: '# Coding task', proposal: '{}', receipt: '{}' })),
     notifyImprovement: vi.fn(), followImprovements: async function* (signal) {
       yield view

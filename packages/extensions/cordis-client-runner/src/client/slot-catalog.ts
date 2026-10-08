@@ -2265,7 +2265,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'shadows-shipped-ui',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'security.workbench.session\', () => ctx.slots.register(\n      { name: \'security.workbench.session\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/experimental/client-ui-security-analysis/src/client/index.ts:29',
+    source: 'packages/experimental/client-ui-security-analysis/src/client/index.ts:30',
   },
   {
     key: 'settings.action',

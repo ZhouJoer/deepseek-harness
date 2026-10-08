@@ -6,6 +6,8 @@
 
 ## 持久化记录
 
+`WorkbenchConfiguration` 是 `configuration` 与 `configureWorkspace` 返回的对象，包含材料限制、项目、provider、环境和经验整理间隔。没有工作区时，其 workspace 值为 null；尝试次数在配置前缺省。[配置类型](../../packages/experimental/security-analysis/src/workbench-configuration-types.ts)定义浏览器可用字段。
+
 `ToolboxDirectory` 包含已配置的环境选项和一份实测或显式未检测的 `ToolboxInventory`。其中的 `ToolboxTool` 条目分别描述可用性、调用方式和可选 provider 集成。可用 Docker 工具提供宿主 `command` 和 `prefixArgs`，并在 `installation` 中保留原始容器可执行文件与参数，供配置持久化使用。这些只读观察不属于项目证据或执行权限；字段定义见[工具箱类型](../../packages/experimental/security-analysis/src/toolbox-types.ts)。
 
 `DeviceDirectory` 包含已配置的环境选项和缓存或未检测的 `DeviceInventory`。独立前提检查与 branded `RadioDeviceId` 描述软件、驱动及可见接口；观测时间用于区分保留数据和失败的刷新。这些值仅保存在内存中，不代表抓包权限或无线采集就绪。参见[设备类型](../../packages/experimental/security-analysis/src/device-types.ts)。
@@ -238,7 +240,7 @@ Optional security profile service; default application compositions remain indep
  * @param agent - authenticated Web session.
  * @returns environment labels, tool identities and registered operations.
  */
-@Remote('configuration') async configuration(agent: Agent): Promise<string>
+@Remote('configuration') async configuration(agent: Agent): Promise<WorkbenchConfiguration>
 
 /**
  * Save resources explicitly selected by a user for future tasks in this workspace.
@@ -246,7 +248,7 @@ Optional security profile service; default application compositions remain indep
  * @param input - JSON containing environmentIds, maxAttempts, and expectedRevision.
  * @returns refreshed configuration; existing project permissions are unchanged.
  */
-@Remote('configureWorkspace') async configureWorkspace(agent: Agent, input: string): Promise<string>
+@Remote('configureWorkspace') async configureWorkspace(agent: Agent, input: string): Promise<WorkbenchConfiguration>
 
 /**
  * Inspect or manage one configured environment from an operator gesture.

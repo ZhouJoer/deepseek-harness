@@ -6,6 +6,8 @@ The experimental [security domain](../../packages/experimental/security-analysis
 
 ## Durable records
 
+`WorkbenchConfiguration` is the object returned by `configuration` and `configureWorkspace`. It includes material limits, projects, providers, environments and the knowledge interval. Its workspace value is null without a workspace; the attempt limit is absent until configured. The [configuration types](../../packages/experimental/security-analysis/src/workbench-configuration-types.ts) define the browser-safe fields.
+
 `ToolboxDirectory` contains configured environment choices and one measured or explicitly unchecked `ToolboxInventory`. Its `ToolboxTool` entries separate availability, invocation method and optional provider integration. Available Docker tools expose the Host `command` and `prefixArgs`, with the original container executable and arguments in `installation` for configuration persistence. These read-only observations are not project evidence or execution authority; fields are defined in [toolbox types](../../packages/experimental/security-analysis/src/toolbox-types.ts).
 
 `DeviceDirectory` contains configured environment choices and a cached or unchecked `DeviceInventory`. Independent prerequisite checks and branded `RadioDeviceId` values describe software, drivers and visible interfaces; observation timestamps distinguish retained data from failed refreshes. These values are transient and do not establish capture permission or radio readiness. See [device types](../../packages/experimental/security-analysis/src/device-types.ts).
@@ -238,7 +240,7 @@ Optional security profile service; default application compositions remain indep
  * @param agent - authenticated Web session.
  * @returns environment labels, tool identities and registered operations.
  */
-@Remote('configuration') async configuration(agent: Agent): Promise<string>
+@Remote('configuration') async configuration(agent: Agent): Promise<WorkbenchConfiguration>
 
 /**
  * Save resources explicitly selected by a user for future tasks in this workspace.
@@ -246,7 +248,7 @@ Optional security profile service; default application compositions remain indep
  * @param input - JSON containing environmentIds, maxAttempts, and expectedRevision.
  * @returns refreshed configuration; existing project permissions are unchanged.
  */
-@Remote('configureWorkspace') async configureWorkspace(agent: Agent, input: string): Promise<string>
+@Remote('configureWorkspace') async configureWorkspace(agent: Agent, input: string): Promise<WorkbenchConfiguration>
 
 /**
  * Inspect or manage one configured environment from an operator gesture.

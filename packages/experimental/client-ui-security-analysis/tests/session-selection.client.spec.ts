@@ -11,5 +11,7 @@ it('prefers the current matching coordinator and falls back to the latest access
   expect(selectCoordinator(ids, directory, ['archived' as SessionId])).toBe('current')
   directory.byId['current' as SessionId] = { ...directory.byId['current' as SessionId]!, retainedBy: {} }
   expect(selectCoordinator(ids, directory, ['archived' as SessionId])).toBe('recent')
+  directory.byId['current' as SessionId]!.updatedAt = directory.byId['recent' as SessionId]!.updatedAt
+  expect(selectCoordinator(['current', 'recent'] as SessionId[], directory, [])).toBe('current')
   expect(selectCoordinator(['missing', 'child', 'archived'] as SessionId[], directory, ['archived' as SessionId])).toBeUndefined()
 })

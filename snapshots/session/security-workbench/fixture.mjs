@@ -60,6 +60,7 @@ export async function apply(ctx) {
     subprocess.spawn = originalSpawn
   })
   ctx.on('agent/request', async (_request, next) => ({ ...await next(), maxTokens: 4096 }))
+  const observationFailure = process.env.DSH_SECURITY_OBSERVATION_FAILURE === '1'
   const entry = process.env.DSH_EXAMPLE_MODE === 'lib' ? 'lib/index.js' : 'src/index.ts'
   const plugin = await import(new URL(`../../../packages/experimental/security-analysis/${entry}`, import.meta.url))
   await ctx.plugin(plugin.default, {
@@ -68,7 +69,8 @@ export async function apply(ctx) {
     toolCatalogPath: join(process.env.DSH_HOME, 'security-tool-catalog.json'),
     environments: [{ id: 'fixture-remote', label: 'Remote toolbox', kind: 'docker', cwd: process.cwd(),
       externalContainer: { name: 'fixture-container', workdir: '/analysis' },
-      tools: [{ id: 'docker', command: dockerCommand, prefixArgs: dockerPrefix, versionArgs: ['--version'], source: 'Fixture endpoint' }] }],
+      tools: [{ id: 'docker', command: dockerCommand, prefixArgs: dockerPrefix, versionArgs: ['--version'], source: 'Fixture endpoint' }] },
+      ...observationFailure ? [{ id: 'fixture-local', label: 'Local binary observations', kind: 'local', cwd: process.cwd(), tools: [] }] : []],
     knowledgeIntervalMs: 0,
     analysisTurnTokens: 1000,
     evolution: { provider: 'deepseek-official', model: 'deepseek-v4-flash-vision-exp' },
@@ -76,6 +78,10 @@ export async function apply(ctx) {
   const environmentEntry = process.env.DSH_EXAMPLE_MODE === 'lib' ? 'lib/environment-local.js' : 'src/environment-local.ts'
   const environments = await import(new URL(`../../../packages/experimental/security-analysis/${environmentEntry}`, import.meta.url))
   await ctx.plugin(environments, {})
+  if (observationFailure) {
+    const failure = await import('../security-observation-failure/fixture.mjs')
+    failure.apply(ctx)
+  }
   ctx.inject(['securityWorkbench'], (securityCtx) => {
     const pack = JSON.stringify({ version: 1, id: 'fixture-pack', label: 'Fixture tools', tools: [
       { id: 'fixture-console', label: 'Fixture Console', commands: ['fixture-console'], platforms: ['linux'],

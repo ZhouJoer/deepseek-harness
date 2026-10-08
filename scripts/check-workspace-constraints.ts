@@ -195,7 +195,7 @@ const packageFileExtras: Readonly<Record<string, readonly string[]>> = {
   // the Python/Ghidra helpers must remain available after package installation.
   '@deepseek-ai/dsh-experimental-security-analysis': [
     'lib/workbench.js', 'lib/environment.js', 'lib/ghidra.js', 'lib/frida.js',
-    'lib/android.js', 'lib/commands.js', 'lib/legacy.js', 'lib/web.js', 'lib/laboratory.js', 'lib/offline.js', 'lib/packet-capture.js',
+    'lib/android.js', 'lib/commands.js', 'lib/web.js', 'lib/laboratory.js', 'lib/offline.js', 'lib/packet-capture.js',
     'lib/model-*.js', 'lib/process-*.js', 'lib/toolbox-*.js', 'lib/types-*.js', 'lib/source-*.js', 'lib/assessment-*.js', 'lib/artifacts-*.js', 'lib/device-inventory-*.js',
     'resources/**/*.py', 'resources/**/*.js', 'resources/toolbox/Dockerfile', 'resources/offline/*',
   ],
