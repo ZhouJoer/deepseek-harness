@@ -101,6 +101,8 @@ Job 负责取消并等待子任务清理。成功取得 job ID 只代表已派�
 
 只读 `toolboxDirectory` Remote 立即显示未检测的定义，打开页面不运行探测。`toolboxInventory` 和 `security_environment` 按当前目录检测所选工具 ID 及其递归依赖。Host 与 CLI 共享定义校验、候选路径发现、依赖排序、探测参数和结果解析。CLI `doctor` 报告 Python 解释器、虚拟环境和 pip 信息；`import`、`export`、`--tag` 与 `--collection` 管理可复用工具包。`security_capabilities` 按查询词、标签、集合或工具 ID 返回有界摘要；`details` 加载所选工具或 `providerId` 的完整说明。`toolDiscoveryPageSize` 限制每页数量，`modelResultBytes` 限制完整响应。系统指令仅保留发现原则。TShark 详情区分可执行文件、驱动、接口与访问检查，并包含 Wireshark extcap 发现方法；版本检测不能证明抓包权限。
 
+共享指导优先采用原生机器可读结果，并按当前安全问题选择有界查询。按需加载的[工具指南](src/builtin-tools.ts)说明二进制、抓包、动态、Android、HTTP 和扫描工具的格式及限制；[调查方法](src/methods.ts)衔接所需观察、最小查询、结果解释和停止决策。输入身份、参数和覆盖范围匹配时复用已保存结果。小型任务脚本筛选或关联字段，同时保留原始文件和定位信息。把文本放入 `stdout` 不等于结构化其内容。空结果、部分结果、截断、格式不支持或执行失败均需明确保留缺口；工具观察和建模假设应与 finding 及 review 结论区分。
+
 `toolPreferences` Remote 只保存经过身份验证的活跃会话偏好；偏好是软建议，不改变角色、环境和执行权限，也不限制发现其它工具。下一次模型请求通过既有 runtime-context 快照记录这些 ID。安全委派在创建子会话时复制偏好，之后父子独立；会话释放或 Host 重启后恢复自动发现，不写入项目记录。
 
 provider 原始输出先保存，再提交证据引用。证据记录保留样本、工具版本、参数、来源 Session/call、完整性和批准计划。`security_evidence` 按字节分页，或按行号选取已保存的源码读取结果；分页读取原始字节。检索根据项目记录及原始证据重建 SQLite FTS，支持中文分词和标识符。共享经验必须经过用户审核，始终是参考材料，不是本项目证据。

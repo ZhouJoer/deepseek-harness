@@ -417,8 +417,10 @@ describe('security workbench Loader composition', () => {
     await agent.whenIdle()
     const request = JSON.stringify(model.requests[0])
     expect(request).toContain('query security_capabilities')
+    expect(request).toContain('Prefer native machine-readable results')
     expect(request).not.toContain('/tools/radare2')
     expect(request).not.toContain('USBPcapCMD.exe')
+    expect(request).not.toContain('pdgj')
     const result = await execute(ctx, agent, 'security_capabilities', { toolIds: ['radare2'], details: true })
     expect(result.isError).toBe(false)
     expect(JSON.stringify(result)).toContain('prefer available radare2/r2')
@@ -426,6 +428,13 @@ describe('security workbench Loader composition', () => {
     const web = await execute(ctx, agent, 'security_capabilities', { collectionIds: ['web'] })
     expect(JSON.stringify(web.value)).toContain('nuclei')
     expect(JSON.stringify(web.value)).not.toContain('radare2')
+    expect(JSON.stringify(web.value)).not.toContain('Prefer native XML')
+    for (const id of ['radare2', 'r2ghidra', 'r2pipe', 'unicorn', 'frida', 'jadx', 'adb', 'curl', 'nmap', 'nuclei', 'tshark', 'file', 'strings', 'readelf', 'objdump', 'nm']) {
+      const detail = await execute(ctx, agent, 'security_capabilities', { toolIds: [id], details: true })
+      expect(detail.isError).toBe(false)
+      const { catalog } = JSON.parse(detail.content.filter(block => block.type === 'text').map(block => block.text).join('')) as { catalog: { id: string; guide: string }[] }
+      expect(catalog.map(({ id, guide }) => ({ id, guide }))).toMatchSnapshot(id)
+    }
     ctx.securityWorkbench.toolPreferences(agent, JSON.stringify({ toolIds: ['radare2'], tags: [], collectionIds: [] }))
     const scope = scopeOf(agent.ctx)
     if (!scope) throw new Error('Expected an agent scope')
@@ -1060,7 +1069,9 @@ describe('security workbench Loader composition', () => {
         meta: { parentSession: agent.id, origin: 'subagent', delegationDepth: 1 } })
       const visible = ctx.tools.schemas(child).map(tool => tool.name)
       expect(visible).toContain('skill')
-      expect((await execute(ctx, child, 'skill', { name: 'security-investigation' })).isError).toBe(false)
+      const investigation = await execute(ctx, child, 'skill', { name: 'security-investigation' })
+      expect(investigation.isError).toBe(false)
+      expect(JSON.stringify(investigation)).toContain('Work from question to required observations')
       expect(visible).not.toContain('security_execute')
       expect(visible).not.toContain('security_delegate')
       expect(visible.includes('security_static')).toBe(['reconnaissance', 'reverse-analyst', 'web-analyst'].includes(role))
@@ -1072,7 +1083,20 @@ describe('security workbench Loader composition', () => {
           .rejects.toThrow('role')
         expect((await execute(ctx, child, 'security_capture_analysis', { assetId: asset.value.id })).isError).toBe(true)
         expect(() => controller.analysisAsset(child.id, asset.value.id)).toThrow('Analysis collection role required')
-      } else expect(() => controller.analysisAsset(child.id, asset.value.id)).not.toThrow()
+      } else {
+        expect(() => controller.analysisAsset(child.id, asset.value.id)).not.toThrow()
+        const childScope = scopeOf(child.ctx)
+        if (!childScope) throw new Error('Expected a child scope')
+        const prompt = await ctx.systemPrompt.assemble({ agent: child, scope: childScope })
+        expect(JSON.stringify(prompt)).toContain('Prefer native machine-readable results')
+        for (const id of ['radare2', 'tshark', 'curl']) {
+          const detail = await execute(ctx, child, 'security_capabilities', { toolIds: [id], details: true })
+          expect(detail.isError).toBe(false)
+          const parentDetail = await execute(ctx, agent, 'security_capabilities', { toolIds: [id], details: true })
+          const catalogOf = (result: typeof detail) => (JSON.parse(result.content.filter(block => block.type === 'text').map(block => block.text).join('')) as { catalog: object[] }).catalog
+          expect(catalogOf(detail)).toEqual(catalogOf(parentDetail))
+        }
+      }
       for (const name of ['security_execute', 'security_delegate', 'security_command'])
         expect((await execute(ctx, child, name)).isError).toBe(true)
       const capabilities = await execute(ctx, child, 'security_capabilities', { providerId: 'binary', details: true })

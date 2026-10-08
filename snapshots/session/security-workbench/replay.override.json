@@ -66,6 +66,21 @@
         }
       },
       {
+        "type": "block-start",
+        "index": 2,
+        "blockType": "tool-call"
+      },
+      {
+        "type": "block-end",
+        "index": 2,
+        "block": {
+          "type": "tool-call",
+          "id": "load-analysis-output-guides",
+          "arguments": "{\"toolIds\":[\"r2ghidra\",\"tshark\",\"curl\"],\"details\":true}",
+          "name": "security_capabilities"
+        }
+      },
+      {
         "type": "usage",
         "usage": {
           "inputTokens": 3,
