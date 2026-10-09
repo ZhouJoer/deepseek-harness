@@ -56,8 +56,8 @@
 .intervention { position: sticky; top: 0; z-index: 10; display: flex; flex-wrap: wrap; gap: 8px; background: var(--dsw-alias-bg-module-platform); padding: 12px 0; margin-bottom: 16px; }
 .detailHeader { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; margin-bottom: 24px; }
 .detailHeader > div:first-child { min-width: 0; }
-.detailHeader h2 { font-size: 24px; margin: 12px 0 8px; overflow-wrap: anywhere; }
-.detailHeader p { white-space: pre-wrap; overflow-wrap: anywhere; }
+.detailHeader h2 { font-size: 20px; font-weight: 500; margin: 12px 0 8px; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.detailHeader p { white-space: pre-wrap; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .detailTabs { display: flex; gap: 24px; overflow-x: auto; border-bottom: 1px solid var(--dsw-alias-border-l2); margin: 0 0 24px; }
 .detailTabs button { flex-shrink: 0; padding: 12px 0; border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: transparent; color: var(--dsw-alias-label-secondary); }
 .detailTabs button[aria-pressed="true"] { color: var(--dsw-alias-link); border-bottom-color: var(--dsw-alias-link); }

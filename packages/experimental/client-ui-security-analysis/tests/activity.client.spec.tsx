@@ -8,8 +8,18 @@ import type { SecurityActivityFrame, WorkbenchView } from '@deepseek-ai/dsh-expe
 import { recordSchema } from '@deepseek-ai/dsh-experimental-security-analysis/src/workbench/model.ts'
 import { ActivityPanel } from '../src/client/ActivityPanel.tsx'
 import { en } from '../src/client/locales.ts'
+import { investigationFixture } from './investigation-fixture.ts'
 
 afterEach(cleanup)
+it('uses the current finding instead of a checkpoint historical confirmation', () => {
+  render(<ActivityPanel project="project" view={investigationFixture()} changed={vi.fn()} openChild={vi.fn()}
+    followActivity={async function* () {}} activityDetails={async () => ({ items: [], next: null, through: 0 })}
+    subscribeReset={() => () => {}} t={makeTranslate(en, common)} />)
+  const direction = screen.getByRole('heading', { name: 'Inspect authorization' }).closest('article')!
+  expect(within(direction).getByText('Suspected')).toBeTruthy()
+  expect(within(direction).queryByText('Confirmed')).toBeNull()
+  expect(within(direction).queryByText('Old title')).toBeNull()
+})
 const checkpoint = (id: string, phase: string, title: string) => recordSchema.parse({ kind: 'checkpoint', value: {
   id, engagementId: 'project', phase, title, reason: 'A new caller needs inspection', summary: 'Only an observation',
   next: 'Read the caller', evidenceIds: [], findings: [], createdAt: 1, updatedAt: 1,
