@@ -17,6 +17,7 @@ import { ProjectManagement, projectLabel } from './ProjectManagement.tsx'
 import { KnowledgePanel } from './KnowledgePanel.tsx'
 import { ActivityPanel, type ActivityActions } from './ActivityPanel.tsx'
 import { PlanReview } from './PlanReview.tsx'
+import { TechnicalDetails } from './TechnicalDetails.tsx'
 
 /** Service actions injected by the Cordis browser plugin. */
 export interface WorkbenchActions extends ActivityActions, ToolPreferenceActions {
@@ -434,8 +435,7 @@ export function Workbench(props: WorkbenchProps) {
                         <p>
                           {'kind' in item.value ? item.value.kind === 'web' ? item.value.origin + item.value.pathPrefix : t('sourceSnapshot') : item.value.format + ' · ' + t('measured')}
                         </p>
-                        <code>{'kind' in item.value && item.value.kind === 'web' ? item.value.instanceId : item.value.artifact.sha256}</code>
-                        <small>{item.value.id}</small>
+                        <TechnicalDetails t={t} value={item.value} />
                         {!('kind' in item.value) && <>
                           <p>{t('captureFileBytes')} {item.value.artifact.size}</p>
                           {configuration.providers.some(provider => provider.id === 'packet-capture') && <CaptureControls t={t}
@@ -482,10 +482,10 @@ export function Workbench(props: WorkbenchProps) {
                   <article key={item.value.id} className={css.card}>
                     <strong>{t(item.value.verdict)}</strong>
                     <p>{item.value.explanation}</p><p>{item.value.uncertainty}</p>
-                    <code>{item.value.findingId} · {item.value.findingHash}</code>
-                    <p>{t('supportingEvidence')}: {item.value.supportingEvidenceIds.join(', ')}</p>
-                    <p>{t('opposingEvidence')}: {item.value.opposingEvidenceIds.join(', ')}</p>
-                    <small>{item.value.reviewerSessionId}</small>
+                    <p>{findings.find(finding => finding.value.id === item.value.findingId)?.value.title ?? t('unavailableReference')}</p>
+                    <p>{t('supportingEvidence')}: {item.value.supportingEvidenceIds.map(id => evidence.find(entry => entry.value.id === id)?.value.title ?? t('unavailableReference')).join(', ')}</p>
+                    <p>{t('opposingEvidence')}: {item.value.opposingEvidenceIds.map(id => evidence.find(entry => entry.value.id === id)?.value.title ?? t('unavailableReference')).join(', ')}</p>
+                    <TechnicalDetails t={t} value={item.value} />
                     <button disabled={busy > 0} onClick={() => void perform(() => command({ kind: 'conclude', reviewId: item.value.id }))}>{t('applyReview')}</button>
                   </article>
                 ))}
@@ -541,7 +541,7 @@ export function Workbench(props: WorkbenchProps) {
                         </p>
                         <p>{item.value.criterion}</p>
                         <p>{item.value.rationale}</p>
-                        <small>{item.value.id}</small>
+                        <TechnicalDetails t={t} value={item.value} />
                         {field('rationale', true)}
                         {field('evidenceIds')}
                         <button
@@ -785,16 +785,13 @@ export function Workbench(props: WorkbenchProps) {
                       .map(item => (
                         <article key={item.value.id} className={css.card}>
                           <strong>{item.value.title}</strong>
-                          <small>{item.value.id}</small>
                           {item.kind === 'evidence' ? (
                             <>
                               <p>{item.value.summary}</p>
                               {item.value.operation === 'analysis-log' && <p>{t('scriptAnalysisLog')}</p>}
                               {item.value.method && <p>{t(item.value.method === 'static' ? 'staticObservation' : item.value.method === 'simulation' ? 'offlineSimulation' : 'deviceObservation')}</p>}
-                              {item.value.provider === 'source' && <code>{JSON.stringify(item.value.request)}</code>}
                               {item.value.failure && <p className={css.error}>{item.value.failure}</p>}
                               {item.value.cleanup && <p>{t('cleanup')}: {item.value.cleanup}</p>}
-                              <small>{item.value.toolVersion}</small>
                               {item.value.incomplete && <p className={css.error}>{t('incomplete')}</p>}
                               <button
                                 onClick={() =>
@@ -813,6 +810,7 @@ export function Workbench(props: WorkbenchProps) {
 
                             </>
                           )}
+                          <TechnicalDetails t={t} value={item.value} />
                         </article>
                       ))}
                   </>

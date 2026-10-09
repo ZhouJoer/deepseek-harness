@@ -2,10 +2,11 @@
 import { useEffect, useRef, useState } from 'react'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import { MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { SecurityActivityBrief, SecurityActivityFrame, SecurityActivityPage, SecurityDelegation, SecurityToolUsage, WorkbenchView } from '@deepseek-ai/dsh-experimental-security-analysis/client'
+import type { SecurityActivityFrame, SecurityActivityPage, SecurityDelegation, SecurityToolUsage, WorkbenchView } from '@deepseek-ai/dsh-experimental-security-analysis/client'
 import type { NS } from './locales.ts'
 import { DelegationList } from './DelegationList.tsx'
 import css from './Dashboard.module.css'
+import { useProjectActivity, type ProjectActivity } from './useProjectActivity.ts'
 
 /** Project-scoped activity reads and child-history navigation shared by progress views. */
 export interface ActivityActions {
@@ -28,39 +29,26 @@ type Props = ActivityActions & PropsLocale<typeof NS> & {
  * @returns three-line briefs with on-demand execution and evidence details.
  */
 export function ActivityPanel(props: Props) {
+  const activity = useProjectActivity(props)
+  return <ActivityTimeline {...props} activity={activity} />
+}
+
+/** Render execution details using the project owner's subscription.
+ * @param props - committed view and shared activity state.
+ * @returns research briefs and lazily loaded calls.
+ */
+export function ActivityTimeline(props: Props & { activity: ProjectActivity }) {
   const { t, project } = props
   const markdownLabels = { code: { copyLabel: t('markdownCopy'), copiedLabel: t('markdownCopied') }, footnotes: t('markdownFootnotes') }
-  const [usage, setUsage] = useState<SecurityToolUsage[]>([])
-  const [briefs, setBriefs] = useState<SecurityActivityBrief[]>([])
-  const [connected, setConnected] = useState(false)
+  const { usage, briefs, connected } = props.activity
   const [error, setError] = useState('')
-  const [epoch, setEpoch] = useState(0)
   const [pages, setPages] = useState<Record<string, SecurityActivityPage>>({})
   const [loading, setLoading] = useState<string>()
-  const current = useRef(props)
   const generation = useRef(0)
-  current.current = props
-  useEffect(() => props.subscribeReset(() => { setEpoch(value => value + 1) }), [props.subscribeReset])
   useEffect(() => {
-    const abort = new AbortController()
-    generation.current++
-    setUsage([]); setBriefs([]); setPages({}); setLoading(undefined); setConnected(false); setError('')
-    void (async () => {
-      try {
-        for await (const frame of current.current.followActivity(project, abort.signal)) {
-          if (abort.signal.aborted) break
-          if (frame.type === 'snapshot' || frame.type === 'activity') setUsage(frame.usage)
-          if (frame.type === 'snapshot' || frame.type === 'activity') setBriefs(frame.briefs)
-          if (frame.type === 'snapshot' || frame.type === 'project') current.current.changed(frame.view)
-          setConnected(true)
-        }
-        if (!abort.signal.aborted) setConnected(false)
-      } catch (error) {
-        if (!abort.signal.aborted) { setError(String(error)); setConnected(false) }
-      }
-    })()
-    return () => { generation.current++; abort.abort() }
-  }, [project, epoch])
+    generation.current++; setPages({}); setLoading(undefined); setError('')
+    return () => { generation.current++ }
+  }, [project])
   const read = async (id: string, more = false) => {
     const token = generation.current
     setLoading(id); setError('')
@@ -84,8 +72,8 @@ export function ActivityPanel(props: Props) {
   ]
   return <section className={css.timeline} aria-label={t('activityTitle')}>
     <div className={css.timelineHeader}><h3>{t('activityTitle')}</h3><span className={css.connection} data-live={connected} role="status">{t(connected ? 'activityLive' : 'activityDisconnected')}</span>
-      {!connected && <button onClick={() => { setEpoch(value => value + 1) }}>{t('dashboardRetry')}</button>}</div>
-    {error && <p role="alert" className={css.error}>{error}</p>}
+      {!connected && <button onClick={() => { props.activity.retry() }}>{t('dashboardRetry')}</button>}</div>
+    {(error || props.activity.error) && <p role="alert" className={css.error}>{error || props.activity.error}</p>}
     <p className={css.emptyActivity}>{t('activityReferenceHint')}</p>
     {directions.map((direction, index) => {
       const tools = new Map<string, SecurityToolUsage>()
@@ -119,8 +107,12 @@ export function ActivityPanel(props: Props) {
           </div>) : <span className={css.emptyActivity}>{t('activityNoRecords')}</span>}
         </div>
         <div className={css.brief}><span className={css.briefLabel}>{t('activityConclusion')}</span>
-          {direction.findings.length ? direction.findings.map(item => <p key={item.id}>
-            <span className={css.badge}>{t(item.status)}</span> {item.title}</p>)
+          {direction.findings.length ? direction.findings.map((item) => {
+            const current = props.view.records.find(record => record.kind === 'finding' && record.value.id === item.id)
+            return <p key={item.id}>{current?.kind === 'finding'
+              ? <><span className={css.badge}>{t(current.value.status)}</span> {current.value.title}</>
+              : t('unavailableReference')}</p>
+          })
             : summary ? <><span className={css.observation}>{t('activityObservation')}</span><MarkdownText text={summary} labels={markdownLabels} /></> : <p className={css.emptyActivity}>{t('activityNoConclusion')}</p>}
         </div>
         <div className={css.nextAction}><span className={css.briefLabel}>{t('activityNext')}</span><MarkdownText text={next || t('activityPending')} labels={markdownLabels} /></div>
@@ -132,16 +124,16 @@ export function ActivityPanel(props: Props) {
           {!direction.evidenceIds.length && <p>{t('activityNoEvidence')}</p>}
           {direction.evidenceIds.map((id) => {
             const evidence = props.view.records.find(item => item.kind === 'evidence' && item.value.id === id)
-            return <p key={id}>{id} · {evidence?.kind === 'evidence' ? evidence.value.summary : t('activityNoRecords')}</p>
+            return <p key={id}>{evidence?.kind === 'evidence' ? evidence.value.title : t('unavailableReference')}</p>
           })}
           {page?.items.map(item => <article className={css.record} key={item.id}>
             <strong>{item.tools.join(', ')} · {t(item.status === 'cancelled' ? 'activityCancelled' : item.status === 'unknown' ? 'activityUnknown' : item.status)}</strong>
             {item.incomplete && <p>{t('activityIncomplete')}</p>}
-            <pre className={css.artifact}>{item.parameters}</pre><pre className={css.artifact}>{item.detail}</pre>
-            <p>{t('activityCall')}: {item.sessionId} / {item.callId}</p>
+            <details><summary>{t('toolDetails')}</summary><pre className={css.artifact}>{item.parameters}</pre><pre className={css.artifact}>{item.detail}</pre>
+              <p>{t('activityCall')}: {item.sessionId} / {item.callId}</p></details>
             {props.view.records.filter(record => record.kind === 'evidence' && (item.evidenceIds.includes(record.value.id)
               || (record.value.source.sessionId === item.sessionId && record.value.source.callId === item.callId))).map(record => record.kind === 'evidence'
-              ? <p key={record.value.id}>{record.value.id} · {record.value.summary}</p> : null)}
+              ? <p key={record.value.id}>{record.value.title} · {record.value.summary}</p> : null)}
           </article>)}
           {loading === direction.id && <p role="status">{t('dashboardLoading')}</p>}
           {page?.next !== null && page?.next !== undefined && <button disabled={loading === direction.id} onClick={() => void read(direction.id, true)}>{t('activityMore')}</button>}

@@ -2,7 +2,7 @@
 import { workbenchConfiguration } from './configuration-fixture.client.ts'
 /** Operator gestures, authoritative state and stale-session isolation. @module */
 import { afterEach, it, expect, vi } from 'vitest'
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
@@ -200,13 +200,14 @@ it('saves retrospective fields without evidence or reasoning fields', async () =
   } })
 })
 
-it('reads an immutable source location and shows its observation method', async () => {
+it('reads an immutable source location and keeps partial observation warnings visible', async () => {
   const asset = recordSchema.parse({ kind: 'asset', value: { kind: 'source', id: 'source', engagementId: 'project', label: 'Sources',
     artifact: { sha256: 'a'.repeat(64), size: 100, mediaType: 'application/json' }, identity: 'measured' } })
   const evidence = recordSchema.parse({ kind: 'evidence', value: { id: 'observation', engagementId: 'project', assetId: 'source',
     title: 'Read lines', summary: 'Saved source lines', provider: 'source', operation: 'read', toolVersion: 'source v1',
     request: { path: 'app.py', startLine: 9 }, source: { sessionId: 'parent', callId: 'read' },
-    artifact: { sha256: 'b'.repeat(64), size: 100, mediaType: 'application/json' }, method: 'static', incomplete: false, createdAt: 1 } })
+    artifact: { sha256: 'b'.repeat(64), size: 100, mediaType: 'application/json' }, method: 'static', incomplete: true,
+    failure: 'The read stopped before the final line.', createdAt: 1 } })
   const api = actions({ load: vi.fn(async () => ({ ...view, records: [project, asset] })),
     observe: vi.fn(async () => ({ revision: 9, records: [project, asset, evidence] })) })
   render(<Workbench {...props(api)} />)
@@ -214,13 +215,55 @@ it('reads an immutable source location and shows its observation method', async 
   await screen.findByRole('heading', { name: 'Review the sample' })
   fireEvent.click(screen.getByText('高级详情'))
   fireEvent.click(screen.getByRole('button', { name: '资产' }))
+  const assetDetails = within(screen.getByText('Sources', { selector: 'strong' }).closest('article')!).getByText('技术详情').closest('details')!
+  expect(assetDetails.open).toBe(false)
+  expect(assetDetails.textContent).toContain('a'.repeat(64))
   fireEvent.change(screen.getAllByLabelText('运行环境').at(-1)!, { target: { value: 'local' } })
   fireEvent.change(screen.getByLabelText('快照中的相对文件路径'), { target: { value: 'app.py' } })
   fireEvent.change(screen.getByLabelText('起始行号'), { target: { value: '9' } })
   fireEvent.click(screen.getByRole('button', { name: '按行读取' }))
   await screen.findByText('静态观察')
+  expect(screen.getByText('The read stopped before the final line.').closest('details')).toBeNull()
+  expect(screen.getByText(zh.incomplete).closest('details')).toBeNull()
+  const technicalDetails = within(screen.getByText('Read lines', { selector: 'strong' }).closest('article')!).getByText('技术详情').closest('details')!
+  expect(technicalDetails.open).toBe(false)
+  expect(technicalDetails.textContent).toContain('source v1')
+  expect(technicalDetails.textContent).toContain('b'.repeat(64))
+  fireEvent.click(within(technicalDetails).getByText('技术详情'))
+  expect(technicalDetails.open).toBe(true)
   expect(JSON.parse(vi.mocked(api.observe).mock.calls[0]![1])).toMatchObject({
     provider: 'source', operation: 'read', assetId: 'source', parameters: { path: 'app.py', startLine: 9 } })
+})
+
+it('uses evidence and finding titles in reviews while retaining identifiers in technical details', async () => {
+  const observation = recordSchema.parse({ kind: 'evidence', value: { id: 'observation-id', engagementId: 'project', assetId: 'sample',
+    title: 'Parser length comparison', summary: 'The comparison precedes the copy.', provider: 'source', operation: 'read',
+    toolVersion: 'source v1', request: {}, source: { sessionId: 'review-parent', callId: 'read' },
+    artifact: { sha256: 'b'.repeat(64), size: 100, mediaType: 'text/plain' }, incomplete: false, createdAt: 1 } })
+  const finding = recordSchema.parse({ kind: 'finding', value: { id: 'finding-id', engagementId: 'project', assetId: 'sample',
+    title: 'Parser bounds check', explanation: 'The comparison excludes an oversized copy.', status: 'refuted',
+    evidenceIds: ['observation-id'], conditions: 'Supplied source snapshot', review: '' } })
+  const review = recordSchema.parse({ kind: 'review', value: { id: 'review-id', engagementId: 'project', assetId: 'sample',
+    findingId: 'finding-id', findingHash: 'c'.repeat(64), reviewerSessionId: 'reviewer-session-id', verdict: 'refuted',
+    supportingEvidenceIds: ['observation-id'], opposingEvidenceIds: ['missing-observation'],
+    explanation: 'The source includes a length check.', uncertainty: 'Runtime behavior remains untested.', createdAt: 2 } })
+  const api = actions({ load: vi.fn(async () => ({ ...view, records: [project, observation, finding, review] })) })
+  render(<Workbench {...props(api)} />)
+  fireEvent.click(screen.getByRole('button', { name: '安全分析' }))
+  await screen.findByRole('heading', { name: 'Review the sample' })
+  fireEvent.click(screen.getByText('高级详情'))
+  fireEvent.click(screen.getByRole('button', { name: zh.reviews }))
+  expect(screen.getByText('Parser bounds check')).toBeTruthy()
+  expect(screen.getByText(`${zh.supportingEvidence}: Parser length comparison`)).toBeTruthy()
+  expect(screen.getByText(`${zh.opposingEvidence}: 相关记录不可读取`)).toBeTruthy()
+  expect(screen.getByText('Runtime behavior remains untested.')).toBeTruthy()
+  const technicalDetails = screen.getByText('技术详情').closest('details')!
+  expect(technicalDetails.open).toBe(false)
+  expect(technicalDetails.textContent).toContain('finding-id')
+  expect(technicalDetails.textContent).toContain('reviewer-session-id')
+  expect(technicalDetails.textContent).toContain('c'.repeat(64))
+  fireEvent.click(within(technicalDetails).getByText('技术详情'))
+  expect(technicalDetails.open).toBe(true)
 })
 
 it('starts from conversation guidance and keeps manual project setup available on demand', async () => {

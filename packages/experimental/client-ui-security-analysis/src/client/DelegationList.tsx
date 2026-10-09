@@ -2,6 +2,7 @@
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { SecurityDelegation, WorkbenchView } from '@deepseek-ai/dsh-experimental-security-analysis/client'
 import type { NS, SecurityKey } from './locales.ts'
+import { TechnicalDetails } from './TechnicalDetails.tsx'
 import css from './Dashboard.module.css'
 
 type Props = PropsLocale<typeof NS> & {
@@ -57,7 +58,12 @@ export function DelegationList({ items, view, openChild, t }: Props) {
             <dt>{t('delegationEvidence')}</dt><dd>{item.report.evidenceIds.length
               ? <ul>{item.report.evidenceIds.map((id) => {
                 const evidence = view.records.find(record => record.kind === 'evidence' && record.value.id === id)
-                return <li key={id}><code>{id}</code>{evidence?.kind === 'evidence' && <> · {evidence.value.title}<p>{evidence.value.summary}</p></>}</li>
+                return <li key={id}>
+                  {evidence?.kind === 'evidence'
+                    ? <><strong>{evidence.value.title}</strong><p>{evidence.value.summary}</p></>
+                    : <p>{t('unavailableReference')}</p>}
+                  <TechnicalDetails t={t} value={{ evidenceId: id }} />
+                </li>
               })}</ul> : t('delegationNoEvidence')}</dd></>}
         </dl>
         {item.child && <button onClick={() => { if (item.child) openChild(item.child) }}>{t('delegationOpenChild')}</button>}

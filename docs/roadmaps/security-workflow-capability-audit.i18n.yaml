@@ -1,0 +1,43 @@
+# Bilingual-pair consistency record for security-workflow-capability-audit.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/roadmaps/security-workflow-capability-audit.md
+/:
+  en: 13530885fbd64275
+  zh: 1423e5f87fd32fba
+/security-workflow-and-capability-audit:
+  en: a640bf37192d02c6
+  zh: c17f4478619a7c04
+/security-workflow-and-capability-audit/summary:
+  en: 7fd32392128575e8
+  zh: 969511e722d28041
+/security-workflow-and-capability-audit/contents:
+  en: e2bd345debe31566
+  zh: 60b16570b614f6c7
+/security-workflow-and-capability-audit/evidence-and-first-batch-constraints:
+  en: 223084cb933c7596
+  zh: d2fe789a93998b49
+/security-workflow-and-capability-audit/second-batch-workflow-audit:
+  en: 7d8f9d507ee4a470
+  zh: 4ad89fe8778ad474
+/security-workflow-and-capability-audit/second-batch-workflow-audit/aggregate-effort-and-finalization:
+  en: fe2a3e069fdf4168
+  zh: 15b1ea4ddfbba6c1
+/security-workflow-and-capability-audit/second-batch-workflow-audit/check-linked-delegation-and-useful-progress:
+  en: 25ca01b56ceab6a4
+  zh: 85429a6c1a557461
+/security-workflow-and-capability-audit/second-batch-workflow-audit/interruption-continuation-and-stale-work:
+  en: 40d0e7892b559a60
+  zh: bc094447558b48f2
+/security-workflow-and-capability-audit/third-batch-capability-audit:
+  en: 35dad1d078bbcc36
+  zh: fb4758eaa852df98
+/security-workflow-and-capability-audit/real-tool-acceptance:
+  en: 28300c22d36e7cac
+  zh: b724ee43f5b1798e
+/security-workflow-and-capability-audit/validation-and-audit-exit:
+  en: 495a1294fa72c1ea
+  zh: c9cbf811d57769a7
+/security-workflow-and-capability-audit/dev-note:
+  en: cbc7a9dfd9a32866
+  zh: 6c7ca4ae97bec671

@@ -8,6 +8,8 @@ English | [中文](security-harness-simplification.zh.md)
 
 ## Summary
 
+The [workflow and capability audit](security-workflow-capability-audit.md) records the second- and third-batch evidence, reproduction cases and acceptance work after the investigation-chain interface, without treating proposed backend capabilities as delivered.
+
 This plan guides contributors extending the existing security packages so users can configure a workspace, describe an objective and receive evidence-backed results. It covers security reasoning, tool use, delegation and the interface together. Status: in progress; unchecked steps are implementation work, not delivered capabilities. This document owns the refactoring order; the [security roadmap](security-analysis.md) retains the specialist-tool backlog, and the [package reference](../../packages/experimental/security-analysis/README.md) owns current behavior.
 
 ## Contents

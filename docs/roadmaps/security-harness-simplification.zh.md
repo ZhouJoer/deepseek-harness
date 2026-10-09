@@ -8,6 +8,8 @@ description: "自然语言安全任务、工具选择、agent 协作与 DSH 界�
 
 ## 摘要
 
+[流程与功能审计](security-workflow-capability-audit.zh.md)记录调查链路界面之后第二、三批的依据、复现场景及验收工作，不将拟议后端能力视为已交付。
+
 本计划指导贡献者扩展现有安全包，使用户配置工作区、描述目标后即可获得有证据支撑的结果。范围同时覆盖安全推理、工具使用、委派和界面。状态：实施中；未勾选步骤表示待完成工作，不表示能力已交付。本文维护重构顺序；[安全路线图](security-analysis.zh.md) 保留专项工具待办，[包参考](../../packages/experimental/security-analysis/README.zh.md) 维护当前行为。
 
 ## 目录

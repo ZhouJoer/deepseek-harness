@@ -1,0 +1,37 @@
+.root { container-type: inline-size; font-size: 13px; color: var(--dsw-alias-label-primary); }
+.toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 16px; }
+.toolbar input { flex: 1; min-width: 140px; }
+.toolbar > span { color: var(--dsw-alias-label-secondary); }
+.modes { display: flex; gap: 4px; }
+.root button { font: inherit; font-weight: 400; cursor: pointer; color: var(--dsw-alias-label-primary); }
+.root button[aria-pressed='true'] { border-color: var(--dsw-alias-link); color: var(--dsw-alias-link); }
+.workspace { display: flex; min-height: 560px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 12px; overflow: hidden; background: var(--dsw-alias-bg-layer-1); }
+.visual { flex: 1; min-width: 0; }
+.canvas { height: 620px; position: relative; --xy-background-color-default: var(--dsw-alias-bg-module-platform); --xy-node-background-color-default: var(--dsw-alias-bg-layer-1); --xy-edge-stroke-default: var(--dsw-alias-label-secondary); --xy-edge-label-background-color-default: var(--dsw-alias-bg-layer-1); --xy-edge-label-color-default: var(--dsw-alias-label-primary); --xy-attribution-background-color-default: var(--dsw-alias-bg-layer-1); }
+.canvas :global(.react-flow__node) { width: 240px; border-radius: 10px; }
+.canvas :global(.react-flow__node.selected) { outline: 2px solid var(--dsw-alias-link); outline-offset: 3px; }
+.root .card { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; width: 240px; height: 150px; padding: 16px; text-align: left; border: 1px solid var(--dsw-alias-border-l2); border-radius: 10px; background: var(--dsw-alias-bg-layer-1); }
+.card[data-attention='true'] { border-color: var(--dsw-alias-state-error-primary); }
+.card strong { font-size: 13px; font-weight: 500; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kind { font-size: 12px; color: var(--dsw-alias-label-secondary); }
+.summary { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; text-align: left; line-height: 1.5; color: var(--dsw-alias-label-secondary); }
+.state { color: var(--dsw-alias-link); font-size: 12px; }
+.zoom { position: absolute; left: 16px; bottom: 16px; display: flex; gap: 4px; }
+.zoom button { background: var(--dsw-alias-bg-layer-1); }
+.list { display: grid; gap: 12px; padding: 16px; max-height: 620px; overflow: auto; }
+.root .list button { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; text-align: left; padding: 16px; background: var(--dsw-alias-bg-layer-1); overflow-wrap: anywhere; }
+.list strong { font-weight: 500; }
+.inspector { width: 340px; flex-shrink: 0; box-sizing: border-box; padding: 20px; border-left: 1px solid var(--dsw-alias-border-l2); max-height: 620px; overflow: auto; outline: none; }
+.inspector header { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.inspector h3 { font-size: 16px; font-weight: 500; margin: 20px 0 12px; }
+.inspector h4 { font-size: 13px; font-weight: 500; margin: 20px 0 8px; }
+.inspector p { line-height: 1.65; white-space: pre-wrap; overflow-wrap: anywhere; }
+.inspector pre { overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; padding: 12px; background: var(--dsw-alias-bg-module-platform); border-radius: 8px; }
+.root .reference { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; text-align: left; width: 100%; margin-bottom: 8px; overflow-wrap: anywhere; }
+.reference small { color: var(--dsw-alias-label-secondary); }
+.inspector details { margin-top: 16px; }
+.empty { padding: 48px 24px; color: var(--dsw-alias-label-secondary); text-align: center; }
+.loading { width: 20px; height: 20px; margin: 24px auto; border: 2px solid var(--dsw-alias-border-l2); border-top-color: var(--dsw-alias-link); border-radius: 50%; animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .loading { animation: none; } }
+@container (max-width: 760px) { .workspace { flex-direction: column; } .inspector { width: 100%; border-left: 0; border-top: 1px solid var(--dsw-alias-border-l2); max-height: none; } .canvas { height: 460px; } }

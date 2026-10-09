@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /** Dashboard navigation does not create analysis state until an explicit action. @module */
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
@@ -12,7 +12,9 @@ import { deviceActions } from './device-fixture.client.ts'
 import { en } from '../src/client/locales.ts'
 import type {} from '../src/client/index.ts'
 
-afterEach(cleanup)
+// jsdom has no CSS transform matrix; actual graph geometry is covered in the browser scenario.
+beforeEach(() => { vi.stubGlobal('DOMMatrixReadOnly', class { m22 = 1 }) })
+afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 const project = (id: string, stopped = false) => recordSchema.parse({ kind: 'engagement', value: {
   id, title: id, objective: 'Review owned code', environmentIds: ['local'], stopped, maxAttempts: 3,
 } })
@@ -73,6 +75,17 @@ it('filters tasks and reads history without creating or binding a Session', asyn
   expect(api.createSession).not.toHaveBeenCalled()
   expect(api.associateSession).not.toHaveBeenCalled()
   expect(api.retainSession).not.toHaveBeenCalled()
+})
+it('shares one activity subscription across graph and timeline navigation', async () => {
+  const { props } = harness()
+  const followActivity = vi.fn(props.followActivity)
+  render(<Dashboard {...props} followActivity={followActivity} />)
+  fireEvent.click(await screen.findByRole('button', { name: /Alpha/ }))
+  await screen.findByRole('heading', { name: 'Alpha' })
+  const navigation = screen.getByRole('navigation', { name: 'Task detail navigation' })
+  fireEvent.click(within(navigation).getByRole('button', { name: 'Tools & progress' }))
+  fireEvent.click(within(navigation).getByRole('button', { name: 'Investigation' }))
+  expect(followActivity).toHaveBeenCalledTimes(1)
 })
 it('returns from evidence detail without losing the evidence filter', async () => {
   const { api, props } = harness()
@@ -298,12 +311,13 @@ it('analyzes imported captures from materials and opens the resulting evidence',
   fireEvent.click(await screen.findByRole('button', { name: 'Materials' }))
   await screen.findByRole('option', { name: 'Windows' })
   expect(api.observe).not.toHaveBeenCalled()
-  expect(screen.getByText('b'.repeat(64))).toBeTruthy()
+  const technical = screen.getAllByText('Technical details').find(item => item.closest('details')?.textContent?.includes('b'.repeat(64)))!
+  expect(technical.closest('details')?.open).toBe(false)
   fireEvent.change(screen.getByLabelText('Capture protocol'), { target: { value: 'ble' } })
   fireEvent.click(screen.getByRole('button', { name: 'Analyze capture' }))
   await waitFor(() =>{  expect(api.observe).toHaveBeenCalledOnce() })
   expect(JSON.parse(api.observe.mock.calls[0]![1])).toEqual({ provider: 'packet-capture', operation: 'summary',
     assetId: 'capture', environmentId: 'local', parameters: { protocol: 'ble' }, impact: 'observe' })
-  await screen.findByText('A recorded observation')
+  expect((await screen.findByRole('button', { name: /^Authorization check/ })).textContent).toContain('A recorded observation')
   expect(api.createSession).not.toHaveBeenCalled()
 })
