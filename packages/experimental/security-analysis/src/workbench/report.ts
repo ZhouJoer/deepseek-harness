@@ -1,6 +1,7 @@
 /** Bounded, reader-facing security briefs derived from project judgments. @module */
 import { z } from 'zod'
 import { findingHash } from './assessment.ts'
+import { deriveProjectCoverage } from './coverage.ts'
 import type { SecurityRecord } from './model.ts'
 
 const line = z.string().trim().min(1).max(240)
@@ -46,23 +47,19 @@ export function reportPrompt(records: SecurityRecord[], limits: ReportLimits): s
   const assets = records.filter(item => item.kind === 'asset')
   const findings = records.filter(item => item.kind === 'finding')
   const reviews = records.filter(item => item.kind === 'review')
-  const observations = records.filter(item => item.kind === 'evidence')
+  const coverage = deriveProjectCoverage(records, 0)
   const material = {
     project: project ? { title: project.value.title, requestedObjective: project.value.objective } : null,
     assets: assets.map(item => ({ id: item.value.id, label: item.value.label,
       type: 'kind' in item.value ? item.value.kind : item.value.format === 'other' ? 'file' : 'binary' })),
-    coverage: assets.map((asset) => {
-      const observed = observations.filter(item => item.value.assetId === asset.value.id)
-      const sourceFilesRead = new Set(observed.flatMap(item =>
-        item.value.provider === 'source' && item.value.operation === 'read' &&
-          typeof item.value.request.path === 'string' ? [item.value.request.path] : []))
-      return { assetLabel: asset.value.label, sourceFilesRead: sourceFilesRead.size,
-        auxiliaryAnalysisLogs: observed.filter(item => item.value.provider === 'session-tool').length,
-        completeImplementationObservations: observed.filter(item =>
-          item.value.observationKind === 'implementation' && !item.value.incomplete).length,
-        inventoryObservations: observed.filter(item => item.value.observationKind === 'inventory').length,
-        incompleteObservations: observed.filter(item => item.value.incomplete).length }
-    }),
+    coverage: coverage.assets.map(({ label, assetId: _assetId, hasChecks, unlinkedEvidenceIds, ...facts }) => ({
+      assetLabel: label, ...facts, hasChecks, unlinkedObservations: unlinkedEvidenceIds.length,
+    })),
+    checkCoverage: coverage.checks.map(({ checkId: _checkId, evidenceIds, missingEvidenceIds,
+      unmetDependencies, reviews: accepted, ...facts }) => ({
+      ...facts, observations: evidenceIds.length, missingObservations: missingEvidenceIds.length,
+      unmetDependencies: unmetDependencies.length, reviews: accepted.map(({ findingId: _findingId, ...review }) => review),
+    })),
     findings: findings.map((item, index) => {
       const review = reviews.find(candidate => candidate.value.id === item.value.review &&
         candidate.value.findingHash === findingHash(item.value))

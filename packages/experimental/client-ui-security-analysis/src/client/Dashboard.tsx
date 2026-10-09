@@ -21,6 +21,9 @@ import css from './Dashboard.module.css'
 import { useProjectActivity } from './useProjectActivity.ts'
 import { InvestigationGraph } from './InvestigationGraph.tsx'
 import { TechnicalDetails } from './TechnicalDetails.tsx'
+import { EvidencePreview } from './EvidencePreview.tsx'
+import { CoveragePanel } from './CoveragePanel.tsx'
+import { ReportExportButton } from './ReportExportButton.tsx'
 
 type Project = Extract<WorkbenchView['records'][number], { kind: 'engagement' }>['value']
 type Tab = 'graphTitle' | 'overview' | 'activityEntry' | 'assets' | 'findings' | 'evidence' | 'reports' | 'laboratories' | 'improvements'
@@ -65,12 +68,13 @@ export function Dashboard(props: Props) {
   const [assistant, setAssistant] = useState(false)
   const [advanced, setAdvanced] = useState(false)
   const [reviewOpen, setReviewOpen] = useState(false)
+  const [focusCheckId, setFocusCheckId] = useState<string>()
   const [assistantWidth, setAssistantWidth] = useState(40)
   const [expanded, setExpanded] = useState(false)
   const root = useRef<HTMLElement>(null)
   const drag = useRef<{ x: number; width: number; available: number }>()
   const [missingSession, setMissingSession] = useState(false)
-  const [artifact, setArtifact] = useState<{ text: string; size: number; truncated: boolean }>()
+  const [artifact, setArtifact] = useState<{ text: string; size: number; truncated: boolean; binary?: boolean }>()
   const [reportId, setReportId] = useState('')
   const [format, setFormat] = useState<'markdown' | 'json' | 'findingsMarkdown'>('markdown')
   const [report, setReport] = useState('')
@@ -164,7 +168,8 @@ export function Dashboard(props: Props) {
   const navigate = (id = '') => {
     generation.current++; readGeneration.current++
     setSelected(id); setView({ revision: 0, records: [] }); setTab('graphTitle'); setCreating(false)
-    setSessionId(undefined); setReference(undefined); setAssistant(false); setAdvanced(false); setMissingSession(false)
+    setSessionId(undefined); setReference(undefined); setAssistant(false); setAdvanced(false)
+    setMissingSession(false); setFocusCheckId(undefined)
     setEvidenceId(''); setEvidenceQuery(''); setReportId(''); setError(''); setBusy(false); setStopping(false)
     setDeleting('')
   }
@@ -194,7 +199,7 @@ export function Dashboard(props: Props) {
     setProjects(deletedProjects.current); setDeleting(''); setDeletedProject(item.archived ? undefined : item)
     setPurgedTitle(item.archived ? item.title : ''); listHeading.current?.focus()
   }
-  const connect = async (create: boolean, resume = false, showAdvanced = false, showReviews = false) => {
+  const connect = async (create: boolean, resume = false, showAdvanced = false, showReviews = false, checkId?: string) => {
     const current = generation.current
     let id = sessionId ?? await props.findSession(selected)
     if (current !== generation.current) return
@@ -207,7 +212,8 @@ export function Dashboard(props: Props) {
     }
     if (resume) await props.resumeProject(id)
     if (current !== generation.current) return
-    setSessionId(id); setAssistant(!showAdvanced); setAdvanced(showAdvanced); setReviewOpen(showReviews); setMissingSession(false)
+    setSessionId(id); setAssistant(!showAdvanced); setAdvanced(showAdvanced); setReviewOpen(showReviews)
+    setFocusCheckId(checkId); setMissingSession(false)
     await refresh()
   }
   const visible = projects.filter(item => Boolean(item.archived) === (section === 'removed'))
@@ -282,14 +288,16 @@ export function Dashboard(props: Props) {
           {missingSession && <div className={css.notice}><p>{t('dashboardMissingSession')}</p>{workspacePicker}<button className={css.primary} disabled={busy || !selectedWorkspace} onClick={() => void perform(() => connect(true, project.stopped))}>{t('dashboardContinue')}</button></div>}
           <nav className={css.detailTabs} aria-label={t('dashboardDetailNavigation')}>{(['graphTitle', 'overview', 'activityEntry', 'assets', 'findings', 'evidence', 'reports'] as const).map(key => <button key={key} aria-pressed={tab === key} onClick={() => { setTab(key); setEvidenceId('') }}>{t(key === 'overview' ? 'dashboardOverview' : key === 'assets' ? 'dashboardMaterials' : key)}</button>)}<button aria-pressed={tab === 'laboratories'} onClick={() =>{  setTab('laboratories') }}>{t('laboratories')}</button></nav>
           {tab === 'laboratories' && <ProjectLaboratories t={t} view={view} busy={busy} run={async (action, id) => { await perform(async () => { const current = generation.current; const next = await props.laboratory(selected, action, id); if (current === generation.current) setView(next) }) }} />}
-          <div hidden={tab !== 'graphTitle'}><InvestigationGraph key={project.id} {...props} view={view} activity={activity} project={project.id}
+          <div hidden={tab !== 'graphTitle'}><button onClick={() => { setTab('overview'); requestAnimationFrame(() => root.current?.querySelector<HTMLElement>('#security-check-coverage')?.focus()) }}>{t('coverageTitle')}</button><InvestigationGraph key={project.id} {...props} view={view} activity={activity} project={project.id}
             openPlans={() => { void perform(() => connect(false, false, true, true)) }} /></div>
           {tab === 'activityEntry' && <ActivityTimeline key={project.id} {...props} activity={activity} project={project.id} view={view}
             changed={(next) =>{  setView(previous => next.revision >= previous.revision ? next : previous) }} />}
           {tab === 'improvements' && <Improvements key={project.id} {...props} projectId={project.id} disabled={project.stopped || !!project.archived} />}
           {tab === 'overview' && <>
             <div className={css.stats}>{([['confirmedFindings', findings.filter(item => item.value.status === 'confirmed').length], ['pendingFindings', findings.filter(item => ['suspected', 'inconclusive'].includes(item.value.status)).length], ['evidence', evidence.length], ['blockedChecks', blocked.length]] as const).map(([label, count]) => <article key={label}><span>{t(label)}</span><strong>{count}</strong></article>)}</div>
-            <div className={css.overviewGrid}><section className={css.panel}><h3>{t('findings')}</h3>{findings.length ? findings.slice(0, 5).map(item => <button className={css.summaryRow} key={item.value.id} onClick={() =>{  setTab('findings') }}><strong>{item.value.title}</strong><span className={css.badge}>{t(item.value.status)}</span></button>) : <p className={css.muted}>{t('dashboardNoFindings')}</p>}</section><section className={css.panel}><h3>{t('blockedChecks')}</h3>{blocked.length ? blocked.map(item => <article key={item.value.id}><h4>{item.value.title}</h4><p>{item.value.rationale}</p></article>) : <p className={css.muted}>{t('dashboardNoBlocks')}</p>}</section></div>
+            <div className={css.overviewGrid}><section className={css.panel}><h3>{t('findings')}</h3>{findings.length ? findings.slice(0, 5).map(item => <button className={css.summaryRow} key={item.value.id} onClick={() =>{  setTab('findings') }}><strong>{item.value.title}</strong><span className={css.badge}>{t(item.value.status)}</span></button>) : <p className={css.muted}>{t('dashboardNoFindings')}</p>}</section><CoveragePanel t={t} evidence={evidence} coverage={activity.coverage} revision={view.revision} disabled={busy || !!project.archived}
+              openCheck={(id) => { void perform(() => connect(false, false, true, false, id)) }}
+              openEvidence={(id) => { setTab('evidence'); setEvidenceId(id) }} /></div>
             <div className={css.panel}><ProjectManagement key={project.id + project.title} t={t} title={project.title}
               archived={project.archived} disabled={busy} manage={action => perform(async () => {
                 const current = generation.current
@@ -323,9 +331,9 @@ export function Dashboard(props: Props) {
           {tab === 'evidence' && <section className={css.panel}>{chosenEvidence ? <>
             <button className={css.back} onClick={() =>{  setEvidenceId('') }}>{t('dashboardBackEvidence')}</button><h2>{chosenEvidence.title}</h2><p>{chosenEvidence.summary}</p><dl className={css.metadata}><dt>{t('dashboardSource')}</dt><dd>{chosenEvidence.provider} · {chosenEvidence.operation}</dd><dt>{t('dashboardMethod')}</dt><dd>{chosenEvidence.method ?? t('incomplete')}</dd><dt>{t('dashboardToolVersion')}</dt><dd>{chosenEvidence.toolVersion}</dd></dl>
             {chosenEvidence.failure && <p className={css.error}>{t('failed')}: {chosenEvidence.failure}</p>}{chosenEvidence.cleanup && <p>{t('dashboardCleanup')}: {chosenEvidence.cleanup}</p>}{chosenEvidence.incomplete && <p className={css.notice}>{t('incomplete')}</p>}
-            {artifact ? <>{artifact.truncated && <p role="status">{t('dashboardTruncated')}</p>}<pre className={css.artifact}>{artifact.text}</pre></> : <p role="status">{t(reading ? 'dashboardLoading' : 'dashboardReadFailed')}</p>}
+            {artifact ? <>{artifact.truncated && <p role="status">{t('dashboardTruncated')}</p>}<>{artifact.binary ? <p>{t('graphBinary')}</p> : <EvidencePreview text={artifact.text} provider={chosenEvidence.provider} t={t} />}</></> : <p role="status">{t(reading ? 'dashboardLoading' : 'dashboardReadFailed')}</p>}
           </> : <><div className={css.listHeader}><h3>{t('evidence')}</h3><input aria-label={t('dashboardEvidenceSearch')} placeholder={t('dashboardEvidenceSearch')} value={evidenceQuery} onChange={(event) => { setEvidenceQuery(event.target.value) }} /></div>{evidence.filter(item => (item.value.title + item.value.summary).toLowerCase().includes(evidenceQuery.toLowerCase())).map(item => <button className={css.evidenceRow} key={item.value.id} onClick={() =>{  setEvidenceId(item.value.id) }}><strong>{item.value.title}</strong><span>{item.value.summary}</span><small>{item.value.provider} · {item.value.method ?? t('incomplete')}</small></button>)}{!evidence.length && <p className={css.empty}>{t('dashboardNoEvidence')}</p>}</>}</section>}
-          {tab === 'reports' && <section className={css.panel}>{reports.length ? <><div className={css.listHeader}><label>{t('revision')}<select value={selectedReport} onChange={(event) =>{  setReportId(event.target.value); setFormat('markdown') }}>{reports.map(item => <option value={item.value.id} key={item.value.id}>{t('revision')} {item.value.revision}</option>)}</select></label><select aria-label={t('dashboardReportFormat')} value={format} onChange={(event) =>{  setFormat(event.target.value as typeof format) }}><option value="markdown">{t('markdownReport')}</option><option value="json">{t('jsonReport')}</option>{reports.find(item => item.value.id === selectedReport)?.value.findingsMarkdown && <option value="findingsMarkdown">{t('findingsReport')}</option>}</select></div><div className={css.report}>{reading ? <p role="status">{t('dashboardLoading')}</p> : format === 'json' ? <pre>{report}</pre> : <MarkdownText text={report} labels={{ code: { copyLabel: t('markdownCopy'), copiedLabel: t('markdownCopied') }, footnotes: t('markdownFootnotes') }} />}</div></> : <p className={css.empty}>{t('dashboardNoReports')}</p>}</section>}
+          {tab === 'reports' && <section className={css.panel}>{reports.length ? <><div className={css.listHeader}><label>{t('revision')}<select value={selectedReport} onChange={(event) =>{  setReportId(event.target.value); setFormat('markdown') }}>{reports.map(item => <option value={item.value.id} key={item.value.id}>{t('revision')} {item.value.revision}</option>)}</select></label><select aria-label={t('dashboardReportFormat')} value={format} onChange={(event) =>{  setFormat(event.target.value as typeof format) }}><option value="markdown">{t('markdownReport')}</option><option value="json">{t('jsonReport')}</option>{reports.find(item => item.value.id === selectedReport)?.value.findingsMarkdown && <option value="findingsMarkdown">{t('findingsReport')}</option>}</select><ReportExportButton projectId={selected} reportId={selectedReport} t={t} notify={props.notifyImprovement} /></div><div className={css.report}>{reading ? <p role="status">{t('dashboardLoading')}</p> : format === 'json' ? <pre>{report}</pre> : <MarkdownText text={report} labels={{ code: { copyLabel: t('markdownCopy'), copiedLabel: t('markdownCopied') }, footnotes: t('markdownFootnotes') }} />}</div></> : <p className={css.empty}>{t('dashboardNoReports')}</p>}</section>}
         </>}
       </>}
       {reference && reference.sessionId === sessionId && creating && <props.SessionProvider session={reference}>{props.renderSlot('security.workbench.session', { creating: true, assistantOpen: false, advancedOpen: false, changed: () => void perform(refresh), started: (id) => { setCreating(false); setSelected(id); setAssistant(true) } })}</props.SessionProvider>}
@@ -357,6 +365,6 @@ export function Dashboard(props: Props) {
       <header><strong>{t(reviewOpen && advanced ? 'planApprovals' : advanced ? 'advancedDetails' : 'dashboardAssistant')}</strong>
         <div className={css.actions}><button onClick={() => { setExpanded(value => !value) }}>{t(expanded ? 'restoreAssistant' : 'expandAssistant')}</button>
           <button onClick={() => { setAssistant(false); setAdvanced(false); void perform(refresh) }}>{t('close')}</button></div></header>
-      <props.SessionProvider session={reference}>{props.renderSlot('security.workbench.session', { creating: false, assistantOpen: assistant, advancedOpen: advanced, reviewOpen, changed: () => void perform(refresh), started: () => {} })}</props.SessionProvider></aside>}
+      <props.SessionProvider session={reference}>{props.renderSlot('security.workbench.session', { creating: false, assistantOpen: assistant, advancedOpen: advanced, reviewOpen, focusCheckId, changed: () => void perform(refresh), started: () => {} })}</props.SessionProvider></aside>}
   </section>
 }

@@ -111,6 +111,7 @@
   ],
   "license": "MIT",
   "dependencies": {
+    "fflate": "^0.8.3",
     "@deepseek-ai/schemastery": "workspace:~",
     "@deepseek-ai/dsh-brand": "workspace:*",
     "@deepseek-ai/dsh-util-values": "workspace:*",

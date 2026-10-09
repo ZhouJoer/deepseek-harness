@@ -6,7 +6,7 @@ import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { en as common } from '@deepseek-ai/dsh-client-locale/src/locales/en.ts'
 import { InvestigationGraph } from '../src/client/InvestigationGraph.tsx'
 import { en } from '../src/client/locales.ts'
-import { investigationFixture } from './investigation-fixture.ts'
+import { investigationFixture } from './investigation-fixture.client.ts'
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 

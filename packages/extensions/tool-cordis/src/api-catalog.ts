@@ -4876,6 +4876,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface AssembledSection {\n    name: string;\n    text: string;\n    interpolate?: boolean;\n}',
   },
   {
+    name: 'AssetId',
+    declaration: 'export type AssetId = Branded<\'SecurityAsset\'>;',
+  },
+  {
     name: 'AssistantMessage',
     declaration: 'export interface AssistantMessage extends MessageBase {\n    readonly role: \'assistant\';\n    readonly source: ModelMessageSource;\n}',
   },
@@ -5002,6 +5006,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'ChangeResult',
     declaration: 'export interface ChangeResult {\n    changed: boolean;\n    application: \'applied\' | \'restart-required\' | \'overridden\' | \'failed\' | \'cancelled\';\n    stage: \'install\' | \'enable\' | \'remove\';\n    target: string;\n    enabled?: boolean;\n    error?: ManagementError;\n    warnings?: string[];\n    packageResult?: PackageResult;\n    bundle?: string;\n    pendingBuilds?: string[];\n    approvedBuilds?: string[];\n    registries?: Registry[];\n    failedAt?: \'registry\' | \'spec-host\';\n}',
+  },
+  {
+    name: 'CheckCoverage',
+    declaration: 'export interface CheckCoverage {\n    checkId: CheckId;\n    assetId: string;\n    title: string;\n    criterion: string;\n    status: Extract<SecurityRecord, {\n        kind: \'check\';\n    }>[\'value\'][\'status\'];\n    rationale: string;\n    evidenceIds: EvidenceId[];\n    missingEvidenceIds: string[];\n    unmetDependencies: string[];\n    inventory: number;\n    implementation: number;\n    other: number;\n    failed: number;\n    incomplete: number;\n    methods: string[];\n    reviews: {\n        findingId: string;\n        title: string;\n        verdict: \'confirmed\' | \'refuted\';\n        basis: \'static\' | \'runtime\';\n    }[];\n}',
+  },
+  {
+    name: 'CheckId',
+    declaration: 'export type CheckId = Branded<\'SecurityCheck\'>;',
   },
   {
     name: 'ClientArtifactBaseline',
@@ -5466,6 +5478,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'EveryScheduleRecord',
     declaration: 'export interface EveryScheduleRecord {\n    readonly id: ScheduleId;\n    readonly kind: \'every\';\n    readonly title: string;\n    readonly prompt: string;\n    readonly everySeconds: number;\n    readonly scheduledAt: string;\n}',
+  },
+  {
+    name: 'EvidenceId',
+    declaration: 'export type EvidenceId = Branded<\'SecurityEvidence\'>;',
   },
   {
     name: 'EvolutionBundle',
@@ -6348,6 +6364,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface ProfilePnpmInvocation {\n    readonly command: string;\n    readonly args: readonly string[];\n    readonly env: Readonly<Record<string, string>>;\n}',
   },
   {
+    name: 'ProjectCoverage',
+    declaration: 'export interface ProjectCoverage {\n    revision: number;\n    checks: CheckCoverage[];\n    assets: {\n        assetId: AssetId;\n        label: string;\n        hasChecks: boolean;\n        unlinkedEvidenceIds: EvidenceId[];\n        sourceFilesRead: number;\n        auxiliaryAnalysisLogs: number;\n        completeImplementationObservations: number;\n        inventoryObservations: number;\n        incompleteObservations: number;\n    }[];\n}',
+  },
+  {
     name: 'ProjectionChangeListener',
     declaration: 'export type ProjectionChangeListener = (session: Session, key: Extract<keyof SessionProjectionMap, string>, value: unknown, seq: SessionSeq) => void;',
   },
@@ -6713,7 +6733,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SecurityActivityFrame',
-    declaration: 'export type SecurityActivityFrame = {\n    type: \'snapshot\';\n    cursor: number;\n    view: WorkbenchView;\n    usage: SecurityToolUsage[];\n    briefs: SecurityActivityBrief[];\n} | {\n    type: \'activity\';\n    cursor: number;\n    usage: SecurityToolUsage[];\n    briefs: SecurityActivityBrief[];\n} | {\n    type: \'project\';\n    view: WorkbenchView;\n};',
+    declaration: 'export type SecurityActivityFrame = {\n    type: \'snapshot\';\n    cursor: number;\n    view: WorkbenchView;\n    coverage?: ProjectCoverage;\n    usage: SecurityToolUsage[];\n    briefs: SecurityActivityBrief[];\n} | {\n    type: \'activity\';\n    cursor: number;\n    usage: SecurityToolUsage[];\n    briefs: SecurityActivityBrief[];\n} | {\n    type: \'project\';\n    view: WorkbenchView;\n    coverage?: ProjectCoverage;\n};',
   },
   {
     name: 'SecurityActivityId',

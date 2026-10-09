@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { workbenchConfiguration } from './configuration-fixture.client.ts'
 /** Operator gestures, authoritative state and stale-session isolation. @module */
-import { afterEach, it, expect, vi } from 'vitest'
+import { afterEach, it, expect, vi, onTestFinished } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
@@ -40,6 +40,24 @@ function props(api: WorkbenchActions, sessionId = 'parent', running = false): Wo
     useSession: (select: (snapshot: { running: boolean }) => unknown) => select({ running }),
   } as WorkbenchProps
 }
+it('focuses a blocked check without submitting and reports a removed target', async () => {
+  const scroll = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollIntoView')
+  Object.defineProperty(Element.prototype, 'scrollIntoView', { configurable: true, value: vi.fn() })
+  onTestFinished(() => {
+    if (scroll) Object.defineProperty(Element.prototype, 'scrollIntoView', scroll)
+    else Reflect.deleteProperty(Element.prototype, 'scrollIntoView')
+  })
+  const check = recordSchema.parse({ kind: 'check', value: { id: 'blocked', engagementId: 'project', assetId: 'sample',
+    title: 'Inspect ownership', phase: 'assessment', criterion: 'Read caller', dependencies: [], evidenceIds: [],
+    status: 'blocked', attempts: 1, rationale: 'Caller unavailable' } })
+  const api = actions({ load: vi.fn(async () => ({ revision: 9, records: [project, check] })) })
+  const ui = render(<Workbench {...props(api)} autoOpen initialTab="checks" focusCheckId="blocked" />)
+  const title = await screen.findByText('Inspect ownership')
+  await waitFor(() =>{  expect(document.activeElement).toBe(title.closest('article')) })
+  expect(api.command).not.toHaveBeenCalled()
+  ui.rerender(<Workbench {...props(api)} autoOpen initialTab="checks" focusCheckId="missing" />)
+  expect(screen.getByText(zh.coverageCheckUnavailable)).toBeDefined()
+})
 it('clears checks and findings after leaving, then exposes project creation', async () => {
   const check = recordSchema.parse({ kind: 'check', value: { id: 'check', engagementId: 'project', assetId: 'sample',
     title: 'Old check', phase: 'recon', criterion: 'Inspect sample', dependencies: [], evidenceIds: [],

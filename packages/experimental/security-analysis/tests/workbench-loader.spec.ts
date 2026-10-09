@@ -1454,6 +1454,29 @@ async function delegationFixture(
   return { ...fixture, send, args }
 }
 
+it('logs check instructions and explicit evidence references in a delegated child', async () => {
+  const { ctx, agent, controller, args, send, model } = await delegationFixture()
+  ctx.effect(() => ctx.subagents.registerProvider({ name: 'spawn', inheritsParentContext: false,
+    capabilities: { agentOptions: true, outputSchema: true, depthLimit: true, toolFilter: true, persona: true },
+    start: request => startInProcessRun(request, {}) }))
+  await send({ kind: 'check', check: { assetId: args.assetId, title: 'Inspect assigned parser', phase: 'assessment',
+    criterion: 'Return the checked input condition', dependencies: [], evidenceIds: [] } })
+  const check = controller.view(agent.id).records.find(item => item.kind === 'check')!
+  const evidence = await controller.captureAnalysis(agent.id, args.assetId, ['input-observation'], Buffer.from('untrusted raw input'), new AbortController().signal)
+  if (evidence.kind !== 'evidence') throw new Error('Missing evidence')
+  const input = { ...args, checkId: check.value.id, inputEvidenceIds: [evidence.value.id] }
+  const result = await execute(ctx, agent, 'security_delegate', input, 'linked-assignment')
+  expect(result.isError, JSON.stringify(result)).toBe(false)
+  expect((await ctx.jobs.wait(JobId((result.value as { jobId: string }).jobId), 10000, agent.id)).status).toBe('completed')
+  const messages = JSON.stringify(model.requests.flatMap(request => request.messages))
+  expect(messages).toContain('Inspect assigned parser')
+  expect(messages).toContain('Return the checked input condition')
+  expect(messages).toContain(evidence.value.id)
+  expect(messages).not.toContain('untrusted raw input')
+  expect(controller.view(agent.id).records.find(item => item.kind === 'check')?.value).toMatchObject({ status: 'planned' })
+  expect((await execute(ctx, agent, 'security_delegate', { ...input, inputEvidenceIds: [] }, 'linked-assignment')).isError).toBe(true)
+})
+
 it('reserves worker capacity before asynchronous admission and replays one logged call without another child', async () => {
   const { ctx, agent, controller, args } = await delegationFixture({ maxConcurrentDelegations: 1 })
   args.question = '  ' + args.question + '  '

@@ -15,6 +15,7 @@ export interface DashboardSessionInput {
   assistantOpen: boolean
   advancedOpen: boolean
   reviewOpen?: boolean
+  focusCheckId?: string | undefined
   changed(): void
   started(projectId: string): void
 }
@@ -92,7 +93,7 @@ export function DashboardSession(props: PropsRuntime<'security.workbench.session
           if (project) props.started(project.value.id)
         }} />
     </div>}
-    {props.advancedOpen && <div className={css.advanced}><Workbench {...props} autoOpen initialTab={props.reviewOpen ? 'planApprovals' : 'overview'} /></div>}
+    {props.advancedOpen && <div className={css.advanced}><Workbench {...props} autoOpen initialTab={props.reviewOpen ? 'planApprovals' : props.focusCheckId ? 'checks' : 'overview'} /></div>}
     <div className={css.conversation} hidden={!props.assistantOpen || props.creating}>
       {props.renderFactorySlot('conversation.content', { variant: 'embedded', phase: hero ? 'hero' : 'active', hero }, { slots: { views: ChatView } })}
     </div>

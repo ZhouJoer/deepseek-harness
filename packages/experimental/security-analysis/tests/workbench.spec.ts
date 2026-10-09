@@ -74,6 +74,98 @@ async function harness(generateReport?: (prompt: string, signal: AbortSignal) =>
 }
 
 describe('security workbench', () => {
+  it('lets an operator reconcile stopped checks without resuming the project', async () => {
+    const { controller, send, assetId, journal } = await harness()
+    await send({ kind: 'check', check: { assetId, title: 'Read caller', phase: 'assessment', criterion: 'Read the caller', dependencies: [], evidenceIds: [] } })
+    const check = controller.view('parent').records.find(item => item.kind === 'check')!
+    await journal.commit(randomUUID(), undefined, {}, () => [{ kind: 'check', value: { ...check.value, status: 'blocked', rationale: 'Caller unavailable' } }])
+    await send({ kind: 'stop' })
+    const action = { kind: 'reconcile' as const, checkId: check.value.id, rationale: 'Confirmed no process remains' }
+    await expect(send(action)).rejects.toThrow('stopped')
+    const result = await send(action, true)
+    expect(result.records.find(item => item.kind === 'check')?.value).toMatchObject({ status: 'planned' })
+    expect(result.records.find(item => item.kind === 'engagement')?.value).toMatchObject({ stopped: true })
+    expect(result.records.some(item => item.kind === 'execution')).toBe(false)
+  })
+  it.each(['purge', 'dispose'] as const)('waits for export reads before %s releases artifacts', async (action) => {
+    const { controller, send, assetId, artifacts, journal } = await harness()
+    const projectId = controller.binding('parent')!.engagementId
+    await controller.captureAnalysis('parent', assetId, ['export-observation'], Buffer.alloc(64000, 120), new AbortController().signal)
+    await send({ kind: 'report' })
+    const report = controller.view('parent').records.find(item => item.kind === 'report')!
+    if (report.kind !== 'report') throw new Error('Missing report')
+    if (action === 'purge') await controller.manageProject(projectId, { operationId: randomUUID(), expectedRevision: journal.view().revision, action: { kind: 'archive' } })
+    const entered = Promise.withResolvers<undefined>()
+    const release = Promise.withResolvers<undefined>()
+    const read = artifacts.read.bind(artifacts)
+    const reading = vi.spyOn(artifacts, 'read').mockImplementationOnce(async (artifact) => {
+      entered.resolve(undefined); await release.promise; return read(artifact)
+    })
+    const exporting = controller.exportReport(projectId, report.value.id, 1e6, new Request('http://localhost/export'))
+    const rejected = expect(exporting).rejects.toThrow(action === 'purge' ? 'permanently deleted' : 'disposed')
+    await entered.promise
+    let finished = false
+    const cleanup = (action === 'purge'
+      ? controller.manageProject(projectId, { operationId: randomUUID(), expectedRevision: journal.view().revision, action: { kind: 'purge' } })
+      : controller.dispose()).then(() => { finished = true })
+    try {
+      await expect(controller.exportReport(projectId, report.value.id, 1e6, new Request('http://localhost/export'))).rejects.toThrow('cleanup')
+      expect(finished).toBe(false)
+    } finally { release.resolve(undefined); await rejected; await cleanup; reading.mockRestore() }
+    expect(finished).toBe(true)
+  })
+  it('admits explicit check inputs and rejects missing, foreign, damaged and changed references', async () => {
+    const { controller, send, assetId, artifacts, root } = await harness()
+    await send({ kind: 'check', check: { assetId, title: 'Read implementation', phase: 'assessment',
+      criterion: 'Locate input handling', dependencies: [], evidenceIds: [] } })
+    const check = controller.view('parent').records.find(item => item.kind === 'check')!
+    if (check.kind !== 'check') throw new Error('Missing check')
+    const evidence = await controller.captureAnalysis('parent', assetId, ['input-call'], Buffer.from('partial observation'), new AbortController().signal)
+    if (evidence.kind !== 'evidence') throw new Error('Missing evidence')
+    const input = { assetId, role: 'reverse-analyst' as const, task: 'assessment' as const,
+      question: 'Read input handling', criterion: 'Return locations', checkId: check.value.id, inputEvidenceIds: [evidence.value.id] }
+    const assignment = await controller.admitDelegation('parent', 'linked-call', input)
+    expect(assignment).toMatchObject({ checkId: check.value.id, inputEvidenceIds: [evidence.value.id] })
+    expect((await controller.admitDelegation('parent', 'linked-call', input)).id).toBe(assignment.id)
+    await expect(controller.admitDelegation('parent', 'linked-call', { ...input, inputEvidenceIds: [] })).rejects.toThrow('different input')
+    await expect(controller.admitDelegation('parent', 'missing-check', { ...input, checkId: 'missing' })).rejects.toThrow('check is missing')
+    await expect(controller.admitDelegation('parent', 'missing-input', { ...input, inputEvidenceIds: ['missing'] })).rejects.toThrow('input evidence')
+    await send({ kind: 'import', path: join(root, 'sample.exe'), label: 'another asset' })
+    const other = controller.view('parent').records.filter(item => item.kind === 'asset').at(-1)!
+    await expect(controller.admitDelegation('parent', 'foreign-check', { ...input, assetId: other.value.id })).rejects.toThrow('check is missing')
+    const { checkId: _checkId, ...directInput } = input
+    await expect(controller.admitDelegation('parent', 'foreign-input', { ...directInput, assetId: other.value.id })).rejects.toThrow('input evidence')
+    await writeFile(join(root, 'artifacts', evidence.value.artifact.sha256), 'damaged')
+    await expect(controller.admitDelegation('parent', 'damaged-input', input)).rejects.toThrow('identity mismatch')
+    if ('artifact' in other.value) expect(await artifacts.read(other.value.artifact)).toBeDefined()
+  })
+  it('checks delegation dependencies twice and keeps independent work available', async () => {
+    const { controller, send, assetId } = await harness()
+    const add = async (title: string, dependencies: string[]) => {
+      await send({ kind: 'check', check: { assetId, title, phase: 'assessment', criterion: title, dependencies, evidenceIds: [] } })
+      return controller.view('parent').records.filter(item => item.kind === 'check').at(-1)!.value.id
+    }
+    const upstream = await add('Read the parser', [])
+    const dependent = await add('Inspect callers', [upstream])
+    const independent = await add('Inspect exports', [])
+    const input = { assetId, role: 'reverse-analyst' as const, task: 'assessment' as const, question: 'Inspect implementation', criterion: 'Return evidence' }
+    await expect(controller.admitDelegation('parent', 'blocked-dependency', { ...input, checkId: dependent })).rejects.toThrow('depend')
+    const other = await controller.admitDelegation('parent', 'independent', { ...input, checkId: independent })
+    await controller.bindDelegationChild(other.id, 'independent-child')
+    const evidence = await controller.captureAnalysis('parent', assetId, ['source-call'], Buffer.from('source observation'), new AbortController().signal)
+    if (evidence.kind !== 'evidence') throw new Error('Missing evidence')
+    await send({ kind: 'finish', checkId: upstream, evidenceIds: [evidence.value.id], rationale: 'Read implementation' })
+    const pending = await controller.admitDelegation('parent', 'dependent', { ...input, checkId: dependent })
+    await expect(send({ kind: 'reopen', checkId: upstream, rationale: 'Check another input' })).rejects.toThrow('Cancel linked delegations')
+    await send({ kind: 'finish', checkId: dependent, evidenceIds: [evidence.value.id], rationale: 'Coordinator resolved the question' })
+    await expect(controller.bindDelegationChild(pending.id, 'late-child')).rejects.toThrow('planned check')
+    await controller.settleDelegation(pending.id, { status: 'cancelled', detail: 'Coordinator finished the check' })
+    await send({ kind: 'reopen', checkId: upstream, rationale: 'Check another input' })
+    expect(controller.delegationForCall('parent', 'dependent')?.status).toBe('cancelled')
+    expect(controller.delegationForCall('parent', 'independent')?.status).toBe('running')
+    expect(controller.view('parent').records.filter(item => item.kind === 'check').filter(item => [upstream, dependent].includes(item.value.id))
+      .every(item => item.value.status === 'planned')).toBe(true)
+  })
   it('rejects external-container provider preparation, observations and execution before reading Host artifacts', async () => {
     const { controller, send, assetId, journal } = await harness()
     const resolve = vi.fn((request: AnalysisOperation) => request)

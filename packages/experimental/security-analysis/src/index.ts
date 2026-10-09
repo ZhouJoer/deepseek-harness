@@ -5,6 +5,8 @@ import { uncheckedDevices } from './device-inventory.ts'
 import type { DeviceDirectory, DeviceInventory } from './device-types.ts'
 import { installSecurityMethods } from './methods.ts'
 import { openWorkspaceIntake, type WorkspaceIntakeStore } from './workspace-intake.ts'
+import { deriveProjectCoverage } from './workbench/coverage.ts'
+import { installReportExport } from './report-export-route.ts'
 import { resolveWorkspaceTaskAdmission, resolveTaskIntakeResources, validateTaskIntake, type TaskIntakeConfig } from './task-bootstrap.ts'
 import assert from 'node:assert/strict'
 import { analysisScripts } from './analysis-scripts.ts'
@@ -93,6 +95,8 @@ export interface WorkbenchConfig {
   maxDerivedAssets: number
   /** Maximum bytes in one imported sample or immutable artifact. */
   maxArtifactBytes: number
+  /** Maximum uncompressed report archive bytes, including its manifest and checksums. */
+  exportMaxBytes: number
   /** Maximum raw collection or knowledge-refinement output bytes. */
   maxOutputBytes: number
   /** Maximum complete JSON bytes in one model-facing tool response. */
@@ -198,6 +202,7 @@ export default class SecurityWorkbench extends TypertRemoteService {
       Schema.object({ path: Schema.string().required(), environmentId: Schema.string().required() }).required()]),
     maxDerivedAssets: Schema.number().step(1).min(1).default(256),
     maxArtifactBytes: Schema.number().step(1).min(1).default(268435456),
+    exportMaxBytes: Schema.number().step(1).min(1).default(268435456),
     maxOutputBytes: Schema.number().step(1).min(4096).default(1048576),
     maxDurationMs: Schema.number().step(1).min(1).max(2147483647).default(60000),
   })
@@ -252,6 +257,7 @@ export default class SecurityWorkbench extends TypertRemoteService {
     validateTaskIntake(config.taskIntake, config.environments.map(environment => environment.id))
     ctx.inject(['skills'], (skillCtx) => { installSecurityMethods(skillCtx) })
     this.ready = this.initialize()
+    installReportExport(ctx, this.ready, config.exportMaxBytes)
     installNativeAnalysis(ctx, this.ready)
     installActivityObserver(ctx, this.ready, () => this.toolCatalog().tools)
     const output = {
@@ -607,6 +613,8 @@ export default class SecurityWorkbench extends TypertRemoteService {
           criterion: { type: 'string', required: true },
           reason: { type: 'string', description: 'Why independent work improves evidence quality, elapsed time or context use for this question.' },
           retryOf: { type: 'string', description: 'Settled assignment to retry or supplement. Starts a fresh child; never resumes the previous worker.' },
+          checkId: { type: 'string', description: 'Optional planned check for the assigned asset. All dependencies must be complete; the report does not complete the check.' },
+          inputEvidenceIds: { type: 'array', items: { type: 'string' }, description: 'Existing observations for this asset to read first, including failed or incomplete observations. Supply this list explicitly on retries.' },
           role: { type: 'string', required: true, enum: ['reconnaissance', 'reverse-analyst', 'web-analyst', 'researcher', 'reviewer'] },
           task: { type: 'string', enum: [...taskKinds], description: 'inventory for reconnaissance; surface or assessment for reverse-analyst; assessment for researcher; review for reviewer. Omission uses the role default.' },
         },
@@ -617,6 +625,8 @@ export default class SecurityWorkbench extends TypertRemoteService {
             ...args, task: resolveTask(args.role, args.task), question: args.question.trim(), criterion: args.criterion.trim(),
             ...(args.reason === undefined ? {} : { reason: args.reason.trim() }),
             ...(args.retryOf === undefined ? {} : { retryOf: args.retryOf.trim() }),
+            ...(args.checkId === undefined ? {} : { checkId: args.checkId.trim() }),
+            ...(args.inputEvidenceIds === undefined ? {} : { inputEvidenceIds: args.inputEvidenceIds.map(id => id.trim()) }),
           }, exec.signal))
         },
       }),
@@ -767,12 +777,12 @@ export default class SecurityWorkbench extends TypertRemoteService {
     })
   }
   private async delegate(parent: Agent, callId: string, input: Pick<SecurityDelegation,
-    'assetId' | 'role' | 'task' | 'question' | 'criterion'> & { reason?: string; retryOf?: string }, callerSignal: AbortSignal,
+    'assetId' | 'role' | 'task' | 'question' | 'criterion'> & { reason?: string; retryOf?: string; checkId?: string; inputEvidenceIds?: string[] }, callerSignal: AbortSignal,
   ): Promise<{ delegationId: SecurityDelegationId; jobId?: string }> {
     const controller = await this.ready
     const key = JSON.stringify([parent.id, callId])
     const fingerprint = JSON.stringify([input.assetId, input.role, input.task,
-      input.question, input.criterion, input.reason, input.retryOf])
+      input.question, input.criterion, input.reason, input.retryOf, input.checkId, input.inputEvidenceIds])
     const pending = this.delegationAdmissions.get(key)
     if (pending) {
       if (pending.input !== fingerprint) throw new Error('Delegation call was reused for different input')
@@ -781,7 +791,7 @@ export default class SecurityWorkbench extends TypertRemoteService {
     const previous = controller.delegationForCall(parent.id, callId)
     if (previous) {
       if (fingerprint !== JSON.stringify([previous.assetId, previous.role, previous.task, previous.question,
-        previous.criterion, previous.reason, previous.retryOf])) throw new Error('Delegation call was reused for different input')
+        previous.criterion, previous.reason, previous.retryOf, previous.checkId, previous.inputEvidenceIds])) throw new Error('Delegation call was reused for different input')
       const jobId = this.delegationJobs.get(parent)?.get(previous.id)
       return { delegationId: previous.id, ...(jobId && this.ctx.jobs.list(parent.id).some(job => job.id === jobId) ? { jobId } : {}) }
     }
@@ -798,6 +808,7 @@ export default class SecurityWorkbench extends TypertRemoteService {
         callerSignal.throwIfAborted()
         this.shutdown.signal.throwIfAborted()
         const captured = assignment
+        const check = controller.projectView(captured.engagementId).records.find(record => record.kind === 'check' && record.value.id === captured.checkId)
         let attached = Promise.resolve()
         const jobId = this.ctx.jobs.start({ owner: parent.id, kind: 'subagent', label: input.question,
           outputLimitBytes: this.config.maxOutputBytes,
@@ -813,6 +824,7 @@ export default class SecurityWorkbench extends TypertRemoteService {
               try {
                 return await this.ctx.subagents.start('spawn', { parent, signal, maxDepth: 1, label: input.question,
                   prompt: [{ type: 'text', text: delegationPrompt({ ...input,
+                    ...(check?.kind === 'check' ? { check: { id: check.value.id, title: check.value.title, criterion: check.value.criterion } } : {}),
                     durationMs: this.config.delegationTimeoutMs, maxOutputBytes: this.config.maxOutputBytes }) }],
                   outputSchema: { type: 'object', additionalProperties: false,
                     properties: { summary: { type: 'string' }, evidenceIds: { type: 'array', items: { type: 'string' } },
@@ -1412,8 +1424,10 @@ export default class SecurityWorkbench extends TypertRemoteService {
     controller.projectView(projectId)
     assert(this.activity && this.journal, 'Activity requires initialized storage')
     const journal = this.journal
-    yield* this.activity.follow(projectId, () => controller.projectView(projectId),
-      listener => journal.subscribe(projectId, listener), AbortSignal.any([signal, this.shutdown.signal]))
+    for await (const frame of this.activity.follow(projectId, () => controller.projectView(projectId),
+      listener => journal.subscribe(projectId, listener), AbortSignal.any([signal, this.shutdown.signal]))) {
+      yield frame.type === 'activity' ? frame : { ...frame, coverage: deriveProjectCoverage(frame.view.records, frame.view.revision) }
+    }
   }
   /** Read invocation details within one research direction.
    * @param projectId - selected project.

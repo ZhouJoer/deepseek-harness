@@ -8,7 +8,7 @@ import type { SecurityActivityFrame, WorkbenchView } from '@deepseek-ai/dsh-expe
 import { recordSchema } from '@deepseek-ai/dsh-experimental-security-analysis/src/workbench/model.ts'
 import { ActivityPanel } from '../src/client/ActivityPanel.tsx'
 import { en } from '../src/client/locales.ts'
-import { investigationFixture } from './investigation-fixture.ts'
+import { investigationFixture } from './investigation-fixture.client.ts'
 
 afterEach(cleanup)
 it('uses the current finding instead of a checkpoint historical confirmation', () => {

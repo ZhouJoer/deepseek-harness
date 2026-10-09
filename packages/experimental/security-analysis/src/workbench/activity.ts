@@ -4,6 +4,7 @@ import { defineDomain, domainTable } from '@deepseek-ai/dsh-storage-domain'
 import { brandString, type Branded } from '@deepseek-ai/dsh-brand'
 import { z } from 'zod'
 import type { WorkbenchView } from './model.ts'
+import type { ProjectCoverage } from './coverage.ts'
 
 /** Identifies an observed invocation rather than an analyst claim. */
 export type SecurityActivityId = Branded<'SecurityActivity'>
@@ -44,9 +45,9 @@ export interface SecurityActivityPage {
 }
 /** A subscription starts with a snapshot; subsequent frames replace only the changed projection. */
 export type SecurityActivityFrame =
-  | { type: 'snapshot'; cursor: number; view: WorkbenchView; usage: SecurityToolUsage[]; briefs: SecurityActivityBrief[] }
+  | { type: 'snapshot'; cursor: number; view: WorkbenchView; coverage?: ProjectCoverage; usage: SecurityToolUsage[]; briefs: SecurityActivityBrief[] }
   | { type: 'activity'; cursor: number; usage: SecurityToolUsage[]; briefs: SecurityActivityBrief[] }
-  | { type: 'project'; view: WorkbenchView }
+  | { type: 'project'; view: WorkbenchView; coverage?: ProjectCoverage }
 
 /** Serialized activity persistence; committed changes wake project-scoped followers. */
 export class SecurityActivityStore {

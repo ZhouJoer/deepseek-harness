@@ -198,6 +198,8 @@ export const delegationSchema = z.object({
   parentSessionId: id.transform(brandString<SessionId>), callId: id,
   role: roleSchema.exclude(['coordinator']), task: z.enum(['inventory', 'surface', 'assessment', 'review']),
   question: text, criterion: text, reason: text.optional(), retryOf: id.transform(brandString<SecurityDelegationId>).optional(),
+  checkId: id.transform(brandString<CheckId>).optional(),
+  inputEvidenceIds: z.array(id.transform(brandString<EvidenceId>)).optional(),
   createdAt: z.number().int().nonnegative(), startedAt: z.number().int().nonnegative().optional(),
   settledAt: z.number().int().nonnegative().optional(), jobId: id.transform(brandString<JobId>).optional(),
   child: z.object({ parentSessionId: id.transform(brandString<SessionId>), childSessionId: id.transform(brandString<SessionId>),

@@ -40,6 +40,7 @@ import { importSource } from './source.ts'
 import { materialInputSchema, prepareMaterials } from './materials.ts'
 import { apkMembers } from './apk.ts'
 import { ArtifactStore } from './artifacts.ts'
+import { reportExportResponse } from './report-export.ts'
 import { unsharedArtifacts, referencedArtifacts } from './purge.ts'
 import {
   ProviderRegistry,
@@ -171,6 +172,8 @@ export class SecurityController {
   private readonly observations = new Map<string, { fingerprint: string; pending: Promise<SecurityRecord> }>()
   private readonly reports = new Map<string, { fingerprint: string; pending: Promise<WorkbenchView> }>()
   private readonly artifactWriters = new Set<Promise<unknown>>()
+  private readonly exportReads = new Map<AbortController, { project: string; done: Promise<void> }>()
+  private disposed = false
   private purging: Promise<void> | undefined
   private async withArtifactWrite<T>(action: () => Promise<T>): Promise<T> {
     while (this.purging) await this.purging
@@ -179,11 +182,14 @@ export class SecurityController {
     try { return await pending }
     finally { this.artifactWriters.delete(pending) }
   }
-  private async withArtifactCleanup<T>(action: () => Promise<T>): Promise<T> {
+  private async withArtifactCleanup<T>(action: () => Promise<T>, projectId?: string): Promise<T> {
     while (this.purging) await this.purging
     const gate = Promise.withResolvers<void>()
     this.purging = gate.promise
     try {
+      const reads = [...this.exportReads].filter(([, read]) => projectId === undefined || read.project === projectId)
+      for (const [abort] of reads) abort.abort(new Error('Project evidence is being permanently deleted'))
+      await Promise.all(reads.map(([, read]) => read.done))
       // Writers remain registered until their journal references are committed.
       await Promise.allSettled([...this.artifactWriters])
       return await action()
@@ -366,14 +372,14 @@ export class SecurityController {
    * @returns the committed assignment; a repeated call retains its original identity.
    */
   async admitDelegation(sessionId: string, callId: string, input: Pick<SecurityDelegation,
-    'assetId' | 'role' | 'task' | 'question' | 'criterion'> & { reason?: string; retryOf?: string }): Promise<SecurityDelegation> {
+    'assetId' | 'role' | 'task' | 'question' | 'criterion'> & { reason?: string; retryOf?: string; checkId?: string; inputEvidenceIds?: string[] }): Promise<SecurityDelegation> {
     const snapshot = this.journal.view()
     const binding = this.requireBinding(snapshot, sessionId)
     if (binding.role !== 'coordinator') throw new Error('Coordinator role required')
     const assignment = delegationSchema.parse({ ...input, id: randomUUID(), engagementId: binding.engagementId,
       checkpointId: this.checkpointId(sessionId), parentSessionId: sessionId, callId, createdAt: Date.now(), status: 'pending' })
     resolveTask(assignment.role, assignment.task)
-    await this.journal.commit('delegation:' + JSON.stringify([sessionId, callId]), undefined, { sessionId, callId, input }, (view) => {
+    await this.journal.commit('delegation:' + JSON.stringify([sessionId, callId]), undefined, { sessionId, callId, input }, async (view) => {
       const current = this.requireBinding(view, sessionId)
       const project = this.project(view, assignment.engagementId)
       if (current.role !== 'coordinator' || current.engagementId !== assignment.engagementId)
@@ -381,6 +387,13 @@ export class SecurityController {
       if (project.stopped || project.archived) throw new Error('Project is inactive or stopped')
       if (!view.records.some(item => item.kind === 'asset' && item.value.id === assignment.assetId
         && item.value.engagementId === assignment.engagementId)) throw new Error('Asset is outside project scope')
+      this.validateDelegationCheck(view, assignment)
+      for (const id of assignment.inputEvidenceIds ?? []) {
+        const evidence = view.records.find(item => item.kind === 'evidence' && item.value.id === id)
+        if (evidence?.kind !== 'evidence' || evidence.value.engagementId !== assignment.engagementId
+          || evidence.value.assetId !== assignment.assetId) throw new Error('Delegation input evidence is missing or outside the assigned asset')
+        await this.artifacts.read(evidence.value.artifact)
+      }
       if (assignment.retryOf) {
         const previous = view.records.find(item => item.kind === 'delegation' && item.value.id === assignment.retryOf)
         if (previous?.kind !== 'delegation' || previous.value.engagementId !== assignment.engagementId
@@ -393,6 +406,15 @@ export class SecurityController {
     const saved = this.delegationForCall(sessionId, callId)
     if (!saved) throw new Error('Delegation admission was not committed')
     return saved
+  }
+
+  private validateDelegationCheck(view: WorkbenchView, assignment: SecurityDelegation): void {
+    if (!assignment.checkId) return
+    const check = view.records.find(item => item.kind === 'check' && item.value.id === assignment.checkId)
+    if (check?.kind !== 'check' || check.value.engagementId !== assignment.engagementId
+      || check.value.assetId !== assignment.assetId) throw new Error('Delegation check is missing or outside the assigned asset')
+    if (check.value.status !== 'planned') throw new Error('Delegation requires a planned check; reconcile or reopen it before assigning work')
+    this.dependencies(view, check.value)
   }
 
   /** Link the live job identity without changing its execution state.
@@ -418,6 +440,7 @@ export class SecurityController {
       const project = this.project(view, assignment.engagementId)
       if (project.stopped || project.archived) throw new Error('Project is inactive or stopped')
       if (assignment.status !== 'pending') throw new Error('Assignment is no longer awaiting a worker')
+      this.validateDelegationCheck(view, assignment)
       return [{ kind: 'binding', value: bindingSchema.parse({ sessionId: childSessionId,
         engagementId: assignment.engagementId, assetIds: [assignment.assetId], role: assignment.role,
         checkpointId: assignment.checkpointId }) }, { kind: 'delegation', value: delegationSchema.parse({
@@ -492,7 +515,7 @@ export class SecurityController {
           (removed, retained) => unsharedArtifacts(this.artifacts, removed, retained))
         await this.finishPurges()
         return this.projects(true)
-      })
+      }, projectId)
     }
     await this.journal.commit(request.operationId, request.expectedRevision, { projectId, request }, (view) => {
       const project = this.project(view, projectId)
@@ -675,7 +698,7 @@ export class SecurityController {
         const project = this.project(view, binding.engagementId)
         if (binding.role !== 'coordinator' && !['finding', 'remember'].includes(action.kind))
           throw new Error('This role cannot change the check plan')
-        if (project.stopped && !['resume', 'revoke'].includes(action.kind)) throw new Error('Project is stopped')
+        if (project.stopped && !['resume', 'revoke'].includes(action.kind) && !(operator && action.kind === 'reconcile')) throw new Error('Project is stopped')
         const scoped = (kind: SecurityRecord['kind'], id: string) => {
           const item = view.records.find(item => item.kind === kind && 'id' in item.value && item.value.id === id)
           if (!item || !('engagementId' in item.value) || item.value.engagementId !== project.id)
@@ -892,6 +915,9 @@ export class SecurityController {
                 }
               }
             }
+            if (view.records.some(record => record.kind === 'delegation' && record.value.checkId
+              && affected.has(record.value.checkId) && ['pending', 'running'].includes(record.value.status)))
+              throw new Error('Cancel linked delegations and wait for cleanup before reopening checks')
             const records: SecurityRecord[] = []
             for (const record of view.records) {
               if (record.kind === 'check' && affected.has(record.value.id)) {
@@ -1125,6 +1151,26 @@ export class SecurityController {
     this.project(view, projectId)
     return { revision: view.revision, records: view.records.filter(item => item.kind !== 'binding' &&
       (item.kind === 'engagement' ? item.value.id : item.value.engagementId) === projectId) }
+  }
+  /** Export the selected immutable report while retaining its artifact reads.
+   * @param projectId - authenticated operator's selected project.
+   * @param reportId - report belonging to that project.
+   * @param maxBytes - complete uncompressed archive limit.
+   * @param request - download method and cancellation.
+   * @returns streamed ZIP or HEAD metadata; deletion and disposal cancel owned reads.
+   */
+  async exportReport(projectId: string, reportId: string, maxBytes: number, request: Request): Promise<Response> {
+    if (this.disposed || this.purging) throw new Error('Evidence exports are unavailable during cleanup')
+    const report = this.projectView(projectId).records.find(item => item.kind === 'report' && item.value.id === reportId)
+    if (report?.kind !== 'report') throw new Error('Report is outside the project scope')
+    const abort = new AbortController()
+    const done = Promise.withResolvers<void>()
+    this.exportReads.set(abort, { project: projectId, done: done.promise })
+    const released = () => { this.exportReads.delete(abort); done.resolve() }
+    try {
+      return await reportExportResponse(this.artifacts, report.value, maxBytes,
+        new Request(request, { signal: AbortSignal.any([request.signal, abort.signal]) }), released)
+    } catch (error) { released(); throw error }
   }
   /** Read active coordinator bindings without opening or rebinding a Session.
    * @param projectId - existing project identifier.
@@ -1423,11 +1469,15 @@ export class SecurityController {
   /** Cancel active provider work and await cleanup.
    * @returns completion after every active provider reaches cleanup. */
   async dispose(): Promise<void> {
+    this.disposed = true
+    const reads = [...this.exportReads]
+    for (const [abort] of reads) abort.abort(new Error('Security workbench disposed'))
     const runs = [...this.active.values(), ...[...this.delegated].map(([controller, job]) => ({ ...job, controller }))]
     runs.forEach((run) => {
       run.controller.abort(new Error('Security workbench disposed'))
     })
     await Promise.allSettled(runs.map(run => run.done))
+    await Promise.all(reads.map(([, read]) => read.done))
   }
 
   /**

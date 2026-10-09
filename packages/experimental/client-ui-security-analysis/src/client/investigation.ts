@@ -106,6 +106,8 @@ export function investigation(view: WorkbenchView): Investigation {
         break
       case 'delegation':
         from('asset', record.value.assetId, 'graphExamines')
+        if (record.value.checkId) from('check', record.value.checkId, 'graphAssignment')
+        for (const id of record.value.inputEvidenceIds ?? []) from('evidence', id, 'graphBasis')
         if (record.value.checkpointId) from('checkpoint', record.value.checkpointId, 'graphAssignment')
         if (record.value.retryOf) from('delegation', record.value.retryOf, 'graphFollowup')
         for (const id of record.value.report?.evidenceIds ?? []) to('evidence', id, 'graphReferences')

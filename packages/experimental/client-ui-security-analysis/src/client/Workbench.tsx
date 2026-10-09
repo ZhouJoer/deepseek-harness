@@ -41,7 +41,7 @@ export interface WorkbenchActions extends ActivityActions, ToolPreferenceActions
 /** Framework-derived input dock props. */
 export type WorkbenchProps = Pick<PropsRuntime<'conversation.input.dock'>, 'sessionId' | 'useSession'> &
   PropsLocale<typeof NS> &
-  WorkbenchActions & { autoOpen?: boolean; initialTab?: 'overview' | 'planApprovals' }
+  WorkbenchActions & { autoOpen?: boolean; initialTab?: 'overview' | 'planApprovals' | 'checks'; focusCheckId?: string | undefined }
 type Tab = 'overview' | 'assets' | 'checks' | 'findings' | 'environments' | 'knowledge' | 'evidence' | 'reviews' | 'reports' | 'planApprovals'
 const tabKeys: Tab[] = ['overview', 'findings', 'evidence', 'reports', 'planApprovals']
 const advancedTabKeys: Tab[] = ['assets', 'checks', 'environments', 'reviews', 'knowledge']
@@ -70,6 +70,8 @@ export function Workbench(props: WorkbenchProps) {
   const activeSession = useRef(sessionId)
   const priorActivity = useRef({ sessionId, running, open })
   const refreshPending = useRef(false)
+  const checkElements = useRef(new Map<string, HTMLElement>())
+  const focusedCheck = useRef<string>()
   activeSession.current = sessionId
   useEffect(() => {
     generation.current++
@@ -84,6 +86,12 @@ export function Workbench(props: WorkbenchProps) {
     setShared(false)
   }, [sessionId])
   useEffect(() => { setTab(props.initialTab ?? 'overview') }, [props.initialTab])
+  useEffect(() => {
+    const target = `${sessionId}:${props.focusCheckId ?? ''}`
+    if (tab !== 'checks' || !props.focusCheckId || focusedCheck.current === target) return
+    const element = checkElements.current.get(props.focusCheckId)
+    if (element) { element.scrollIntoView({ block: 'nearest' }); element.focus(); focusedCheck.current = target }
+  }, [sessionId, tab, props.focusCheckId, view.revision])
   const perform = async (action: () => Promise<void>) => {
     setBusy(count => count + 1)
     setError('')
@@ -500,6 +508,8 @@ export function Workbench(props: WorkbenchProps) {
                 </>}
                 {tab === 'checks' && (
                   <>
+                    {props.focusCheckId && view.revision > 0 && !checks.some(item => item.value.id === props.focusCheckId)
+                      && <p role="status">{t('coverageCheckUnavailable')}</p>}
                     <div className={css.form}>
                       {select(
                         'asset',
@@ -534,7 +544,11 @@ export function Workbench(props: WorkbenchProps) {
                       </button>
                     </div>
                     {checks.map(item => (
-                      <article className={css.card} key={item.value.id}>
+                      <article className={css.card} key={item.value.id} tabIndex={-1}
+                        ref={(element) => {
+                          if (element) checkElements.current.set(item.value.id, element)
+                          else checkElements.current.delete(item.value.id)
+                        }}>
                         <strong>{item.value.title}</strong>
                         <p>
                           {t(item.value.phase)} · {t(item.value.status)}

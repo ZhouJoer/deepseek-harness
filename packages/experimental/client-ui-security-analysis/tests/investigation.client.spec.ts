@@ -1,7 +1,7 @@
 /** Graph references preserve the meaning and uncertainty of saved investigation records. @module */
 import { expect, it } from 'vitest'
 import { investigation, visibleInvestigation } from '../src/client/investigation.ts'
-import { investigationFixture } from './investigation-fixture.ts'
+import { investigationFixture } from './investigation-fixture.client.ts'
 
 it('uses recorded dependencies, support and opposition without deriving links from time or shared assets', () => {
   const graph = investigation(investigationFixture())

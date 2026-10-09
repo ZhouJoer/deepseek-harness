@@ -1,4 +1,4 @@
-/** Small committed investigation with dependency, review and incomplete-output cases. @module */
+/** Independent investigation records with dependency, review and incomplete-output cases. @module */
 import { recordSchema } from '@deepseek-ai/dsh-experimental-security-analysis/src/workbench/model.ts'
 import type { WorkbenchView } from '@deepseek-ai/dsh-experimental-security-analysis/client'
 

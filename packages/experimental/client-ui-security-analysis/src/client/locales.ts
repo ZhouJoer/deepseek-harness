@@ -2,6 +2,14 @@
 export const NS = 'security-workbench'
 /** Chinese operator-facing security copy. */
 export const zh = {
+  exportEvidence: '导出证据包', exportPreparing: '正在准备导出', exportStarted: '已开始下载证据包',
+  exportFailed: '无法导出，请检查证据是否完整及导出大小限制',
+  coverageTitle: '检查覆盖', coverageUpdating: '正在更新检查覆盖', coverageBlockedOnly: '仅查看受阻',
+  coverageNoEvidence: '尚无检查依据', coverageInventory: '清点观察', coverageImplementation: '静态实现观察',
+  coverageOther: '其他已采集观察', coverageDependencies: '尚未完成的前置检查',
+  coverageStatic: '静态观察', coverageSimulation: '模拟观察', coverageDevice: '设备观察', coverageUnknownMethod: '观察方式未记录',
+  coverageStaticReview: '关联结论已静态复核', coverageRuntimeReview: '关联结论已运行复核',
+  coverageResolve: '处理受阻', coverageNoChecks: '尚未列出检查', coverageUnlinked: '未关联检查的观察', coverageCheckUnavailable: '检查已更新或不可用',
   graphRawOutput: '原始输出',
   graphBinary: '已保存二进制原文，此处不作文本预览',
   graphSubject: '所属材料', graphIncoming: '前置与来源', graphOutgoing: '后续与引用',
@@ -504,6 +512,14 @@ export const zh = {
 export type SecurityKey = keyof typeof zh
 /** English operator-facing security copy. */
 export const en: Record<SecurityKey, string> = {
+  exportEvidence: 'Export evidence archive', exportPreparing: 'Preparing export', exportStarted: 'Evidence download started',
+  exportFailed: 'Export failed. Check evidence availability and the archive size limit.',
+  coverageTitle: 'Check coverage', coverageUpdating: 'Updating check coverage', coverageBlockedOnly: 'Blocked checks only',
+  coverageNoEvidence: 'No observations linked to this check', coverageInventory: 'Inventory observations', coverageImplementation: 'Static implementation observations',
+  coverageOther: 'Other collected observations', coverageDependencies: 'Unfinished prerequisite checks',
+  coverageStatic: 'Static observation', coverageSimulation: 'Simulated observation', coverageDevice: 'Device observation', coverageUnknownMethod: 'Observation method not recorded',
+  coverageStaticReview: 'Related conclusion reviewed statically', coverageRuntimeReview: 'Related conclusion reviewed against execution',
+  coverageResolve: 'Resolve blocker', coverageNoChecks: 'No checks defined', coverageUnlinked: 'Observations without check links', coverageCheckUnavailable: 'The check changed or is unavailable',
   graphRawOutput: 'Original output',
   graphBinary: 'Binary content is saved and cannot be previewed as text here',
   graphSubject: 'Subject material', graphIncoming: 'Incoming', graphOutgoing: 'Outgoing',

@@ -1106,7 +1106,7 @@ export interface Config {
 ## `@deepseek-ai/dsh-experimental-security-analysis`
 
 - `inject`: `tools` · `agents` · `llm` · `systemPrompt` · `storageDomain` · `jobs` · `subagents`
-- `source`: [`packages/experimental/security-analysis/src/index.ts:70`](../packages/experimental/security-analysis/src/index.ts)
+- `source`: [`packages/experimental/security-analysis/src/index.ts:72`](../packages/experimental/security-analysis/src/index.ts)
 
 ```ts config-catalog
 /** Explicit host locations and operational limits. */
@@ -1136,6 +1136,8 @@ export interface WorkbenchConfig {
   maxDerivedAssets: number
   /** Maximum bytes in one imported sample or immutable artifact. */
   maxArtifactBytes: number
+  /** Maximum uncompressed report archive bytes, including its manifest and checksums. */
+  exportMaxBytes: number
   /** Maximum raw collection or knowledge-refinement output bytes. */
   maxOutputBytes: number
   /** Maximum complete JSON bytes in one model-facing tool response. */

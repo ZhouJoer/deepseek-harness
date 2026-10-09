@@ -27,6 +27,7 @@ interface RecordSummary {
     role?: string
     task?: string
     checkpointId?: string
+    checkId?: string
     disposition?: string
     hasDetails: true
   }
@@ -68,6 +69,7 @@ export function modelPage(view: WorkbenchView, query: RecordQuery, maxBytes: num
       ...(item.kind === 'finding' ? { findingHash: findingHash(item.value) } : {}),
       ...(item.kind === 'delegation' ? { title: item.value.question.slice(0, 120), role: item.value.role,
         task: item.value.task, assetId: item.value.assetId, checkpointId: item.value.checkpointId,
+        ...(item.value.checkId ? { checkId: item.value.checkId } : {}),
         ...(item.value.disposition ? { disposition: item.value.disposition.decision } : { disposition: 'pending' }),
       } : {}),
       ...(item.kind === 'evidence' ? {

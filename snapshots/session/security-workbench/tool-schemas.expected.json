@@ -361,6 +361,17 @@
             "type": "string",
             "description": "Settled assignment to retry or supplement. Starts a fresh child; never resumes the previous worker."
           },
+          "checkId": {
+            "type": "string",
+            "description": "Optional planned check for the assigned asset. All dependencies must be complete; the report does not complete the check."
+          },
+          "inputEvidenceIds": {
+            "type": "array",
+            "description": "Existing observations for this asset to read first, including failed or incomplete observations. Supply this list explicitly on retries.",
+            "items": {
+              "type": "string"
+            }
+          },
           "role": {
             "type": "string",
             "enum": [
