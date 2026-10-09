@@ -2,6 +2,7 @@ import { defineConfig } from 'tsdown'
 
 export default defineConfig({
   entry: { native: 'lib/types/native-provider.js', 'packet-capture': 'lib/types/packet-capture-provider.js', offline: 'lib/types/offline-provider.js', web: 'lib/types/web-provider.js', laboratory: 'lib/types/laboratory.js', commands: 'lib/types/operator-commands.js', index: 'lib/types/index.js', workbench: 'lib/types/workbench/index.js',
+    'external-web': 'lib/types/external-web-provider.js',
     environment: 'lib/types/environment-local.js', ghidra: 'lib/types/ghidra-provider.js',
     frida: 'lib/types/frida-provider.js', android: 'lib/types/android-provider.js' },
   outDir: 'lib', format: ['esm'], platform: 'node', target: 'es2024',

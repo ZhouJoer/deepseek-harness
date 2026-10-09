@@ -3,9 +3,11 @@
 import type {} from '@deepseek-ai/dsh-experimental-security-analysis'
 import { fileURLToPath } from 'node:url'
 import { readFileSync } from 'node:fs'
+import { createServer } from 'node:http'
+import { once } from 'node:events'
 import type { Browser, Page } from 'playwright'
 import { chromium } from 'playwright'
-import { afterEach, beforeEach, describe, expect, it, onTestFailed } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, onTestFailed, onTestFinished } from 'vitest'
 import * as yaml from 'js-yaml'
 import { interpolate } from '@deepseek-ai/cordis-plugin-loader'
 import { entryListSchema } from '@deepseek-ai/cordis-plugin-include'
@@ -66,6 +68,82 @@ describe('web e2e: Security workbench', () => {
   afterEach(async () => {
     await browser?.close()
     await scaffold?.close()
+  })
+  it('registers an HTTP target, configures login, approves a plan and reads redacted responses through Remote', async () => {
+    const requests: string[] = []
+    const target = createServer((request, response) => {
+      requests.push(request.url!); response.setHeader('Content-Type', 'text/plain')
+      if (request.url === '/login') { response.setHeader('Set-Cookie', 'session=private-browser-cookie; Path=/; HttpOnly'); response.end('signed in') }
+      else { response.statusCode = request.headers.cookie ? 200 : 401; response.end(request.headers.cookie ?? 'anonymous') }
+    })
+    onTestFinished(async () => { target.closeAllConnections()
+      if (target.listening) await new Promise<void>((resolve, reject) =>
+        target.close((error) =>{  if (error) reject(error)
+        else resolve() })) })
+    onTestFailed(() => saveFailureShot(page, 'web-e2e-http'))
+    target.listen(0, '127.0.0.1'); await once(target, 'listening')
+    const address = target.address(); if (!address || typeof address === 'string') throw new Error('Missing target listener')
+    const agent = scaffold.ctx.agents.list()[0]!
+    const controller = await scaffold.ctx.securityWorkbench.ready
+    await scaffold.ctx.securityWorkbench.importMaterials(agent, JSON.stringify({ operationId: 'browser-http-task', expectedRevision: controller.view(agent.id).revision,
+      title: 'Owned HTTP application', objective: 'Check an authorized response', resources: { environmentIds: ['local'], maxAttempts: 3 } }))
+    await page.getByRole('button', { name: 'Security workspace', exact: false }).click()
+    const dashboard = page.getByRole('region', { name: 'Security analysis', exact: true })
+    await dashboard.getByRole('button', { name: /Owned HTTP application/ }).click()
+    await dashboard.getByRole('button', { name: 'HTTP validation', exact: true }).click()
+    const http = dashboard.getByRole('region', { name: 'HTTP validation', exact: true })
+    await http.getByRole('button', { name: 'Connect analysis conversation' }).click()
+    const registration = http.locator('details').filter({ has: page.locator('summary').getByText('Web targets', { exact: true }) })
+    await registration.getByLabel('Name', { exact: true }).fill('Authorized local site')
+    await registration.getByLabel('Site origin', { exact: true }).fill(`http://127.0.0.1:${address.port}`)
+    await registration.getByLabel('Allowed IPs or CIDRs (one per line)', { exact: true }).fill('127.0.0.1/32')
+    await registration.getByRole('button', { name: 'Register target' }).click()
+    await http.getByText('Test identities', { exact: true }).click()
+    const authentication = http.locator('details').filter({ has: page.locator('summary').getByText('Test identities', { exact: true }) })
+    await authentication.getByLabel('Name', { exact: true }).fill('Test reader')
+    await authentication.getByLabel('Username', { exact: true }).fill('browser-user')
+    await authentication.getByLabel('Password', { exact: true }).fill('browser-password')
+    await authentication.getByRole('button', { name: 'Save identity', exact: true }).click()
+    await expect.poll(async () => ({ options: await http.getByLabel('Identity', { exact: true }).last().innerText(),
+      errors: await http.getByRole('alert').allTextContents() })).toMatchObject({ options: expect.stringContaining('Test reader') as string, errors: [] })
+    await expect.poll(() => controller.view(agent.id).records.filter(item => item.kind === 'asset').length).toBe(1)
+    await http.getByLabel('Identity', { exact: true }).last().selectOption({ label: 'Test reader' })
+    await http.getByRole('button', { name: 'Add request', exact: true }).last().click()
+    await http.getByRole('spinbutton', { name: 'Expected observation', exact: true }).last().fill('401')
+    await http.getByLabel('What will be verified', { exact: true }).fill('Can the test identity read its authorized response?')
+    await http.getByRole('textbox', { name: 'Expected observation', exact: true }).fill('HTTP 200 after successful login')
+    await http.getByLabel('Impact', { exact: true }).fill('Create one test login session')
+    await http.getByLabel('Cleanup', { exact: true }).fill('Clear temporary cookies')
+    await http.getByRole('button', { name: 'Prepare validation plan' }).click()
+    await http.getByText('Plan prepared. Review it before execution.', { exact: true }).waitFor()
+    expect(requests).toEqual([])
+    await http.getByRole('button', { name: 'Approve this version', exact: true }).click()
+    await http.getByRole('button', { name: 'Execute plan', exact: true }).click()
+    await http.getByText('This approval has been used. Prepare a new plan to repeat the check.', { exact: true }).waitFor()
+    await expect.poll(() => requests).toEqual(['/login', '/', '/'])
+    expect(await http.getByRole('button', { name: 'Execute plan', exact: true }).isDisabled()).toBe(true)
+    await http.getByRole('button', { name: /^GET \/ · 200/ }).click()
+    await http.getByText('session=[redacted]', { exact: true }).waitFor()
+    expect(await http.innerText()).not.toContain('private-browser-cookie')
+    await http.getByRole('checkbox', { name: 'Select for comparison' }).last().check()
+    await http.getByRole('button', { name: 'Compare selected requests', exact: true }).click()
+    await http.getByText(/The displayed content differs/).waitFor()
+    await page.setViewportSize({ width: 390, height: 844 }); await page.emulateMedia({ colorScheme: 'dark' })
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+    await http.getByText(/The displayed content differs/).scrollIntoViewIfNeeded()
+    await page.screenshot({ path: '.dsh/http-evidence-en-dark-narrow.png' })
+    const chinese = await browser.newPage({ viewport: { width: 1000, height: 900 }, locale: 'zh-CN', colorScheme: 'light' })
+    try {
+      await chinese.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
+      await chinese.getByRole('button', { name: '安全分析', exact: true }).click()
+      const panel = chinese.getByRole('region', { name: '安全分析', exact: true })
+      await panel.getByRole('button', { name: /Owned HTTP application/ }).click()
+      await panel.getByRole('button', { name: 'HTTP 验证', exact: true }).click()
+      await panel.getByRole('button', { name: /^GET \/ · 401/ }).click()
+      await panel.getByText('anonymous', { exact: true }).waitFor()
+      await panel.screenshot({ path: '.dsh/http-evidence-zh-light.png' })
+    } finally { await chinese.close() }
+    expect(tripwire.pageErrors).toEqual([])
   })
   it.skipIf(process.platform !== 'win32' || !process.env.DSH_SECURITY_TSHARK)('inspects Windows interfaces and analyzes imported captures through the browser Remote', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-wireless'))
@@ -346,9 +424,8 @@ describe('web e2e: Security workbench', () => {
     await assistant.getByRole('button', { name: 'Close', exact: true }).click()
     await dashboard.getByRole('button', { name: 'Resume task', exact: true }).click()
     await expect.poll(() => controller.projects().find(item => item.id === task.id)?.stopped).toBe(false)
-    await dashboard.getByRole('button', { name: 'Hide assistant', exact: true }).waitFor()
-    await page.keyboard.press('Escape')
     await assistant.waitFor({ state: 'hidden' })
+    expect(controller.view(agent.id).records.filter(item => item.kind === 'execution')).toHaveLength(2)
     await page.setViewportSize({ width: 390, height: 844 })
     await dashboard.getByRole('button', { name: '← Back to tasks' }).click()
     await dashboard.getByRole('button', { name: /Demo task/ }).waitFor()

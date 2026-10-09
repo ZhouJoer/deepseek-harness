@@ -22,6 +22,9 @@ type Props = ActivityActions & PropsLocale<typeof NS> & {
   project: string
   view: WorkbenchView
   changed(view: WorkbenchView): void
+  openEvidence?: (id: string) => void
+  openFinding?: (id: string) => void
+  openPlans?: () => void
 }
 
 /** Render research directions without adding a new milestone for every call or turn.
@@ -110,7 +113,8 @@ export function ActivityTimeline(props: Props & { activity: ProjectActivity }) {
           {direction.findings.length ? direction.findings.map((item) => {
             const current = props.view.records.find(record => record.kind === 'finding' && record.value.id === item.id)
             return <p key={item.id}>{current?.kind === 'finding'
-              ? <><span className={css.badge}>{t(current.value.status)}</span> {current.value.title}</>
+              ? <><span className={css.badge}>{t(current.value.status)}</span> {props.openFinding ? <button onClick={() =>
+              {  props.openFinding?.(item.id) }}>{current.value.title}</button> : current.value.title}</>
               : t('unavailableReference')}</p>
           })
             : summary ? <><span className={css.observation}>{t('activityObservation')}</span><MarkdownText text={summary} labels={markdownLabels} /></> : <p className={css.emptyActivity}>{t('activityNoConclusion')}</p>}
@@ -124,7 +128,7 @@ export function ActivityTimeline(props: Props & { activity: ProjectActivity }) {
           {!direction.evidenceIds.length && <p>{t('activityNoEvidence')}</p>}
           {direction.evidenceIds.map((id) => {
             const evidence = props.view.records.find(item => item.kind === 'evidence' && item.value.id === id)
-            return <p key={id}>{evidence?.kind === 'evidence' ? evidence.value.title : t('unavailableReference')}</p>
+            return <p key={id}>{evidence?.kind === 'evidence' ? props.openEvidence ? <button onClick={() =>{  props.openEvidence?.(id) }}>{evidence.value.title}</button> : evidence.value.title : t('unavailableReference')}</p>
           })}
           {page?.items.map(item => <article className={css.record} key={item.id}>
             <strong>{item.tools.join(', ')} · {t(item.status === 'cancelled' ? 'activityCancelled' : item.status === 'unknown' ? 'activityUnknown' : item.status)}</strong>
@@ -133,7 +137,11 @@ export function ActivityTimeline(props: Props & { activity: ProjectActivity }) {
               <p>{t('activityCall')}: {item.sessionId} / {item.callId}</p></details>
             {props.view.records.filter(record => record.kind === 'evidence' && (item.evidenceIds.includes(record.value.id)
               || (record.value.source.sessionId === item.sessionId && record.value.source.callId === item.callId))).map(record => record.kind === 'evidence'
-              ? <p key={record.value.id}>{record.value.title} · {record.value.summary}</p> : null)}
+              ? <p key={record.value.id}>{props.openEvidence ? <button onClick={() =>
+              { props.openEvidence?.(record.value.id) }}>{record.value.title}</button>
+                : record.value.title} · {record.value.summary}</p> : null)}
+            {props.openPlans && item.tools.some(tool => tool === 'security_execute' || tool === 'security_command') &&
+              <button onClick={props.openPlans}>{t('planApprovals')}</button>}
           </article>)}
           {loading === direction.id && <p role="status">{t('dashboardLoading')}</p>}
           {page?.next !== null && page?.next !== undefined && <button disabled={loading === direction.id} onClick={() => void read(direction.id, true)}>{t('activityMore')}</button>}

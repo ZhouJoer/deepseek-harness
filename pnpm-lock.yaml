@@ -8062,6 +8062,18 @@ importers:
       fflate:
         specifier: ^0.8.3
         version: 0.8.3
+      ipaddr.js:
+        specifier: ^2.5.0
+        version: 2.5.0
+      parse5:
+        specifier: ^8.0.1
+        version: 8.0.1
+      tough-cookie:
+        specifier: ^6.0.1
+        version: 6.0.1
+      undici:
+        specifier: ^8.10.0
+        version: 8.10.0
       yauzl:
         specifier: ^3.4.0
         version: 3.4.0
@@ -8096,9 +8108,15 @@ importers:
       '@deepseek-ai/dsh-commands':
         specifier: workspace:*
         version: link:../../interaction/commands
+      '@deepseek-ai/dsh-credentials':
+        specifier: workspace:*
+        version: link:../../credentials/credentials
       '@deepseek-ai/dsh-fs-local':
         specifier: workspace:*
         version: link:../../fs/fs-local
+      '@deepseek-ai/dsh-http-proxy':
+        specifier: workspace:*
+        version: link:../../util/http-proxy
       '@deepseek-ai/dsh-jobs':
         specifier: workspace:*
         version: link:../../jobs/jobs

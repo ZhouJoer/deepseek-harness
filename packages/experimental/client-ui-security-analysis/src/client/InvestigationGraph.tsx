@@ -10,6 +10,7 @@ import type { ProjectActivity } from './useProjectActivity.ts'
 import { investigation, visibleInvestigation, type InvestigationNode } from './investigation.ts'
 import { TechnicalDetails } from './TechnicalDetails.tsx'
 import { EvidencePreview } from './EvidencePreview.tsx'
+import { HttpHistory, type HttpReadActions } from './HttpHistory.tsx'
 import type { NS, SecurityKey } from './locales.ts'
 import css from './InvestigationGraph.module.css'
 
@@ -20,6 +21,7 @@ type Props = PropsLocale<typeof NS> & Pick<ActivityActions, 'openChild'> & {
   project: string
   projectArtifact(project: string, hash: string): Promise<string>
   openPlans(this: void): void
+  httpRead?: HttpReadActions
 }
 const kinds: Record<InvestigationNode['record']['kind'], SecurityKey> = {
   asset: 'graphMaterial', check: 'graphCheck', checkpoint: 'graphDirection', delegation: 'graphDelegation',
@@ -105,8 +107,8 @@ export function InvestigationGraph(props: Props) {
   useEffect(() => { if (selected) inspector.current?.focus({ preventScroll: true }) }, [selected])
   useEffect(() => {
     let active = true
-    setPreview(undefined); setError(''); setReading(Boolean(evidence))
-    if (evidence) void props.projectArtifact(props.project, evidence.artifact.sha256).then((value) => {
+    setPreview(undefined); setError(''); setReading(Boolean(evidence && !evidence.http))
+    if (evidence && !evidence.http) void props.projectArtifact(props.project, evidence.artifact.sha256).then((value) => {
       if (active) setPreview(JSON.parse(value) as ArtifactPreview)
     }).catch((_error: unknown) => { if (active) setError(t('dashboardReadFailed')) })
       .finally(() => { if (active) setReading(false) })
@@ -189,6 +191,8 @@ export function InvestigationGraph(props: Props) {
           {evidence.cleanup && <p>{t('dashboardCleanup')}: {evidence.cleanup}</p>}
           {reading && <div role="status" aria-label={t('dashboardLoading')} className={css.loading} />}
           {error && <p role="alert">{error} <button onClick={() =>{  setRetry(value => value + 1) }}>{t('dashboardRetry')}</button></p>}
+          {evidence.http && props.httpRead && <HttpHistory {...props.httpRead} t={t} project={props.project}
+            evidenceId={evidence.id} revision={props.view.revision} />}
           {preview && <>{preview.truncated && <p>{t('dashboardTruncated')}</p>}{preview.binary ? <p>{t('graphBinary')}</p>
             : <EvidencePreview text={preview.text} provider={evidence.provider} t={t} />}</>}
         </>}

@@ -32,6 +32,14 @@
 
 Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnpm run verify-cordis-catalog` in doc-sync; regenerate with `pnpm run gen-cordis-catalog`) — the language sides differ only in locale-specific paired document paths. Signature blocks use a `ts cordis-catalog` fence and keep the original source JSDoc; dispatch modes are defined in the [primer](../cordis-primer.zh.md#dispatch-modes), and the framework-inherited `ctx` API lives in [cordis-api/inherited.md](../cordis-api/inherited.md).
 
+<a id="ctxsecurityexternalweb--securityexternalweb"></a>
+
+### `ctx.securityExternalWeb` — `SecurityExternalWeb`
+
+Optional Host owner for external HTTP execution and target credentials.
+
+Source: [`packages/experimental/security-analysis/src/external-web-provider.ts`](../../packages/experimental/security-analysis/src/external-web-provider.ts)
+
 <a id="ctxsecurityworkbench--securityworkbench"></a>
 
 ### `ctx.securityWorkbench` — `SecurityWorkbench`
@@ -88,6 +96,45 @@ Optional security profile service; default application compositions remain indep
 /** List persistent projects, including removed projects available for restoration.
  * @returns project identities and objectives. */
 @Remote('projects') async projects(): Promise<string>
+
+/** Follow all task summaries over one disposable subscription.
+ * @param signal - connection lifetime.
+ * @returns complete lightweight baselines after committed or runtime changes. */
+@Remote({ mode: 'stream' }) async *followProjects(signal: AbortSignal): AsyncIterable<SecurityProjectSummary[]>
+
+/** List target authentication descriptions without revealing secret values.
+ * @param projectId - owning project.
+ * @param targetId - registered external target.
+ * @returns configured identities. */
+@Remote('httpIdentities') async httpIdentities(projectId: string, targetId: string): Promise<HttpIdentityDescription[]>
+
+/** Save secret input through the authenticated operator connection, outside the journal.
+ * @param projectId - owning project.
+ * @param targetId - registered external target.
+ * @param input - JSON authentication configuration.
+ * @returns the new version description, never its values. */
+@Remote('configureHttpIdentity') async configureHttpIdentity(projectId: string, targetId: string, input: string): Promise<HttpIdentityDescription>
+
+/** Remove one authentication profile; future execution must prepare a new identity version.
+ * @param projectId - owning project.
+ * @param targetId - registered external target.
+ * @param identityId - profile to remove. */
+@Remote('removeHttpIdentity') async removeHttpIdentity(projectId: string, targetId: string, identityId: HttpIdentityId): Promise<void>
+
+/** Read bounded HTTP metadata without loading response bodies.
+ * @param projectId - selected project.
+ * @param input - JSON filters and pagination offset.
+ * @returns linked request history. */
+@Remote('httpHistory') async httpHistory(projectId: string, input: string): Promise<HttpHistoryPage>
+
+/** Read one sanitized request or response field by byte window.
+ * @param projectId - selected project.
+ * @param evidenceId - saved evidence.
+ * @param stepId - request step.
+ * @param part - request template, headers or body.
+ * @param offset - byte offset.
+ * @returns bounded field content. */
+@Remote('httpExchange') async httpExchange(projectId: string, evidenceId: string, stepId: string, part: 'request' | 'headers' | 'body', offset: number): Promise<HttpExchangePage>
 
 /** Read current definitions without probing installations.
  * @returns the catalog with legacy installation definitions and import revision.

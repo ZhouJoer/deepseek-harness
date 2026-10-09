@@ -22,6 +22,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import { DashboardSession, type DashboardSessionInput } from './DashboardSession.tsx'
 import { randomUUID } from '@deepseek-ai/dsh-util-crypto'
 import type {} from '@deepseek-ai/dsh-client-ui-workspace/client'
+import type {} from '@deepseek-ai/dsh-api-session-controller/client'
 import { NS, zh, en, type SecurityKey } from './locales.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
@@ -114,6 +115,15 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       })
     }
     const dashboardActions: DashboardActions = {
+      followProjects: signal => remote.followProjects(signal),
+      httpHistory: (project, input) => unwrap(remote.httpHistory(project, input)),
+      httpExchange: (project, evidence, step, part, offset) => unwrap(remote.httpExchange(project, evidence, step, part, offset)),
+      httpIdentities: (project, target) => unwrap(remote.httpIdentities(project, target)),
+      configureHttpIdentity: (project, target, input) => unwrap(remote.configureHttpIdentity(project, target, input)),
+      removeHttpIdentity: (project, target, identity) => unwrap(remote.removeHttpIdentity(project, target, identity)),
+      configuration: session => actions.configuration(session),
+      command: (session, input) => actions.command(session, input),
+      execute: (session, plan, operation, revision) => actions.execute(session, plan, operation, revision),
       observe: (id, input) => scoped.sessions.using(id, { source: 'securityWorkbench' }, () => unwrap(remote.observe(id, input))),
       analyzeImprovements: input => unwrap(remote.analyzeImprovements(input)),
       updateImprovement: input => unwrap(remote.updateImprovement(input)),

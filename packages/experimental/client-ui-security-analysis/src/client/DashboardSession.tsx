@@ -81,7 +81,10 @@ export function DashboardSession(props: PropsRuntime<'security.workbench.session
           const current = await props.load(sessionId)
           if (generationAtStart !== generation.current) throw new Error(t('analysisSessionChanged'))
           prepared.current = await props.importMaterials(sessionId, JSON.stringify({
-            operationId: input.operationId, expectedRevision: current.revision, material: input.material,
+            operationId: input.operationId, expectedRevision: current.revision,
+            material: input.material, target: input.target ? { ...input.target,
+              environmentId: input.environmentId, label: input.title } : undefined,
+
             title: input.title, objective: input.objective,
             resources: { environmentIds: [input.environmentId], maxAttempts },
           }))

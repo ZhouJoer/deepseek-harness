@@ -19,6 +19,8 @@ const commitSchema = z
 export interface SecurityJournal {
   /** @returns the current committed snapshot. */
   view(): WorkbenchView
+  /** Subscribe to any committed task change; disposal removes the listener. */
+  subscribeAll(listener: () => void): () => void
   /** Subscribe to successful project commits; the returned disposer removes the listener. */
   subscribe(project: string, listener: () => void): () => void
   /** Subscribe to committed selection changes for one Session; disposal removes the listener. */
@@ -73,6 +75,7 @@ export async function openSecurityJournal(ctx: Context): Promise<SecurityJournal
   const records = new Map<string, SecurityRecord>()
   const operations = new Map<string, string>()
   const listeners = new Map<string, Set<() => void>>()
+  const allListeners = new Set<() => void>()
   const selections = new Map<string, Set<() => void>>()
   let revision = 0
   let chain = Promise.resolve()
@@ -111,6 +114,7 @@ export async function openSecurityJournal(ctx: Context): Promise<SecurityJournal
   const fingerprintOf = (input: unknown) => createHash('sha256').update(JSON.stringify(input)).digest('hex')
   return {
     view,
+    subscribeAll(listener) { allListeners.add(listener); return () => { allListeners.delete(listener) } },
     subscribe(project, listener) {
       const group = listeners.get(project) ?? new Set<() => void>()
       group.add(listener); listeners.set(project, group)
@@ -148,6 +152,9 @@ export async function openSecurityJournal(ctx: Context): Promise<SecurityJournal
         revision = commit.revision
         operations.set(operationId, fingerprint)
         apply(changed)
+        for (const listener of allListeners) {
+          try { listener() } catch (error) { ctx.logger.warn('Security directory subscriber failed: %s', String(error)) }
+        }
         for (const item of changed) {
           if (item.kind !== 'binding') continue
           for (const listener of selections.get(item.value.sessionId) ?? []) {
@@ -193,6 +200,9 @@ export async function openSecurityJournal(ctx: Context): Promise<SecurityJournal
         revision = commit.revision; operations.set(operationId, fingerprint)
         const sessions = [...records.values()].filter(item => item.kind === 'binding' && item.value.engagementId === projectId)
         await scrub()
+        for (const listener of allListeners) {
+          try { listener() } catch (error) { ctx.logger.warn('Security directory subscriber failed: %s', String(error)) }
+        }
         for (const item of sessions) if (item.kind === 'binding') for (const listener of selections.get(item.value.sessionId) ?? []) {
           try { listener() } catch (error) { ctx.logger.warn('Security selection subscriber failed: %s', String(error)) }
         }
@@ -218,6 +228,7 @@ export async function openSecurityJournal(ctx: Context): Promise<SecurityJournal
       return pending
     },
     close() {
+      allListeners.clear()
       listeners.clear()
       selections.clear()
       closing ??= chain.then(() => domain.close())

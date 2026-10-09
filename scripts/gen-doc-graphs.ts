@@ -733,6 +733,14 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'Providers implement transports; the service also owns optional Activation-based continuation orchestration, tool-subagent selects one-shot or continuable delegation, tool-subagent-control delivers follow-ups, and tool-ralph requires one fresh structured-output route.',
   },
   {
+    key: 'securityExternalWeb',
+    pkg: 'experimental-security-analysis',
+    title: 'External HTTP verification provider',
+    mode: 'core',
+    consumers: ['experimental-security-analysis', 'experimental-security-profile'],
+    note: 'Registers scoped HTTP execution with securityWorkbench and owns versioned authentication configuration through credentials.',
+  },
+  {
     key: 'securityWorkbench',
     pkg: 'experimental-security-analysis',
     title: 'Security check and evidence domain',

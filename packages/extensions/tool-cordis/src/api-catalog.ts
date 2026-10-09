@@ -1903,6 +1903,18 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'securityExternalWeb',
+    summary: 'Optional Host owner for external HTTP execution and target credentials.',
+    description: 'Optional Host owner for external HTTP execution and target credentials.',
+    methods: [
+      {
+        signature: 'readonly identities: HttpIdentities',
+        description: 'Host-owned authentication records; never expose private snapshots to clients.',
+        parameters: [],
+      },
+    ],
+  },
+  {
     key: 'securityWorkbench',
     summary: 'Optional security profile service; default application compositions remain independent.',
     description: 'Optional security profile service; default application compositions remain independent.',
@@ -1965,6 +1977,41 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'List persistent projects, including removed projects available for restoration.',
         parameters: [],
         returns: 'project identities and objectives.',
+      },
+      {
+        signature: '@Remote({ mode: \'stream\' }) async *followProjects(signal: AbortSignal): AsyncIterable<SecurityProjectSummary[]>',
+        description: 'Follow all task summaries over one disposable subscription.',
+        parameters: [{ name: 'signal', description: 'connection lifetime.' }],
+        returns: 'complete lightweight baselines after committed or runtime changes.',
+      },
+      {
+        signature: '@Remote(\'httpIdentities\') async httpIdentities(projectId: string, targetId: string): Promise<HttpIdentityDescription[]>',
+        description: 'List target authentication descriptions without revealing secret values.',
+        parameters: [{ name: 'projectId', description: 'owning project.' }, { name: 'targetId', description: 'registered external target.' }],
+        returns: 'configured identities.',
+      },
+      {
+        signature: '@Remote(\'configureHttpIdentity\') async configureHttpIdentity(projectId: string, targetId: string, input: string): Promise<HttpIdentityDescription>',
+        description: 'Save secret input through the authenticated operator connection, outside the journal.',
+        parameters: [{ name: 'projectId', description: 'owning project.' }, { name: 'targetId', description: 'registered external target.' }, { name: 'input', description: 'JSON authentication configuration.' }],
+        returns: 'the new version description, never its values.',
+      },
+      {
+        signature: '@Remote(\'removeHttpIdentity\') async removeHttpIdentity(projectId: string, targetId: string, identityId: HttpIdentityId): Promise<void>',
+        description: 'Remove one authentication profile; future execution must prepare a new identity version.',
+        parameters: [{ name: 'projectId', description: 'owning project.' }, { name: 'targetId', description: 'registered external target.' }, { name: 'identityId', description: 'profile to remove.' }],
+      },
+      {
+        signature: '@Remote(\'httpHistory\') async httpHistory(projectId: string, input: string): Promise<HttpHistoryPage>',
+        description: 'Read bounded HTTP metadata without loading response bodies.',
+        parameters: [{ name: 'projectId', description: 'selected project.' }, { name: 'input', description: 'JSON filters and pagination offset.' }],
+        returns: 'linked request history.',
+      },
+      {
+        signature: '@Remote(\'httpExchange\') async httpExchange(projectId: string, evidenceId: string, stepId: string, part: \'request\' | \'headers\' | \'body\', offset: number): Promise<HttpExchangePage>',
+        description: 'Read one sanitized request or response field by byte window.',
+        parameters: [{ name: 'projectId', description: 'selected project.' }, { name: 'evidenceId', description: 'saved evidence.' }, { name: 'stepId', description: 'request step.' }, { name: 'part', description: 'request template, headers or body.' }, { name: 'offset', description: 'byte offset.' }],
+        returns: 'bounded field content.',
       },
       {
         signature: '@Remote(\'toolCatalog\') toolCatalog(): ToolCatalogSnapshot',
@@ -4777,7 +4824,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'AnalysisResult',
-    declaration: 'export interface AnalysisResult {\n    bytes: Uint8Array;\n    mediaType: string;\n    summary: string;\n    incomplete: boolean;\n    toolVersion: string;\n    failure?: string;\n    cleanup?: string;\n    method?: \'static\' | \'simulation\' | \'device\';\n    observationKind?: \'inventory\' | \'implementation\';\n}',
+    declaration: 'export interface AnalysisResult {\n    http?: HttpSummary;\n    bytes: Uint8Array;\n    mediaType: string;\n    summary: string;\n    incomplete: boolean;\n    toolVersion: string;\n    failure?: string;\n    cleanup?: string;\n    method?: \'static\' | \'simulation\' | \'device\';\n    observationKind?: \'inventory\' | \'implementation\';\n}',
   },
   {
     name: 'AnalysisScript',
@@ -5009,7 +5056,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'CheckCoverage',
-    declaration: 'export interface CheckCoverage {\n    checkId: CheckId;\n    assetId: string;\n    title: string;\n    criterion: string;\n    status: Extract<SecurityRecord, {\n        kind: \'check\';\n    }>[\'value\'][\'status\'];\n    rationale: string;\n    evidenceIds: EvidenceId[];\n    missingEvidenceIds: string[];\n    unmetDependencies: string[];\n    inventory: number;\n    implementation: number;\n    other: number;\n    failed: number;\n    incomplete: number;\n    methods: string[];\n    reviews: {\n        findingId: string;\n        title: string;\n        verdict: \'confirmed\' | \'refuted\';\n        basis: \'static\' | \'runtime\';\n    }[];\n}',
+    declaration: 'export interface CheckCoverage {\n    checkId: CheckId;\n    assetId: AssetId;\n    title: string;\n    criterion: string;\n    status: Extract<SecurityRecord, {\n        kind: \'check\';\n    }>[\'value\'][\'status\'];\n    rationale: string;\n    evidenceIds: EvidenceId[];\n    missingEvidenceIds: EvidenceId[];\n    unmetDependencies: CheckId[];\n    inventory: number;\n    implementation: number;\n    other: number;\n    failed: number;\n    incomplete: number;\n    methods: string[];\n    reviews: {\n        findingId: string;\n        title: string;\n        verdict: \'confirmed\' | \'refuted\';\n        basis: \'static\' | \'runtime\';\n    }[];\n}',
   },
   {
     name: 'CheckId',
@@ -5456,6 +5503,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface EncodedImageAttachment {\n    mediaType: ImageMediaType;\n    data: string;\n    name?: string;\n}',
   },
   {
+    name: 'Engagement',
+    declaration: 'export type Engagement = z.infer<typeof engagementSchema>;',
+  },
+  {
     name: 'EnvironmentManager',
     declaration: 'export interface EnvironmentManager {\n    devices(environment: SecurityEnvironment, signal: AbortSignal): Promise<import(\'../device-types.ts\').DeviceInventory>;\n    inventory(environment: SecurityEnvironment, signal: AbortSignal, toolIds?: readonly string[]): Promise<ToolboxInventory>;\n    inspect(environment: SecurityEnvironment, signal: AbortSignal): Promise<EnvironmentStatus>;\n    start(environment: SecurityEnvironment, signal: AbortSignal): Promise<string>;\n    stop(environment: SecurityEnvironment, signal: AbortSignal): Promise<void>;\n}',
   },
@@ -5642,6 +5693,50 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'HostConnectionRpc',
     declaration: 'export interface HostConnectionRpc {\n    handle(channel: string, handler: ConnectionRpcHandler): () => Promise<void>;\n    intercept(channel: \'/api\', matches: ConnectionRpcEndpointMatcher, handler: ConnectionRpcHandler): () => Promise<void>;\n}',
+  },
+  {
+    name: 'HttpExchangePage',
+    declaration: 'export interface HttpExchangePage {\n    stepId: HttpStepId;\n    part: \'request\' | \'headers\' | \'body\';\n    text: string;\n    offset: number;\n    next: number | null;\n    totalBytes: number;\n    incomplete: boolean;\n    bodyOmitted: boolean;\n}',
+  },
+  {
+    name: 'HttpHistoryItem',
+    declaration: 'export interface HttpHistoryItem extends z.infer<typeof httpExchangeSummarySchema> {\n    evidenceId: EvidenceId;\n    assetId: AssetId;\n    createdAt: number;\n}',
+  },
+  {
+    name: 'HttpHistoryPage',
+    declaration: 'export interface HttpHistoryPage {\n    items: HttpHistoryItem[];\n    next: number | null;\n    through: number;\n}',
+  },
+  {
+    name: 'HttpIdentities',
+    declaration: 'export class HttpIdentities {\n    constructor(private readonly credentials: Credentials);\n    async read(targetId: string, id: HttpIdentityId): Promise<HttpIdentitySnapshot>;\n    async list(targetId: string): Promise<HttpIdentityDescription[]>;\n    async write(targetId: string, input: unknown, projectId: string): Promise<HttpIdentityDescription>;\n    async remove(targetId: string, id: HttpIdentityId): Promise<void>;\n    async removeProject(projectId: string): Promise<void>;\n}',
+  },
+  {
+    name: 'HttpIdentityDescription',
+    declaration: 'export interface HttpIdentityDescription {\n    id: HttpIdentityId;\n    revision: HttpIdentityRevision;\n    label: string;\n    mode: \'cookie\' | \'bearer\' | \'basic\' | \'login\';\n    secretNames: string[];\n    loginSteps: HttpStep[];\n    tokenVariable?: string;\n}',
+  },
+  {
+    name: 'HttpIdentityId',
+    declaration: 'export type HttpIdentityId = Branded<\'SecurityHttpIdentity\'>;',
+  },
+  {
+    name: 'HttpIdentityRevision',
+    declaration: 'export type HttpIdentityRevision = Branded<\'SecurityHttpIdentityRevision\'>;',
+  },
+  {
+    name: 'HttpIdentitySnapshot',
+    declaration: 'export type HttpIdentitySnapshot = z.infer<typeof storedSchema>;',
+  },
+  {
+    name: 'HttpStep',
+    declaration: 'export type HttpStep = z.infer<typeof httpStepSchema>;',
+  },
+  {
+    name: 'HttpStepId',
+    declaration: 'export type HttpStepId = Branded<\'SecurityHttpStep\'>;',
+  },
+  {
+    name: 'HttpSummary',
+    declaration: 'export type HttpSummary = z.infer<typeof httpSummarySchema>;',
   },
   {
     name: 'ImageAttachmentLimits',
@@ -6745,7 +6840,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SecurityActivityStore',
-    declaration: 'export class SecurityActivityStore {\n    static async open(ctx: Context): Promise<SecurityActivityStore>;\n    updateBrief(input: SecurityActivityBrief): Promise<void>;\n    async flush(): Promise<void>;\n    subscribe(listener: (project: string) => void): () => void;\n    removeProject(projectId: string): Promise<void>;\n    has(sessionId: string, callId: string): boolean;\n    start(input: Pick<SecurityActivity, \'projectId\' | \'sessionId\' | \'callId\' | \'checkpointId\' | \'tools\' | \'verified\' | \'parameters\'>): Promise<SecurityActivity>;\n    finish(id: SecurityActivityId, result: Pick<SecurityActivity, \'status\' | \'incomplete\' | \'detail\'> & {\n        evidenceIds?: string[];\n    }): Promise<void>;\n    assignInitialDirection(projectId: string, sessionId: string, checkpointId: string): Promise<void>;\n    attachEvidence(projectId: string, sessionId: string, callIds: readonly string[], evidenceId: string): Promise<void>;\n    usage(project: string): SecurityToolUsage[];\n    page(project: string, checkpointId: string, offset: number, limit: number, through = this.cursor): SecurityActivityPage;\n    async *follow(project: string, view: () => WorkbenchView, subscribeProject: (listener: () => void) => () => void, signal: AbortSignal): AsyncGenerator<SecurityActivityFrame, void>;\n    async close(): Promise<void>;\n}',
+    declaration: 'export class SecurityActivityStore {\n    static async open(ctx: Context): Promise<SecurityActivityStore>;\n    updateBrief(input: SecurityActivityBrief): Promise<void>;\n    async flush(): Promise<void>;\n    subscribe(listener: (project: string) => void): () => void;\n    runningCounts(): Map<string, number>;\n    removeProject(projectId: string): Promise<void>;\n    has(sessionId: string, callId: string): boolean;\n    start(input: Pick<SecurityActivity, \'projectId\' | \'sessionId\' | \'callId\' | \'checkpointId\' | \'tools\' | \'verified\' | \'parameters\'>): Promise<SecurityActivity>;\n    finish(id: SecurityActivityId, result: Pick<SecurityActivity, \'status\' | \'incomplete\' | \'detail\'> & {\n        evidenceIds?: string[];\n    }): Promise<void>;\n    assignInitialDirection(projectId: string, sessionId: string, checkpointId: string): Promise<void>;\n    attachEvidence(projectId: string, sessionId: string, callIds: readonly string[], evidenceId: string): Promise<void>;\n    usage(project: string): SecurityToolUsage[];\n    page(project: string, checkpointId: string, offset: number, limit: number, through = this.cursor): SecurityActivityPage;\n    async *follow(project: string, view: () => WorkbenchView, subscribeProject: (listener: () => void) => () => void, signal: AbortSignal): AsyncGenerator<SecurityActivityFrame, void>;\n    async close(): Promise<void>;\n}',
   },
   {
     name: 'SecurityController',
@@ -6757,7 +6852,11 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SecurityJournal',
-    declaration: 'export interface SecurityJournal {\n    view(): WorkbenchView;\n    subscribe(project: string, listener: () => void): () => void;\n    subscribeSelection(session: string, listener: () => void): () => void;\n    replay(operationId: string, input: unknown): WorkbenchView | undefined;\n    commit(operationId: string, expectedRevision: number | undefined, input: unknown, produce: (view: WorkbenchView) => Promise<SecurityRecord[]> | SecurityRecord[]): Promise<WorkbenchView>;\n    purge(operationId: string, expectedRevision: number, projectId: string, plan: (removed: SecurityRecord[], retained: SecurityRecord[]) => Promise<string[]>): Promise<WorkbenchView>;\n    pendingPurges(): {\n        projectId: string;\n        artifacts: string[];\n    }[];\n    finishPurge(projectId: string): Promise<void>;\n    close(): Promise<void>;\n}',
+    declaration: 'export interface SecurityJournal {\n    view(): WorkbenchView;\n    subscribeAll(listener: () => void): () => void;\n    subscribe(project: string, listener: () => void): () => void;\n    subscribeSelection(session: string, listener: () => void): () => void;\n    replay(operationId: string, input: unknown): WorkbenchView | undefined;\n    commit(operationId: string, expectedRevision: number | undefined, input: unknown, produce: (view: WorkbenchView) => Promise<SecurityRecord[]> | SecurityRecord[]): Promise<WorkbenchView>;\n    purge(operationId: string, expectedRevision: number, projectId: string, plan: (removed: SecurityRecord[], retained: SecurityRecord[]) => Promise<string[]>): Promise<WorkbenchView>;\n    pendingPurges(): {\n        projectId: string;\n        artifacts: string[];\n    }[];\n    finishPurge(projectId: string): Promise<void>;\n    close(): Promise<void>;\n}',
+  },
+  {
+    name: 'SecurityProjectSummary',
+    declaration: 'export interface SecurityProjectSummary {\n    project: Engagement;\n    runningAgentCount: number;\n    runningInvocationCount: number;\n    pendingPlanIds: ValidationPlanId[];\n    blockedCheckIds: CheckId[];\n    interruptedCheckIds: CheckId[];\n    next: string;\n    state: \'removed\' | \'stopping\' | \'stopped\' | \'running\' | \'interrupted\' | \'approval\' | \'blocked\' | \'idle\';\n}',
   },
   {
     name: 'SecurityRecord',
@@ -8214,6 +8313,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'UserMessage',
     declaration: 'export interface UserMessage extends MessageBase {\n    readonly role: \'user\';\n}',
+  },
+  {
+    name: 'ValidationPlanId',
+    declaration: 'export type ValidationPlanId = Branded<\'SecurityValidationPlan\'>;',
   },
   {
     name: 'VerifiedWebhookDelivery',

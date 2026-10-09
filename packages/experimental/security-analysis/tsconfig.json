@@ -8,6 +8,8 @@
     "src"
   ],
   "references": [
+    { "path": "../../credentials/credentials" },
+    { "path": "../../util/http-proxy" },
     { "path": "../../session-query/session-query" },
     {
       "path": "../../../vendor/cordis"

@@ -43,7 +43,7 @@ export function investigation(view: WorkbenchView): Investigation {
     let running = false
     let attention = false
     switch (record.kind) {
-      case 'asset': title = record.value.label; summary = 'kind' in record.value && record.value.kind === 'web' ? record.value.origin : ''; break
+      case 'asset': title = record.value.label; summary = 'kind' in record.value && (record.value.kind === 'web' || record.value.kind === 'external-web') ? record.value.origin : ''; break
       case 'checkpoint': title = record.value.title; summary = record.value.summary; break
       case 'check': {
         const value = record.value

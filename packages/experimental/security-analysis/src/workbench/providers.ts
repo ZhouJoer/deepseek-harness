@@ -2,6 +2,7 @@
 import type { ArtifactStore } from './artifacts.ts'
 import type { AnalysisOperation, Asset } from './model.ts'
 import type { ToolboxInventory } from '../toolbox-types.ts'
+import type { HttpSummary } from '../http-model.ts'
 
 /** Operator-configured tool location. */
 export interface ToolInstallation {
@@ -83,6 +84,8 @@ export interface EnvironmentStatus {
 }
 /** Complete bounded provider result before evidence ingestion. */
 export interface AnalysisResult {
+  /** Sanitized HTTP step metadata; complete observations remain in bytes. */
+  http?: HttpSummary
   bytes: Uint8Array
   mediaType: string
   summary: string

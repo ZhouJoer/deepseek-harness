@@ -71,6 +71,8 @@
 
     - id: security-web
       name: '@deepseek-ai/dsh-experimental-security-analysis/web'
+    - id: security-external-web
+      name: '@deepseek-ai/dsh-experimental-security-analysis/external-web'
     - id: security-laboratory
       name: '@deepseek-ai/dsh-experimental-security-analysis/laboratory'
 

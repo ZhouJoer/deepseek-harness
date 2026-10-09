@@ -54,6 +54,12 @@ Source file or directory assets provide file inventory, line reads and literal s
 
 The Toolbox's **Devices** tab reads cached observations on opening. **Inspect devices** explicitly inspects the selected environment; failures retain previous interfaces with observation times. Serial cards show COM/PnP and available USB identifiers without authenticating Tufty or opening ports. In task materials, choose Wi-Fi or BLE and a local environment, then **Analyze capture** or **Inspect frames**. A stopped task must be resumed; a task without an accessible conversation needs **Continue analysis** first. Results enter the existing evidence and progress views. File sizes remain visible and technical details retain hashes; raw capture bytes are not rendered as text.
 
+**Web targets** in New analysis accepts an authorized site origin, path prefix and IP/CIDR ranges. In task details, **HTTP validation** provides target registration, private identity configuration, login recipes and structured request editing. Connect an analysis conversation before preparing a plan, inspect the expanded login and test requests, then use the existing approval and execution controls. Used approvals remain visible with execution results and cannot execute again.
+
+**Request history** filters by target, method, path and status. Select a request to read its Host-paged template, response headers or text body; select two to compare their displayed status and content. Missing, redacted, omitted or truncated content prevents an equality conclusion. **Create replay draft** copies testing steps into an editable draft; it sends no request. **Link finding** records the HTTP step and its baseline, verification or supporting role and returns the claim to independent review.
+
+The task list uses one Host directory subscription for live running, stopping, paused, interrupted, approval, attention and idle states. Running tasks can also need approval. Idle does not mean complete. **Resume** releases a pause, **Resolve blocker** records reconciliation, **Continue analysis** opens or explicitly creates a conversation, and a fresh validation plan controls repeated HTTP requests. Evidence and findings in the activity timeline open their saved details.
+
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
 

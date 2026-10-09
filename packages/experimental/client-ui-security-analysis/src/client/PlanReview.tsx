@@ -1,6 +1,7 @@
 /** Human-readable approval summary and persisted execution outcome for a validation plan. @module */
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
-import type { WorkbenchView } from '@deepseek-ai/dsh-experimental-security-analysis/client'
+import type { WorkbenchView, HttpSequence } from '@deepseek-ai/dsh-experimental-security-analysis/client'
+import { HttpPlanSummary } from './HttpPlanSummary.tsx'
 import { MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { NS } from './locales.ts'
 import css from './Workbench.module.css'
@@ -23,7 +24,10 @@ export function PlanReview(props: PropsLocale<typeof NS> & {
 }) {
   const { plan, t } = props
   const execution = props.view.records.filter(item => item.kind === 'execution' && item.value.planId === plan.id).at(-1)
+  const asset = props.view.records.find(item => item.kind === 'asset' && item.value.id === plan.operation.assetId)
+  const target = asset?.kind === 'asset' && 'kind' in asset.value && asset.value.kind === 'external-web' ? asset.value : undefined
   const offline = plan.operation.provider === 'offline'
+  const consumed = plan.operation.approvalUse === 'single-execution' && !!execution
   const native = plan.operation.provider === 'native'
   const parameterText = (key: string) => {
     const value = plan.operation.parameters[key]
@@ -41,13 +45,18 @@ export function PlanReview(props: PropsLocale<typeof NS> & {
       {native && <><dt>{t('planNativePlatform')}</dt><dd>{parameterText('platform')}</dd>
         <dt>{t('planNativePython')}</dt><dd>{parameterText('python')} ({parameterText('version')})</dd>
         <dt>{t('planNativeCwd')}</dt><dd>{parameterText('cwd')}</dd></>}
+      {target && <><dt>{t('httpOrigin')}</dt><dd>{target.origin}</dd>
+        <dt>{t('httpPrefix')}</dt><dd>{target.pathPrefix}</dd>
+        <dt>{t('httpAddresses')}</dt><dd>{target.allowedAddresses.join(', ')}</dd></>}
       <dt>{t('expected')}</dt><dd>{markdown(plan.expectedObservation)}</dd>
       <dt>{t('impact')}</dt><dd>{markdown(plan.impact)}</dd>
       <dt>{t('cleanup')}</dt><dd>{markdown(plan.cleanup)}</dd>
       <dt>{t('duration')}</dt><dd>{plan.durationMs}</dd>
     </dl>
     {offline && <p className={css.planNotice}>{t('planOfflineLimits')}</p>}
+    {consumed && <p className={css.planNotice}>{t('httpConsumed')}</p>}
     {native && <p className={css.planNotice}>{t('planNativeLimits')}</p>}
+    {plan.operation.provider === 'external-web' && <HttpPlanSummary t={t} sequence={plan.operation.parameters as HttpSequence} />}
     {execution?.kind === 'execution' && <section className={css.planNotice} role={failed ? 'alert' : 'status'}>
       <strong>{t('planExecutionStatus')}: {t(execution.value.status)}</strong>
       {failed && <p>{t(offline && execution.value.detail.includes('FileNotFoundError') ? 'planOfflineMissingFile' : 'planExecutionFailureHint')}</p>}
@@ -55,7 +64,7 @@ export function PlanReview(props: PropsLocale<typeof NS> & {
     </section>}
     <div className={css.taskActions}>
       <button disabled={props.busy || props.disabled || plan.status === 'approved'} onClick={props.approve}>{t('approve')}</button>
-      <button disabled={props.busy || props.disabled || plan.status !== 'approved'} onClick={props.execute}>{t('execute')}</button>
+      <button disabled={props.busy || props.disabled || consumed || plan.status !== 'approved'} onClick={props.execute}>{t('execute')}</button>
       <button disabled={props.busy || plan.status !== 'approved'} onClick={props.revoke}>{t('revoke')}</button>
     </div>
     <details><summary>{t('planTechnicalDetails')}</summary>

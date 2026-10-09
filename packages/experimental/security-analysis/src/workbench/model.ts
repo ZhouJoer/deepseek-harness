@@ -4,6 +4,7 @@ import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import { brandString, type Branded } from '@deepseek-ai/dsh-brand'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { JobId } from '@deepseek-ai/dsh-jobs/brand'
+import { httpSummarySchema } from '../http-model.ts'
 
 /** Identifies an assessment project. */
 export type EngagementId = Branded<'SecurityEngagement'>
@@ -80,6 +81,11 @@ export const webAssetSchema = z.object({
   id: id.transform(brandString<AssetId>), engagementId: id, label: text,
   environmentId: id, origin: z.url(), pathPrefix: text, instanceId: id,
 }).strict()
+/** Operator-registered HTTP origin, independent of managed laboratory generations. */
+export const externalWebAssetSchema = z.object({
+  kind: z.literal('external-web'), id: id.transform(brandString<AssetId>), engagementId: id, label: text,
+  environmentId: id, origin: z.url(), pathPrefix: text, allowedAddresses: z.array(text).min(1),
+}).strict()
 /** An immutable directory manifest with measured member artifacts. */
 export const sourceAssetSchema = z.object({
   kind: z.literal('source'),
@@ -87,7 +93,7 @@ export const sourceAssetSchema = z.object({
   artifact: artifactSchema, identity: z.literal('measured'),
 }).strict()
 /** Existing file records retain their original persisted representation. */
-export const assetSchema = z.union([fileAssetSchema, webAssetSchema, sourceAssetSchema])
+export const assetSchema = z.union([fileAssetSchema, webAssetSchema, sourceAssetSchema, externalWebAssetSchema])
 /** One check with its acceptance criterion, inputs and durable execution status. */
 export const checkSchema = z
   .object({
@@ -127,6 +133,7 @@ export const evidenceSchema = z
     cleanup: z.string().optional(),
     method: z.enum(['static', 'simulation', 'device']).optional(),
     observationKind: z.enum(['inventory', 'implementation']).optional(),
+    http: httpSummarySchema.optional(),
     createdAt: z.number().int().nonnegative(),
   })
   .strict()
@@ -142,6 +149,8 @@ export const findingSchema = z
     evidenceIds: z.array(id).min(1),
     conditions: text,
     review: z.string(),
+    httpReferences: z.array(z.object({ evidenceId: id, stepId: id,
+      role: z.enum(['baseline', 'verification', 'supporting']) }).strict()).optional(),
   })
   .strict()
 /** Independent assessment bound to exact finding content and its observations. */
@@ -168,6 +177,7 @@ export const operationSchema = z
     parameters: z.record(z.string(), json),
     script: artifactSchema.optional(),
     impact: z.enum(['observe', 'analysis-write', 'target-write']),
+    approvalUse: z.literal('single-execution').optional(),
   })
   .strict()
 /** Approval binds the complete plan, including script content and target parameters. */

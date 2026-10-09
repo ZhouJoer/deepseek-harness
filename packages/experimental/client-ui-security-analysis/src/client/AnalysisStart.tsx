@@ -17,6 +17,7 @@ export interface AnalysisStartProps extends PropsLocale<typeof NS> {
     title: string
     objective: string
     environmentId: string
+    target?: { origin: string; pathPrefix: string; allowedAddresses: string[] }
   }): Promise<void>
   send(objective: string): Promise<void>
   started(): void
@@ -29,6 +30,7 @@ export function AnalysisStart(props: AnalysisStartProps) {
   const { t } = props
   const [selection, setSelection] = useState<{ material: MaterialSelection; title: string }>()
   const [objective, setObjective] = useState('')
+  const [origin, setOrigin] = useState(''); const [pathPrefix, setPathPrefix] = useState('/'); const [addresses, setAddresses] = useState('')
   const [environment, setEnvironment] = useState<string>()
   const [prepared, setPrepared] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -48,7 +50,9 @@ export function AnalysisStart(props: AnalysisStartProps) {
     try {
       if (!prepared) {
         const input = { ...selection, title: selection?.title ?? objective.trim().split('\n').slice(0, 1).join(''),
-          objective: objective.trim(), environmentId }
+          objective: objective.trim(), environmentId,
+          ...(origin.trim() ? { target: { origin: origin.trim(),
+            pathPrefix, allowedAddresses: addresses.split(/\s+/u).filter(Boolean) } } : {}) }
         const payload = JSON.stringify(input)
         if (attempt.current?.payload !== payload) attempt.current = { payload, operationId: randomUUID() }
         await props.prepare({ ...input, operationId: attempt.current.operationId })
@@ -62,6 +66,11 @@ export function AnalysisStart(props: AnalysisStartProps) {
   return <section className={css.taskSummary}>
     <h2>{t('newAnalysis')}</h2><p>{t('simpleStartHint')}</p>
     <p className={css.summaryHint}>{t('analysisRecordHint')}</p>
+    <details><summary>{t('httpTargets')}</summary><fieldset className={css.httpFields} disabled={locked}>
+      <label className={css.field}>{t('httpOrigin')}<input value={origin} onChange={(event) =>{  setOrigin(event.target.value) }} /></label>
+      <label className={css.field}>{t('httpPrefix')}<input value={pathPrefix} onChange={(event) =>{  setPathPrefix(event.target.value) }} /></label>
+      <label className={css.field}>{t('httpAddresses')}<textarea value={addresses} onChange={(event) =>{  setAddresses(event.target.value) }} /></label>
+    </fieldset></details>
     <label className={css.field}>{t('analysisRequest')}<textarea rows={3} value={objective} disabled={locked}
       placeholder={t('analysisRequestHint')} onChange={(event) => { setObjective(event.target.value) }} /></label>
     {selection && <div role="status" className={css.materialPanel}><p>{t('selectedMaterial')}</p>

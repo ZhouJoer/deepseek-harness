@@ -236,9 +236,10 @@ flowchart LR
   pkg_tool_subagent_control["tool-subagent-control"]
   pkg_tool_ralph["tool-ralph"]
   pkg_experimental_security_analysis["experimental-security-analysis"]
+  svc_securityExternalWeb["ctx.securityExternalWeb<br/>External HTTP verification provider"]
+  pkg_experimental_security_profile["experimental-security-profile"]
   svc_securityWorkbench["ctx.securityWorkbench<br/>Security check and evidence domain"]
   pkg_experimental_client_ui_security_analysis["experimental-client-ui-security-analysis"]
-  pkg_experimental_security_profile["experimental-security-profile"]
   pkg_experimental_speech_to_text["experimental-speech-to-text"]
   svc_speechToText["ctx.speechToText<br/>Experimental speech recognition providers"]
   pkg_experimental_speech_to_text_sensevoice["experimental-speech-to-text-sensevoice"]
@@ -331,6 +332,7 @@ flowchart LR
   pkg_experimental_computer_use_cua_driver_mcp --> svc_computerUse
   pkg_experimental_computer_use_cua_driver_native --> svc_computerUse
   pkg_experimental_ptc_runtime_python --> svc_ptcRuntime
+  pkg_experimental_security_analysis --> svc_securityExternalWeb
   pkg_experimental_security_analysis --> svc_securityWorkbench
   pkg_experimental_speech_to_text --> svc_speechToText
   pkg_experimental_speech_to_text_sensevoice --> svc_speechToText
@@ -500,6 +502,8 @@ flowchart LR
   svc_sandboxPolicy --> pkg_bash_sandbox
   svc_sandboxPolicy --> pkg_fs_sandbox
   svc_sandboxPolicy --> pkg_terminal_bash
+  svc_securityExternalWeb --> pkg_experimental_security_analysis
+  svc_securityExternalWeb --> pkg_experimental_security_profile
   svc_securityWorkbench --> pkg_experimental_client_ui_security_analysis
   svc_securityWorkbench --> pkg_experimental_security_profile
   svc_sessionPersistence --> pkg_agent_loop
@@ -664,6 +668,7 @@ flowchart LR
 | `ctx.fs` | `seam` | [`fs`](../packages/fs/fs) | [`fs-local`](../packages/fs/fs-local), [`fs-sandbox`](../packages/fs/fs-sandbox), [`fs-ssh`](../packages/ssh/fs-ssh) | [`tool-fs`](../packages/fs/tool-fs) | [`fs-observation-policy`](../packages/fs/fs-observation-policy) | tool-fs 通过 ctx.fs 执行读取／写入／编辑；fs-sandbox 按共享沙箱模式限制变更；fs-observation-policy 通过 fs/* 事件门禁贡献基于观测状态的检查。 |
 | `ctx.compaction` | `seam` | [`compaction`](../packages/compaction/compaction) | [`compaction-basic`](../packages/compaction/compaction-basic) | [`compaction-basic`](../packages/compaction/compaction-basic) | - | 基础后端消费步骤后的压力事件和请求错误恢复事件；不存在面向模型的压缩工具。 |
 | `ctx.subagents` | `seam` | [`subagent`](../packages/subagent/subagent) | [`subagent-spawn-in-process`](../packages/subagent/subagent-spawn-in-process), [`subagent-fork-in-process`](../packages/subagent/subagent-fork-in-process), [`subagent-acp`](../packages/subagent/subagent-acp), [`subagent-codex`](../packages/subagent/subagent-codex), [`subagent-claude-code`](../packages/subagent/subagent-claude-code), [`subagent-dsh-sdk`](../packages/subagent/subagent-dsh-sdk) | [`tool-subagent`](../packages/subagent/tool-subagent), [`tool-subagent-control`](../packages/subagent/tool-subagent-control), [`tool-ralph`](../packages/workflow/tool-ralph) | - | 提供方实现传输；该服务还负责可选的、基于 Activation 的延续编排，tool-subagent 选择一次性或可延续委派，tool-subagent-control 传递后续消息，而 tool-ralph 要求一条全新的结构化输出路由。 |
+| `ctx.securityExternalWeb` | `core` | [`experimental-security-analysis`](../packages/experimental/security-analysis) | - | [`experimental-security-analysis`](../packages/experimental/security-analysis), [`experimental-security-profile`](../packages/experimental/security-profile) | - | 向 securityWorkbench 注册受范围约束的 HTTP 执行，并通过 credentials 管理带版本的认证配置。 |
 | `ctx.securityWorkbench` | `core` | [`experimental-security-analysis`](../packages/experimental/security-analysis) | - | [`experimental-client-ui-security-analysis`](../packages/experimental/client-ui-security-analysis), [`experimental-security-profile`](../packages/experimental/security-profile) | - | 持有项目范围、显式 Session 角色、持久化检查和不可变验证批准；专用分析与环境 provider 通过其领域接口注册。 |
 | `ctx.speechToText` | `seam` | [`experimental-speech-to-text`](../packages/experimental/speech-to-text) | [`experimental-speech-to-text-sensevoice`](../packages/experimental/speech-to-text-sensevoice) | [`experimental-api-speech-to-text`](../packages/experimental/api-speech-to-text) | - | 路由显式选择的识别器；浏览器使用带认证的 Remote，并在提交前将转写保留在草稿中。 |
 | `ctx.agentTeams` | `core` | [`experimental-agent-team`](../packages/experimental/agent-team) | - | [`experimental-tool-agent-team`](../packages/experimental/tool-agent-team) | - | 负责隐式 Root roster、持久 peer mailbox、共享任务 DAG 与 continuable child 生命周期；tool-agent-team 提供模型控制工具。 |

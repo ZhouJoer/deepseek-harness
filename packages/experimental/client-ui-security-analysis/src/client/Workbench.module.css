@@ -231,6 +231,9 @@
 .findingSummary { -webkit-line-clamp: 3; font-size: 14px; line-height: 1.6; margin-bottom: 0; }
 .eyebrow { color: var(--dsw-alias-label-secondary); font-size: 12px; line-height: 1.5; }
 .taskActions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 12px; }
+.httpFields { min-width: 0; margin: 16px 0; padding: 16px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; }
+.httpFields .field { margin: 12px 0; }
+.httpFields input, .httpFields select, .httpFields textarea { min-width: 0; max-width: 100%; background: var(--dsw-alias-bg-layer-1); color: var(--dsw-alias-label-primary); }
 .panel .primaryAction { background: var(--dsw-alias-button-primary-fill); color: var(--dsw-alias-label-primary-inverted); border: 0; padding: 9px 16px; }
 .metrics article { border: 0.5px solid var(--dsw-alias-border-l2); }
 .metrics article span { color: var(--dsw-alias-label-secondary); font-size: 12px; line-height: 1.5; }

@@ -74,6 +74,29 @@ async function harness(generateReport?: (prompt: string, signal: AbortSignal) =>
 }
 
 describe('security workbench', () => {
+  it('consumes single-execution approval once across concurrent starts and durable retries', async () => {
+    const { controller, send, assetId, journal } = await harness()
+    let requests = 0
+    const entered = Promise.withResolvers<undefined>(); const release = Promise.withResolvers<undefined>()
+    controller.providers.register({ id: 'single', operations: ['request'], resolve: value => ({ ...value, approvalUse: 'single-execution' }),
+      run: async () => { requests++; entered.resolve(undefined); await release.promise; return { bytes: Buffer.from('observed'), mediaType: 'text/plain', summary: 'one request', incomplete: false, toolVersion: 'fixture' } } })
+    onTestFinished(() => { release.resolve(undefined) })
+    await send({ kind: 'check', check: { assetId, title: 'One approved request', phase: 'validation', criterion: 'One response', dependencies: [], evidenceIds: [] } })
+    const check = controller.view('parent').records.find(item => item.kind === 'check')!
+    const operation: AnalysisOperation = { provider: 'single', operation: 'request', assetId, environmentId: 'local', impact: 'observe', parameters: {} }
+    await send({ kind: 'plan', checkId: check.value.id, operation, hypothesis: 'One request', expectedObservation: 'One response', impact: 'Read', cleanup: 'None', durationMs: 1000 })
+    const plan = controller.view('parent').records.find(item => item.kind === 'plan')!
+    await send({ kind: 'approve', planId: plan.value.id }, true)
+    const executionId = randomUUID(); const revision = journal.view().revision
+    const first = controller.execute('parent', plan.value.id, executionId, revision, 'call-one', new AbortController().signal)
+    await entered.promise
+    await controller.execute('parent', plan.value.id, executionId, journal.view().revision, 'retry', new AbortController().signal)
+    await expect(controller.execute('parent', plan.value.id, randomUUID(), revision, 'concurrent', new AbortController().signal)).rejects.toThrow()
+    release.resolve(undefined); await first
+    await controller.execute('parent', plan.value.id, executionId, journal.view().revision, 'durable-retry', new AbortController().signal)
+    await expect(controller.execute('parent', plan.value.id, randomUUID(), journal.view().revision, 'replay', new AbortController().signal)).rejects.toThrow('already been used')
+    expect(requests).toBe(1)
+  })
   it('lets an operator reconcile stopped checks without resuming the project', async () => {
     const { controller, send, assetId, journal } = await harness()
     await send({ kind: 'check', check: { assetId, title: 'Read caller', phase: 'assessment', criterion: 'Read the caller', dependencies: [], evidenceIds: [] } })

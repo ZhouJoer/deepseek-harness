@@ -5,7 +5,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import type { ReactNode } from 'react'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { en as common } from '@deepseek-ai/dsh-client-locale/src/locales/en.ts'
-import { recordSchema } from '@deepseek-ai/dsh-experimental-security-analysis/src/workbench/model.ts'
+import { engagementSchema, recordSchema } from '@deepseek-ai/dsh-experimental-security-analysis/src/workbench/model.ts'
 import type { WorkbenchView } from '@deepseek-ai/dsh-experimental-security-analysis/client'
 import { Dashboard } from '../src/client/Dashboard.tsx'
 import { deviceActions } from './device-fixture.client.ts'
@@ -15,9 +15,9 @@ import type {} from '../src/client/index.ts'
 // jsdom has no CSS transform matrix; actual graph geometry is covered in the browser scenario.
 beforeEach(() => { vi.stubGlobal('DOMMatrixReadOnly', class { m22 = 1 }) })
 afterEach(() => { cleanup(); vi.unstubAllGlobals() })
-const project = (id: string, stopped = false) => recordSchema.parse({ kind: 'engagement', value: {
+const project = (id: string, stopped = false) => ({ kind: 'engagement' as const, value: engagementSchema.parse({
   id, title: id, objective: 'Review owned code', environmentIds: ['local'], stopped, maxAttempts: 3,
-} })
+}) })
 const alpha = project('Alpha')
 const beta = project('Beta', true)
 const evidence = recordSchema.parse({ kind: 'evidence', value: { id: 'e1', engagementId: 'Alpha', assetId: 'a1',
@@ -28,6 +28,10 @@ function harness(extra: object = {}) {
   const release = vi.fn()
   const api = {
     ...deviceActions,
+    followProjects: async function* (signal: AbortSignal) {
+      yield [alpha, beta].map(item => ({ project: item.value, runningAgentCount: 0, runningInvocationCount: 0, pendingPlanIds: [], interruptedCheckIds: [], blockedCheckIds: [], next: '', state: item.value.stopped ? 'stopped' as const : 'idle' as const }))
+      if (!signal.aborted) await new Promise<void>((resolve) =>{  signal.addEventListener('abort', () =>{  resolve() }, { once: true }) })
+    },
     observe: vi.fn(async (_id: string, _input: string) => ({ revision: 2, records: [alpha, evidence] })),
     projects: vi.fn(async () => JSON.stringify([alpha.value, beta.value])),
     project: vi.fn(async (id: string): Promise<WorkbenchView> => ({ revision: 1, records: id === 'Alpha' ? [alpha, evidence] : [beta] })),

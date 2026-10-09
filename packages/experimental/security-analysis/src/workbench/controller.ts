@@ -9,6 +9,7 @@ import {
   fileAssetSchema,
   sourceAssetSchema,
   webAssetSchema,
+  externalWebAssetSchema,
   reviewSchema,
   reportSchema,
   laboratorySchema,
@@ -39,6 +40,7 @@ import { reportPrompt, renderReport, type ReportLimits } from './report.ts'
 import { importSource } from './source.ts'
 import { materialInputSchema, prepareMaterials } from './materials.ts'
 import { apkMembers } from './apk.ts'
+import { validateExternalTarget } from '../http-scope.ts'
 import { ArtifactStore } from './artifacts.ts'
 import { reportExportResponse } from './report-export.ts'
 import { unsharedArtifacts, referencedArtifacts } from './purge.ts'
@@ -81,6 +83,10 @@ const actions = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('import-legacy'), path: text, title: text }).strict(),
   z.object({ kind: z.literal('check'), check: checkInput }).strict(),
   z.object({ kind: z.literal('web-target'), environmentId: text, label: text, pathPrefix: text.default('/') }).strict(),
+  z.object({ kind: z.literal('external-web-target'), environmentId: text, label: text,
+    origin: text, pathPrefix: text, allowedAddresses: z.array(text).min(1) }).strict(),
+  z.object({ kind: z.literal('finding-http-reference'), findingId: text, evidenceId: text, stepId: text,
+    role: z.enum(['baseline', 'verification', 'supporting']) }).strict(),
   z.object({ kind: z.literal('revise-finding'), findingId: text, title: text, explanation: text, conditions: text, evidenceIds: z.array(text).min(1) }).strict(),
   z.object({ kind: z.literal('conclude'), reviewId: text }).strict(),
   z.object({ kind: z.literal('delegation-disposition'), delegationId: text,
@@ -540,6 +546,9 @@ export class SecurityController {
   private async importMaterialsImpl(sessionId: string, input: unknown): Promise<WorkbenchView> {
     const request = z.object({ operationId: text, expectedRevision: z.number().int().nonnegative(),
       material: materialInputSchema.optional(),
+      target: externalWebAssetSchema.pick({ origin: true, pathPrefix: true,
+        allowedAddresses: true, environmentId: true, label: true }).optional(),
+
       task: actions.options[0].omit({ kind: true }).optional(),
     }).strict().parse(input)
     await this.journal.commit(request.operationId, request.expectedRevision, { sessionId, material: request }, async (view) => {
@@ -550,11 +559,17 @@ export class SecurityController {
       if (!project || !('stopped' in project))
         throw new Error('Select a workspace and configure its resources before adding materials')
       if (project.stopped || project.archived) throw new Error('Project is stopped')
-      if (!request.material && created.length === 0) throw new Error('Select materials to add to the existing task')
+      if (!request.material && !request.target && created.length === 0) throw new Error('Select materials to add to the existing task')
       const materials = request.material ? await prepareMaterials(this.artifacts, request.material,
         { bytes: this.options.maxArtifactBytes, entries: this.options.maxDerivedAssets }) : []
       const assets = materials.map(material => assetSchema.parse({ ...material, id: randomUUID(), engagementId: project.id }))
       const records: SecurityRecord[] = [...created]
+      if (request.target) {
+        const environment = this.options.environments.find(item => item.id === request.target?.environmentId)
+        if (!environment || environment.kind !== 'local' || !project.environmentIds.includes(environment.id)) throw new Error('External HTTP requires a local environment in the task scope')
+        records.push({ kind: 'asset', value: externalWebAssetSchema.parse({ ...request.target, ...validateExternalTarget(request.target),
+          kind: 'external-web', id: randomUUID(), engagementId: project.id }) })
+      }
       for (const asset of assets) records.push(...await this.importedRecords(asset))
       return records
     })
@@ -671,7 +686,7 @@ export class SecurityController {
     signal: AbortSignal, onStopped?: (project: string) => void): Promise<WorkbenchView> {
     const command = commandSchema.parse(input)
     const action = command.action
-    const operatorActions = ['create', 'select', 'leave', 'approve', 'publish', 'resume', 'web-target']
+    const operatorActions = ['create', 'select', 'leave', 'approve', 'publish', 'resume', 'web-target', 'external-web-target']
     if (operatorActions.includes(action.kind) && !operator) throw new Error('This action requires an operator gesture')
     if (action.kind === 'report') return this.createReport(sessionId, command, operator, signal)
     await this.journal.commit(
@@ -721,6 +736,13 @@ export class SecurityController {
           }
         }
         switch (action.kind) {
+          case 'external-web-target': {
+            const environment = this.environment(project.id, action.environmentId)
+            if (environment.kind !== 'local') throw new Error('External HTTP targets require a local Host environment')
+            const target = validateExternalTarget(action)
+            return [{ kind: 'asset', value: externalWebAssetSchema.parse({ ...target, kind: 'external-web',
+              id: randomUUID(), engagementId: project.id, label: action.label, environmentId: environment.id }) }]
+          }
           case 'checkpoint': {
             evidence(action.evidenceIds)
             const current = view.records.filter(item => item.kind === 'checkpoint').filter(item => item.value.engagementId === project.id).at(-1)?.value
@@ -756,7 +778,21 @@ export class SecurityController {
             if (item.kind !== 'finding') throw new Error('Finding required')
             evidence(action.evidenceIds, item.value.assetId)
             return [{ kind: 'finding', value: { ...item.value, title: action.title, explanation: action.explanation,
-              conditions: action.conditions, evidenceIds: action.evidenceIds, status: 'suspected', review: '' } }]
+              conditions: action.conditions, evidenceIds: action.evidenceIds,
+              ...(item.value.httpReferences ? { httpReferences: item.value.httpReferences.filter(reference =>
+                action.evidenceIds.includes(reference.evidenceId)) } : {}),
+              status: 'suspected', review: '' } }]
+          }
+          case 'finding-http-reference': {
+            const finding = scoped('finding', action.findingId)
+            const observation = scoped('evidence', action.evidenceId)
+            if (finding.kind !== 'finding' || observation.kind !== 'evidence' || observation.value.assetId !== finding.value.assetId ||
+              !observation.value.http?.exchanges.some(step => step.stepId === action.stepId)) throw new Error('HTTP finding reference must identify an observation of the same asset')
+            const references = (finding.value.httpReferences ?? []).filter(item =>
+              item.evidenceId !== action.evidenceId || item.stepId !== action.stepId)
+            return [{ kind: 'finding', value: { ...finding.value, status: 'suspected', review: '',
+              evidenceIds: [...new Set([...finding.value.evidenceIds, action.evidenceId])],
+              httpReferences: [...references, { evidenceId: action.evidenceId, stepId: action.stepId, role: action.role }] } }]
           }
           case 'conclude': {
             const review = scoped('review', action.reviewId)
@@ -839,7 +875,7 @@ export class SecurityController {
           }
           case 'template': {
             const selected = asset(action.assetId)
-            const web = 'kind' in selected && selected.kind === 'web'
+            const web = 'kind' in selected && (selected.kind === 'web' || selected.kind === 'external-web')
             const stages = [
               [
                 'recon',
@@ -958,6 +994,12 @@ export class SecurityController {
           case 'finding': {
             asset(action.finding.assetId)
             evidence(action.finding.evidenceIds, action.finding.assetId)
+            for (const reference of action.finding.httpReferences ?? []) {
+              const observation = scoped('evidence', reference.evidenceId)
+              if (!action.finding.evidenceIds.includes(reference.evidenceId) || observation.kind !== 'evidence' ||
+                !observation.value.http?.exchanges.some(step => step.stepId === reference.stepId))
+                throw new Error('HTTP finding references must identify a step in the finding evidence')
+            }
             if (action.finding.status === 'confirmed' || action.finding.status === 'refuted')
               throw new Error('Conclusions require an independent review and the conclude command')
             return [
@@ -976,6 +1018,13 @@ export class SecurityController {
             if (action.durationMs > this.options.maxDurationMs)
               throw new Error('Plan duration exceeds deployment limit')
             let operation = action.operation
+            if (operation.provider === 'external-web' && operation.parameters.replayOf) {
+              const replay = z.object({ evidenceId: text, stepId: text.optional() }).strict().parse(operation.parameters.replayOf)
+              const original = scoped('evidence', replay.evidenceId)
+              if (original.kind !== 'evidence' || original.value.assetId !== operation.assetId || !original.value.http ||
+                (replay.stepId && !original.value.http.exchanges.some(step => step.stepId === replay.stepId)))
+                throw new Error('HTTP replay must reference an existing step for the same target')
+            }
             if (action.script !== undefined)
               operation = {
                 ...operation,
@@ -1323,6 +1372,9 @@ export class SecurityController {
           (current.value.approvedUntil ?? 0) <= Date.now()
         )
           throw new Error('Plan is not approved or project is stopped')
+        if (plan.operation.approvalUse === 'single-execution' && view.records.some(record =>
+          record.kind === 'execution' && record.value.planId === planId))
+          throw new Error('This plan has already been used; prepare a new replay plan')
         const item = view.records.find(item => item.kind === 'check' && item.value.id === plan.checkId)
         if (item?.kind !== 'check' || item.value.status !== 'planned')
           throw new Error('Check must be planned before execution')
@@ -1385,7 +1437,7 @@ export class SecurityController {
               request: plan.operation.parameters,
               source: { sessionId, callId, channel: callId.startsWith('operator:') ? 'operator' : 'tool' },
               incomplete: result.incomplete || failure !== undefined,
-              failure, cleanup: result.cleanup, method: result.method, observationKind: result.observationKind,
+              failure, cleanup: result.cleanup, method: result.method, observationKind: result.observationKind, http: result.http,
               createdAt: Date.now(),
             }),
           },

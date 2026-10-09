@@ -1,7 +1,10 @@
 /** Security workbench dictionaries. @module */
+import { httpZh, httpEn } from './http-locales.ts'
+/** Locale namespace for the security workbench. */
 export const NS = 'security-workbench'
 /** Chinese operator-facing security copy. */
 export const zh = {
+  ...httpZh,
   exportEvidence: '导出证据包', exportPreparing: '正在准备导出', exportStarted: '已开始下载证据包',
   exportFailed: '无法导出，请检查证据是否完整及导出大小限制',
   coverageTitle: '检查覆盖', coverageUpdating: '正在更新检查覆盖', coverageBlockedOnly: '仅查看受阻',
@@ -512,6 +515,7 @@ export const zh = {
 export type SecurityKey = keyof typeof zh
 /** English operator-facing security copy. */
 export const en: Record<SecurityKey, string> = {
+  ...httpEn,
   exportEvidence: 'Export evidence archive', exportPreparing: 'Preparing export', exportStarted: 'Evidence download started',
   exportFailed: 'Export failed. Check evidence availability and the archive size limit.',
   coverageTitle: 'Check coverage', coverageUpdating: 'Updating check coverage', coverageBlockedOnly: 'Blocked checks only',

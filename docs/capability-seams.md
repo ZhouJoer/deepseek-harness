@@ -234,9 +234,10 @@ flowchart LR
   pkg_tool_subagent_control["tool-subagent-control"]
   pkg_tool_ralph["tool-ralph"]
   pkg_experimental_security_analysis["experimental-security-analysis"]
+  svc_securityExternalWeb["ctx.securityExternalWeb<br/>External HTTP verification provider"]
+  pkg_experimental_security_profile["experimental-security-profile"]
   svc_securityWorkbench["ctx.securityWorkbench<br/>Security check and evidence domain"]
   pkg_experimental_client_ui_security_analysis["experimental-client-ui-security-analysis"]
-  pkg_experimental_security_profile["experimental-security-profile"]
   pkg_experimental_speech_to_text["experimental-speech-to-text"]
   svc_speechToText["ctx.speechToText<br/>Experimental speech recognition providers"]
   pkg_experimental_speech_to_text_sensevoice["experimental-speech-to-text-sensevoice"]
@@ -329,6 +330,7 @@ flowchart LR
   pkg_experimental_computer_use_cua_driver_mcp --> svc_computerUse
   pkg_experimental_computer_use_cua_driver_native --> svc_computerUse
   pkg_experimental_ptc_runtime_python --> svc_ptcRuntime
+  pkg_experimental_security_analysis --> svc_securityExternalWeb
   pkg_experimental_security_analysis --> svc_securityWorkbench
   pkg_experimental_speech_to_text --> svc_speechToText
   pkg_experimental_speech_to_text_sensevoice --> svc_speechToText
@@ -498,6 +500,8 @@ flowchart LR
   svc_sandboxPolicy --> pkg_bash_sandbox
   svc_sandboxPolicy --> pkg_fs_sandbox
   svc_sandboxPolicy --> pkg_terminal_bash
+  svc_securityExternalWeb --> pkg_experimental_security_analysis
+  svc_securityExternalWeb --> pkg_experimental_security_profile
   svc_securityWorkbench --> pkg_experimental_client_ui_security_analysis
   svc_securityWorkbench --> pkg_experimental_security_profile
   svc_sessionPersistence --> pkg_agent_loop
@@ -662,6 +666,7 @@ flowchart LR
 | `ctx.fs` | `seam` | [`fs`](../packages/fs/fs) | [`fs-local`](../packages/fs/fs-local), [`fs-sandbox`](../packages/fs/fs-sandbox), [`fs-ssh`](../packages/ssh/fs-ssh) | [`tool-fs`](../packages/fs/tool-fs) | [`fs-observation-policy`](../packages/fs/fs-observation-policy) | tool-fs executes read/write/edit through ctx.fs; fs-sandbox fences mutations by the shared sandbox mode; fs-observation-policy contributes observed-state checks through the fs/* event gate. |
 | `ctx.compaction` | `seam` | [`compaction`](../packages/compaction/compaction) | [`compaction-basic`](../packages/compaction/compaction-basic) | [`compaction-basic`](../packages/compaction/compaction-basic) | - | The basic backend consumes post-step pressure and request-error recovery events; there is no model-facing compact tool. |
 | `ctx.subagents` | `seam` | [`subagent`](../packages/subagent/subagent) | [`subagent-spawn-in-process`](../packages/subagent/subagent-spawn-in-process), [`subagent-fork-in-process`](../packages/subagent/subagent-fork-in-process), [`subagent-acp`](../packages/subagent/subagent-acp), [`subagent-codex`](../packages/subagent/subagent-codex), [`subagent-claude-code`](../packages/subagent/subagent-claude-code), [`subagent-dsh-sdk`](../packages/subagent/subagent-dsh-sdk) | [`tool-subagent`](../packages/subagent/tool-subagent), [`tool-subagent-control`](../packages/subagent/tool-subagent-control), [`tool-ralph`](../packages/workflow/tool-ralph) | - | Providers implement transports; the service also owns optional Activation-based continuation orchestration, tool-subagent selects one-shot or continuable delegation, tool-subagent-control delivers follow-ups, and tool-ralph requires one fresh structured-output route. |
+| `ctx.securityExternalWeb` | `core` | [`experimental-security-analysis`](../packages/experimental/security-analysis) | - | [`experimental-security-analysis`](../packages/experimental/security-analysis), [`experimental-security-profile`](../packages/experimental/security-profile) | - | Registers scoped HTTP execution with securityWorkbench and owns versioned authentication configuration through credentials. |
 | `ctx.securityWorkbench` | `core` | [`experimental-security-analysis`](../packages/experimental/security-analysis) | - | [`experimental-client-ui-security-analysis`](../packages/experimental/client-ui-security-analysis), [`experimental-security-profile`](../packages/experimental/security-profile) | - | Owns project scope, explicit Session roles, durable checks and immutable validation approval; dedicated analysis and environment providers register through its domain interfaces. |
 | `ctx.speechToText` | `seam` | [`experimental-speech-to-text`](../packages/experimental/speech-to-text) | [`experimental-speech-to-text-sensevoice`](../packages/experimental/speech-to-text-sensevoice) | [`experimental-api-speech-to-text`](../packages/experimental/api-speech-to-text) | - | Routes explicit recognizers; the browser uses the authenticated Remote and keeps transcripts in the draft until submission. |
 | `ctx.agentTeams` | `core` | [`experimental-agent-team`](../packages/experimental/agent-team) | - | [`experimental-tool-agent-team`](../packages/experimental/tool-agent-team) | - | Owns the implicit-root roster, durable peer mailbox, shared task DAG, and continuable-child lifecycle; tool-agent-team contributes model controls. |

@@ -65,6 +65,12 @@ export function reportPrompt(records: SecurityRecord[], limits: ReportLimits): s
         candidate.value.findingHash === findingHash(item.value))
       return { index, assetId: item.value.assetId, title: item.value.title, explanation: item.value.explanation,
         conditions: item.value.conditions, status: item.value.status,
+        ...(item.value.httpReferences ? { httpObservations: item.value.httpReferences.map((reference) => {
+          const evidence = records.find(entry => entry.kind === 'evidence' && entry.value.id === reference.evidenceId)
+          const step = evidence?.kind === 'evidence' ? evidence.value.http?.exchanges.find(exchange => exchange.stepId === reference.stepId) : undefined
+          return { role: reference.role, ...(step ? { method: step.method,
+            path: step.path, status: step.status, incomplete: step.incomplete } : { missing: true }) }
+        }) } : {}),
         review: review ? { accepted: true, verdict: review.value.verdict, basis: review.value.basis ?? 'runtime', explanation: review.value.explanation,
           uncertainty: review.value.uncertainty } : null }
     }),

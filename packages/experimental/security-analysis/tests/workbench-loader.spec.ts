@@ -4,7 +4,9 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { randomUUID } from 'node:crypto'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { createServer } from 'node:http'
+import { once } from 'node:events'
+import { afterEach, describe, expect, it, vi, onTestFinished } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import Include from '@deepseek-ai/cordis-plugin-include'
@@ -47,6 +49,8 @@ import * as Ghidra from '../src/ghidra-provider.ts'
 import * as Frida from '../src/frida-provider.ts'
 import * as Android from '../src/android-provider.ts'
 import * as Web from '../src/web-provider.ts'
+import ExternalWeb from '../src/external-web-provider.ts'
+import { MemoryCredentials } from '../../../credentials/credentials/tests/memory.ts'
 import * as Offline from '../src/offline-provider.ts'
 import * as Native from '../src/native-provider.ts'
 import * as PacketCapture from '../src/packet-capture-provider.ts'
@@ -233,6 +237,8 @@ async function load(inheritJobTool = false, knowledgeIntervalMs = 0,
     ['android', Android],
     ['environments', Environments],
     ['web', Web],
+    ['credentials', MemoryCredentials],
+    ['external-web', ExternalWeb],
     ['offline', Offline],
     ['native-provider', Native],
     ['packet-capture', PacketCapture],
@@ -750,7 +756,7 @@ describe('security workbench Loader composition', () => {
   })
   it('loads independent providers and logs model-visible scope through the unchanged loop', async () => {
     const { ctx, agent, controller, model } = await load()
-    expect(controller.providers.list().sort()).toEqual(['android', 'binary', 'frida', 'ghidra', 'native', 'offline', 'packet-capture', 'source', 'web'])
+    expect(controller.providers.list().sort()).toEqual(['android', 'binary', 'external-web', 'frida', 'ghidra', 'native', 'offline', 'packet-capture', 'source', 'web'])
     expect(controller.environments.list()).toEqual(['local'])
     agent.followup(
       createUserMessage({ content: [{ type: 'text', text: 'Inspect the scope.' }], source: { kind: 'user' } }),
@@ -760,6 +766,70 @@ describe('security workbench Loader composition', () => {
     expect(model.requests[0]?.tools?.map(tool => tool.name)).not.toContain('shell')
     expect(agent.session.snapshotEvents().some(event => event.type === 'tool/result')).toBe(true)
     expect((await execute(ctx, agent, 'security_help')).isError).toBe(false)
+  })
+  it('registers a site through task intake, executes one approved HTTP plan and serves redacted evidence through the Host readers', async () => {
+    const server = createServer((request, response) => { response.setHeader('Content-Type', 'application/json'); response.end(JSON.stringify({ reflected: request.headers.authorization })) })
+    onTestFinished(async () => { server.closeAllConnections()
+      if (server.listening) await new Promise<void>((resolve, reject) =>
+        server.close((error) =>{  if (error) reject(error)
+        else resolve() })) })
+    server.listen(0, '127.0.0.1'); await once(server, 'listening')
+    const address = server.address(); if (!address || typeof address === 'string') throw new Error('Missing listener')
+    const { ctx, agent, controller, model: reportModel } = await load()
+    const view = await ctx.securityWorkbench.importMaterials(agent, JSON.stringify({ operationId: 'http-task', expectedRevision: 0,
+      title: 'Owned HTTP target', objective: 'Compare authorized identity', resources: { environmentIds: ['local'], maxAttempts: 3 },
+      target: { label: 'Fixture', environmentId: 'local', origin: `http://127.0.0.1:${address.port}`, pathPrefix: '/', allowedAddresses: ['127.0.0.1'] } }))
+    const target = view.records.find(item => item.kind === 'asset')!; const project = controller.projects()[0]!
+    const identity = await ctx.securityWorkbench.configureHttpIdentity(project.id, target.value.id, JSON.stringify({ label: 'Reader', mode: 'bearer', secrets: { token: 'private-http-token' } }))
+    expect(JSON.stringify(await ctx.securityWorkbench.httpIdentities(project.id, target.value.id))).not.toContain('private-http-token')
+    const send = operator(controller, agent)
+    await send({ kind: 'check', check: { assetId: target.value.id, title: 'HTTP', phase: 'validation', criterion: 'Read one response', dependencies: [], evidenceIds: [] } })
+    const check = controller.view(agent.id).records.find(item => item.kind === 'check')!
+    await send({ kind: 'plan', checkId: check.value.id, hypothesis: 'Authorized response', expectedObservation: '200', impact: 'Read', cleanup: 'Close', durationMs: 5000,
+      operation: { provider: 'external-web', operation: 'sequence', environmentId: 'local', assetId: target.value.id, impact: 'observe', parameters: { steps: [{ id: 'read', label: 'Read', method: 'GET', path: '/', identityId: identity.id }] } } })
+    const plan = controller.view(agent.id).records.find(item => item.kind === 'plan')!
+    await send({ kind: 'approve', planId: plan.value.id })
+    await ctx.securityWorkbench.execute(agent, plan.value.id, 'http-execute', controller.view(agent.id).revision)
+    const history = await ctx.securityWorkbench.httpHistory(project.id, '{}')
+    expect(history.items).toHaveLength(1); expect(history.items[0]?.status).toBe(200)
+    const evidenceId = history.items[0]!.evidenceId
+    const body = await ctx.securityWorkbench.httpExchange(project.id, evidenceId, 'read', 'body', 0)
+    expect(body.text).toContain('[redacted]'); expect(body.text).not.toContain('private-http-token')
+    const model = await execute(ctx, agent, 'security_evidence', { evidenceId, stepId: 'read', part: 'body' })
+    expect(model.isError).not.toBe(true); expect(JSON.stringify(model)).not.toContain('private-http-token')
+    expect(JSON.stringify(controller.view(agent.id))).not.toContain('private-http-token')
+    await send({ kind: 'finding', finding: { assetId: target.value.id, title: 'Authorized response observation',
+      explanation: 'The owned fixture returned the approved response.', conditions: 'Registered test identity',
+      evidenceIds: [evidenceId], status: 'suspected', review: '' } })
+    const originalFinding = controller.view(agent.id).records.find(item => item.kind === 'finding')
+    if (originalFinding?.kind !== 'finding') throw new Error('Missing HTTP finding')
+    await send({ kind: 'finding-http-reference', findingId: originalFinding.value.id,
+      evidenceId, stepId: 'read', role: 'verification' })
+    const finding = controller.view(agent.id).records.find(item => item.kind === 'finding')
+    if (finding?.kind !== 'finding') throw new Error('Missing linked finding')
+    expect(finding.value.status).toBe('suspected')
+    await bindDelegatedChild(controller, agent.id, 'http-reviewer', target.value.id, 'reviewer')
+    const reviewed = await controller.review('http-reviewer', { findingId: finding.value.id,
+      findingHash: findingHash(finding.value), basis: 'runtime', verdict: 'confirmed',
+      supportingEvidenceIds: [evidenceId], opposingEvidenceIds: [], explanation: 'Independent observation review', uncertainty: '' })
+    const review = reviewed.records.findLast(item => item.kind === 'review')
+    if (review?.kind !== 'review') throw new Error('Missing independent HTTP review')
+    await send({ kind: 'conclude', reviewId: review.value.id })
+    reportModel.reportOutput = () => JSON.stringify({ assessment: 'The approved observation was independently reviewed.',
+      findings: [{ index: 0, mechanism: 'Authorized response', conditions: 'Owned test identity', impact: 'Observation only',
+        location: '/', fix: 'No application change requested' }], excludedIndices: [], lessons: [], uncovered: ['Other application routes'] })
+    await send({ kind: 'report' })
+    const report = controller.view(agent.id).records.findLast(item => item.kind === 'report')
+    if (report?.kind !== 'report') throw new Error('Missing HTTP report')
+    const exported = (await controller.artifacts.read(report.value.json)).toString()
+    expect(exported).toContain('httpReferences')
+    expect(exported).not.toContain('private-http-token')
+    await expect(ctx.securityWorkbench.httpExchange(project.id, 'foreign', 'read', 'body', 0)).rejects.toThrow('scope')
+    const abort = new AbortController(); const directory = ctx.securityWorkbench.followProjects(abort.signal)[Symbol.asyncIterator]()
+    const directoryPage = await directory.next()
+    if (directoryPage.done) throw new Error('Directory ended before its first snapshot')
+    expect(directoryPage.value[0]?.pendingPlanIds).toEqual([])
+    const pending = directory.next(); abort.abort(); expect((await pending).done).toBe(true)
   })
   it('creates a workspace task from the Web prompt and logs its scope without granting model authority', async () => {
     const { ctx, agent, controller, model } = await load(false, 0, { taskIntake: 'current', skills: true })

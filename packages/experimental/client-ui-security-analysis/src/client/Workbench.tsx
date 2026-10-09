@@ -90,7 +90,12 @@ export function Workbench(props: WorkbenchProps) {
     const target = `${sessionId}:${props.focusCheckId ?? ''}`
     if (tab !== 'checks' || !props.focusCheckId || focusedCheck.current === target) return
     const element = checkElements.current.get(props.focusCheckId)
-    if (element) { element.scrollIntoView({ block: 'nearest' }); element.focus(); focusedCheck.current = target }
+    if (!element) return
+    const frame = requestAnimationFrame(() => {
+      element.scrollIntoView({ block: 'nearest' }); element.focus()
+      if (document.activeElement === element) focusedCheck.current = target
+    })
+    return () => { cancelAnimationFrame(frame) }
   }, [sessionId, tab, props.focusCheckId, view.revision])
   const perform = async (action: () => Promise<void>) => {
     setBusy(count => count + 1)
@@ -382,7 +387,9 @@ export function Workbench(props: WorkbenchProps) {
                             if (maxAttempts === undefined) throw new Error(t(workspace ? 'missingAttemptLimit' : 'missingAnalysisWorkspace'))
                             await props.importMaterials(sessionId, JSON.stringify({
                               operationId: input.operationId, expectedRevision: view.revision,
-                              material: input.material, title: input.title, objective: input.objective,
+                              material: input.material, target: input.target ? { ...input.target,
+                                environmentId: input.environmentId, label: input.title } : undefined,
+                              title: input.title, objective: input.objective,
                               resources: { environmentIds: [input.environmentId], maxAttempts },
                             }))
                           }}
@@ -441,7 +448,7 @@ export function Workbench(props: WorkbenchProps) {
                       <article key={item.value.id} className={css.card}>
                         <strong>{item.value.label}</strong>
                         <p>
-                          {'kind' in item.value ? item.value.kind === 'web' ? item.value.origin + item.value.pathPrefix : t('sourceSnapshot') : item.value.format + ' · ' + t('measured')}
+                          {'kind' in item.value ? (item.value.kind === 'web' || item.value.kind === 'external-web') ? item.value.origin + item.value.pathPrefix : t('sourceSnapshot') : item.value.format + ' · ' + t('measured')}
                         </p>
                         <TechnicalDetails t={t} value={item.value} />
                         {!('kind' in item.value) && <>

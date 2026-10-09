@@ -119,6 +119,13 @@ export class SecurityActivityStore {
     this.listeners.add(listener)
     return () => { this.listeners.delete(listener) }
   }
+  /** Count each running invocation once across all projects.
+   * @returns project-local running counts. */
+  runningCounts(): Map<string, number> {
+    const counts = new Map<string, number>()
+    for (const record of this.records.values()) if (record.status === 'running') counts.set(record.projectId, (counts.get(record.projectId) ?? 0) + 1)
+    return counts
+  }
   /** Permanently remove a deleted task's observations and summaries.
    * @param projectId - project already removed from the authority journal.
    * @returns completion after serialized durable cleanup. */

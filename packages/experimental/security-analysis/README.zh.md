@@ -45,7 +45,7 @@ kind: "package-reference"
 <a id="configure-analysis-providers"></a>
 ### 配置分析 provider
 
-包分别导出 `./native`、`./offline`、`./web`、`./laboratory`、`./environment`、`./ghidra`、`./frida`、`./android` 和 `./commands` 插件。[配置源码](src/index.ts) 定义制品、输出、时长、审批有效期和委派限制。仅允许已配置的本地、Docker 和 Android 环境；Docker 控制留在 Host。
+包分别导出 `./native`、`./offline`、`./web`、`./external-web`、`./laboratory`、`./environment`、`./ghidra`、`./frida`、`./android` 和 `./commands` 插件。[配置源码](src/index.ts) 定义制品、输出、时长、审批有效期和委派限制。仅允许已配置的本地、Docker 和 Android 环境；Docker 控制留在 Host。
 
 Docker 环境通过 `externalContainer: { name, workdir }` 使用已有容器，不能同时设置 `image`。`workdir` 是容器内的绝对目录。Docker 安装项的 `prefixArgs` 选择本机或远程 context。外部容器支持清单检测与原生 Shell 调用；分析 provider 操作会拒绝它们，因为尚不支持传输宿主制品。生命周期与网络设置仍由操作者管理；DSH 不挂载宿主文件，也不在取消或释放时停止容器。取消仅等待宿主 Docker 客户端退出，远程进程是否完成仍未确认。清单返回宿主可执行文件及完整启动参数，同时单独保留容器安装信息。[部署指南](../../../docs/user/guide/security-analysis.zh.md#external-docker-containers)说明配置与命令行管理方式。
 
@@ -145,6 +145,12 @@ Host 运行期间，配置成对的 `knowledgeProvider` 和 `knowledgeModel` 后
 `./packet-capture` 为本机环境中已导入的 PCAP/PCAPNG 文件资产注册固定的 `summary` 和 `packets` 观察操作。`parameters.protocol` 选择 `wifi` 或 `ble`；可选 `filter` 是 TShark 显示过滤器。需要 Python 和直接执行的 TShark 程序。Provider 配置 `maxPackets`（10,000）、`maxDecodeBytes`（16,777,216）及 `graceMs`（3,000）与工作台的时间、输出限制共同生效。证据保留抓包哈希、脚本身份、参数、工具版本和帧号、时间戳；失败及省略输出明确标记为不完整。HCI、空口抓包和 IP 流量分别标注，不推测缺失或加密字段。原始抓包只返回二进制元数据，不做 UTF-8 预览。采集角色可执行固定操作，研究者和复核者仅可读取已保存证据。
 
 `deviceDirectory` 只读取进程内诊断缓存，不触发检测。显式调用 `deviceInventory` 或 `security_environment` 的 `devices: true` 检查 Windows 本机 Python/TShark 安装、Npcap 驱动、抓包及 nRF extcap 接口和 COM/PnP 身份。接口检查失败保留上次观测及其时间。通用串口不自动识别为 Tufty，不打开串口，真机采集能力保持未验证；发现过程不安装工具、不修改驱动。非 Windows 或非本机环境不支持设备检查。
+
+`external-web` provider 接受操作者登记的 HTTP(S) origin、路径前缀、明确的 IP/CIDR 范围和本地环境。它在审批前准备有限请求序列、展开配置的登录步骤并固定身份版本。每次审批仅允许一次执行；重试同一执行 ID 不会重发请求。重复验证需要新草稿和新审批。每次连接核验并固定解析地址，验证 TLS，拒绝代理路由、自动跳转和自动请求重试。
+
+Cookie、Bearer、Basic 和表单/JSON 登录身份保存在 Host credentials 服务中。模板使用具名秘密引用和提取变量。登录支持隐藏表单字段、JSON Pointer 和响应头提取，最后一步必须有成功断言。提取缺失或歧义、凭据变化、断言失败、超时和取消都会停止后续步骤。每个身份使用独立临时 Cookie jar。登录正文被省略；保存响应前移除已捕获的秘密、Cookie 和提取值。永久删除项目会删除其身份。静态存储保护由 credentials 后端决定；此能力不提供独立加密保险库。
+
+一份版本化 HTTP artifact 按稳定步骤 ID 保存观察和未执行原因。`security_scope` 读取 HTTP 历史和安全身份描述；`security_evidence` 通过共享、校验摘要的 Host reader 分页读取请求、响应头或正文。HTTP 发现引用区分基线、验证和补充观察；修改关联需要重新独立复核。`followProjects` 根据 Session、执行、委派和已提交记录推导运行、暂停、中断与审批状态。打开历史、恢复项目或重启 Host 均不会重放 HTTP 请求。
 
 <a id="understand-the-implementation"></a>
 ## 实现
