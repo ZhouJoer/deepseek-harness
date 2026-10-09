@@ -2236,7 +2236,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     doc: 'Retained coordinator Session hosted within the security task detail.',
     registerOptions: [],
     ownerProps: [
-      '/** Owner inputs for the workbench\'s retained Session occurrence. */\nexport interface DashboardSessionInput {\n  creating: boolean\n  assistantOpen: boolean\n  advancedOpen: boolean\n  changed(): void\n  started(projectId: string): void\n}',
+      '/** Owner inputs for the workbench\'s retained Session occurrence. */\nexport interface DashboardSessionInput {\n  creating: boolean\n  assistantOpen: boolean\n  advancedOpen: boolean\n  reviewOpen?: boolean\n  changed(): void\n  started(projectId: string): void\n}',
     ],
     ownerPropsReferences: [],
     standardProps: [

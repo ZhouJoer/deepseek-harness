@@ -953,7 +953,7 @@ export class SecurityController {
             if (action.script !== undefined)
               operation = {
                 ...operation,
-                script: await this.artifacts.put(Buffer.from(action.script), operation.provider === 'offline' && operation.operation === 'python' ? 'text/x-python' : 'text/javascript'),
+                script: await this.artifacts.put(Buffer.from(action.script), ['offline', 'native'].includes(operation.provider) && operation.operation === 'python' ? 'text/x-python' : 'text/javascript'),
               }
             const provider = this.providers.get(operation.provider)
             const context = {

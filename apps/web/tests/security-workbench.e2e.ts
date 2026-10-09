@@ -212,6 +212,63 @@ describe('web e2e: Security workbench', () => {
     await dashboard.getByRole('button', { name: 'Hide assistant' }).click()
     await dashboard.getByRole('button', { name: 'Analysis assistant', exact: true }).click()
     expect(await editor.textContent()).toBe('Keep this unsent draft')
+    const separator = assistant.getByRole('separator')
+    const widthBefore = (await assistant.boundingBox())!.width
+    const handle = (await separator.boundingBox())!
+    expect(await separator.evaluate((node) => {
+      const rect = node.getBoundingClientRect()
+      return document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2)?.className
+    })).toBe(await separator.getAttribute('class'))
+    await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2)
+    await page.mouse.down()
+    await page.mouse.move(handle.x - 100, handle.y + handle.height / 2, { steps: 5 })
+    await page.mouse.up()
+    await expect.poll(async () => (await assistant.boundingBox())!.width).toBeGreaterThan(widthBefore)
+    await assistant.getByRole('button', { name: 'Expand to full page' }).click()
+    expect(Math.abs((await assistant.boundingBox())!.width - (await dashboard.boundingBox())!.width)).toBeLessThan(2)
+    await assistant.getByRole('button', { name: 'Restore split view' }).click()
+    expect(await editor.textContent()).toBe('Keep this unsent draft')
+    await controller.command(agent.id, { operationId: 'approval-check', expectedRevision: controller.view(agent.id).revision,
+      action: { kind: 'check', check: { assetId: asset.id, title: 'Read selected source', phase: 'validation',
+        criterion: 'Record source contents', dependencies: [], evidenceIds: [] } } }, true)
+    const check = controller.view(agent.id).records.find(item => item.kind === 'check')!
+    controller.options.environments.find(item => item.id === 'local')!.tools.push({ id: 'python',
+      command: process.env.DSH_SECURITY_SCRIPT_PYTHON ?? (process.platform === 'win32' ? 'python' : 'python3'),
+      versionArgs: ['--version'], source: 'Browser test interpreter' })
+    await controller.command(agent.id, { operationId: 'approval-plan', expectedRevision: controller.view(agent.id).revision,
+      action: { kind: 'plan', checkId: check.value.id,
+        operation: { provider: 'native', operation: 'python', assetId: asset.id, environmentId: 'local', parameters: {}, impact: 'observe' },
+        script: 'print("Native validation complete")\n',
+        hypothesis: 'Run owned native fixture', expectedObservation: 'Native validation complete', impact: 'Print output', cleanup: 'No files created', durationMs: 30000 } }, true)
+    await dashboard.getByText('Plans await approval.', { exact: false }).waitFor()
+    await dashboard.getByRole('button', { name: 'Plan approvals', exact: true }).click()
+    const approval = assistant.getByRole('region', { name: 'Advanced details', exact: true })
+    await approval.getByText('Run owned native fixture', { exact: true }).waitFor()
+    await approval.getByText('Native Python on the computer running the Host', { exact: true }).waitFor()
+    await approval.getByText('Python executable and version', { exact: true }).waitFor()
+    await approval.getByText('Working directory', { exact: true }).waitFor()
+    await approval.getByRole('heading', { name: 'What will be verified' }).waitFor()
+    expect(await approval.getByText('Prepare validation plan', { exact: true }).count()).toBe(0)
+    const technical = approval.locator('details').filter({ has: page.getByText('Technical details (parameters and version)', { exact: true }) })
+    expect(await technical.getAttribute('open')).toBeNull()
+    await dashboard.screenshot({ path: '.dsh/security-plan-approvals.png' })
+    await page.setViewportSize({ width: 390, height: 844 })
+    await page.emulateMedia({ colorScheme: 'dark' })
+    await assistant.getByRole('button', { name: 'Expand to full page' }).click()
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+    await assistant.screenshot({ path: '.dsh/security-plan-approvals-narrow-dark.png' })
+    await assistant.getByRole('button', { name: 'Restore split view' }).click()
+    await page.emulateMedia({ colorScheme: 'light' })
+    await page.setViewportSize({ width: 1400, height: 1000 })
+    expect(await approval.getByRole('button', { name: 'Execute plan' }).isDisabled()).toBe(true)
+    await approval.getByRole('button', { name: 'Approve this version' }).click()
+    await expect.poll(() => controller.view(agent.id).records.find(item => item.kind === 'plan')?.value.status).toBe('approved')
+    await approval.getByRole('button', { name: 'Execute plan' }).click()
+    await expect.poll(() => controller.view(agent.id).records.find(item => item.kind === 'execution')?.value.status).toBe('completed')
+    await approval.getByText('Execution result: Completed', { exact: true }).waitFor()
+    await assistant.getByRole('button', { name: 'Close', exact: true }).click()
+    await dashboard.getByRole('button', { name: 'Analysis assistant', exact: true }).click()
+    expect(await editor.textContent()).toBe('Keep this unsent draft')
     await page.context().setOffline(true)
     await page.context().setOffline(false)
     await dashboard.getByRole('button', { name: 'Refresh', exact: true }).click()

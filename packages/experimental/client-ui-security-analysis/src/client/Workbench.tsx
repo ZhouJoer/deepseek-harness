@@ -16,6 +16,7 @@ import { MaterialPanel } from './MaterialPanel.tsx'
 import { ProjectManagement, projectLabel } from './ProjectManagement.tsx'
 import { KnowledgePanel } from './KnowledgePanel.tsx'
 import { ActivityPanel, type ActivityActions } from './ActivityPanel.tsx'
+import { PlanReview } from './PlanReview.tsx'
 
 /** Service actions injected by the Cordis browser plugin. */
 export interface WorkbenchActions extends ActivityActions, ToolPreferenceActions {
@@ -39,9 +40,9 @@ export interface WorkbenchActions extends ActivityActions, ToolPreferenceActions
 /** Framework-derived input dock props. */
 export type WorkbenchProps = Pick<PropsRuntime<'conversation.input.dock'>, 'sessionId' | 'useSession'> &
   PropsLocale<typeof NS> &
-  WorkbenchActions & { autoOpen?: boolean }
-type Tab = 'overview' | 'assets' | 'checks' | 'findings' | 'environments' | 'knowledge' | 'evidence' | 'reviews' | 'reports'
-const tabKeys: Tab[] = ['overview', 'findings', 'evidence', 'reports']
+  WorkbenchActions & { autoOpen?: boolean; initialTab?: 'overview' | 'planApprovals' }
+type Tab = 'overview' | 'assets' | 'checks' | 'findings' | 'environments' | 'knowledge' | 'evidence' | 'reviews' | 'reports' | 'planApprovals'
+const tabKeys: Tab[] = ['overview', 'findings', 'evidence', 'reports', 'planApprovals']
 const advancedTabKeys: Tab[] = ['assets', 'checks', 'environments', 'reviews', 'knowledge']
 const ids = (text: string): string[] =>
   text
@@ -54,7 +55,7 @@ export function Workbench(props: WorkbenchProps) {
   const { sessionId, t } = props
   const running = props.useSession(snapshot => snapshot.running)
   const [open, setOpen] = useState(props.autoOpen ?? false)
-  const [tab, setTab] = useState<Tab>('overview')
+  const [tab, setTab] = useState<Tab>(props.initialTab ?? 'overview')
   const [view, setView] = useState<WorkbenchView>({ revision: 0, records: [] })
   const [configuration, setConfiguration] = useState<WorkbenchConfiguration>()
   const [draft, setDraft] = useState<Record<string, string>>({})
@@ -78,9 +79,10 @@ export function Workbench(props: WorkbenchProps) {
     setError('')
     setDetail('')
     setSearchResults(undefined)
-    setTab('overview')
+    setTab(props.initialTab ?? 'overview')
     setShared(false)
   }, [sessionId])
+  useEffect(() => { setTab(props.initialTab ?? 'overview') }, [props.initialTab])
   const perform = async (action: () => Promise<void>) => {
     setBusy(count => count + 1)
     setError('')
@@ -194,22 +196,6 @@ export function Workbench(props: WorkbenchProps) {
   const evidence = view.records.filter(item => item.kind === 'evidence')
   const blockedChecks = checks.filter(item => item.value.status === 'blocked' || item.value.status === 'interrupted')
   const childReports = view.records.filter(item => item.kind === 'binding' && item.value.report)
-  const statuses = new Set<SecurityKey>([
-    'planned',
-    'running',
-    'completed',
-    'blocked',
-    'interrupted',
-    'skipped',
-    'draft',
-    'approved',
-    'revoked',
-    'suspected',
-    'confirmed',
-    'refuted',
-    'inconclusive',
-    'failed',
-  ])
   return (
     <>
       {!props.autoOpen && <div className={css.launcher}>
@@ -233,7 +219,8 @@ export function Workbench(props: WorkbenchProps) {
         <button disabled={busy > 0} onClick={() => void perform(load)}>{t('refresh')}</button>
       </p> : <progress aria-label={t('dashboardLoading')} />)}
       {open && configuration && (
-        <section className={css.panel} role="dialog" aria-label={t('title')}>
+        <section className={css.panel} data-embedded={props.autoOpen || undefined} role={props.autoOpen ? 'region' : 'dialog'}
+          aria-label={t(props.autoOpen ? 'advancedDetails' : 'title')}>
           <header className={css.header}>
             <strong title={project?.kind === 'engagement' ? project.value.title : undefined}>
               {t('title')}
@@ -251,13 +238,13 @@ export function Workbench(props: WorkbenchProps) {
                 {t(project.value.stopped ? 'resume' : 'stop')}
               </button>
             )}
-            <button
+            {!props.autoOpen && <button
               onClick={() => {
                 setOpen(false)
               }}
             >
               {t('close')}
-            </button>
+            </button>}
           </header>
           <div className={css.workspace}>
             <nav className={css.tabs}>
@@ -291,7 +278,7 @@ export function Workbench(props: WorkbenchProps) {
               )}
               {busy > 0 && <p role="status">{t('loading')}</p>}
               <div className={css.body}>
-                <ToolPreferences key={sessionId} {...props} />
+                {tab !== 'planApprovals' && <ToolPreferences key={sessionId} {...props} />}
                 {project && (tab === 'overview' || tab === 'assets') && <MaterialPanel key={sessionId + project.value.id} t={t}
                   disabled={busy > 0 || project.value.stopped}
                   limits={configuration.materialLimits}
@@ -591,9 +578,10 @@ export function Workbench(props: WorkbenchProps) {
                     ))}
                   </>
                 )}
-                {tab === 'findings' && (
+                {(tab === 'findings' || tab === 'planApprovals') && (
                   <>
-                    <details className={css.form}>
+                    {tab === 'planApprovals' && !view.records.some(item => item.kind === 'plan') && <p role="status">{t('noPlansHint')}</p>}
+                    {tab === 'findings' && <details className={css.form}>
                       <summary>{t('recordFinding')}</summary>
                       {select(
                         'asset',
@@ -632,8 +620,8 @@ export function Workbench(props: WorkbenchProps) {
                       >
                         {t('recordFinding')}
                       </button>
-                    </details>
-                    <details className={css.form}>
+                    </details>}
+                    {tab === 'findings' && <details className={css.form}>
                       <summary>{t('prepare')}</summary>
                       {select(
                         'check',
@@ -645,7 +633,7 @@ export function Workbench(props: WorkbenchProps) {
                       )}
                       {select(
                         'provider',
-                        configuration.providers.map(item => ({ id: item.id, label: item.id })),
+                        configuration.providers.map(item => ({ id: item.id, label: item.id === 'native' ? t('planNativeRuntime') : item.id === 'offline' ? t('planOfflineRuntime') : item.id })),
                       )}
                       {select(
                         'operation',
@@ -689,68 +677,41 @@ export function Workbench(props: WorkbenchProps) {
                       >
                         {t('prepare')}
                       </button>
-                    </details>
+                    </details>}
                     {view.records
                       .filter(item => item.kind === 'finding' || item.kind === 'plan')
+                      .filter(item => tab !== 'planApprovals' || item.kind === 'plan')
                       .map(item => (
-                        <article key={item.value.id} className={css.card}>
-                          <strong>{item.kind === 'finding' ? item.value.title : item.value.hypothesis}</strong>
-                          <p>{statuses.has(item.value.status) ? t(item.value.status as SecurityKey) : item.value.status}</p>
-                          {item.kind === 'finding' ? (
-                            <>
-                              <p>{item.value.explanation}</p>
-                              <p>{item.value.conditions}</p>
-                              <p>{item.value.review}</p>
-                            </>
-                          ) : (
-                            <>
-                              <p>{item.value.expectedObservation}</p>
-                              <p>{item.value.impact}</p>
-                              <p>{item.value.cleanup}</p>
-                              <pre>{JSON.stringify(item.value.operation, null, 2)}</pre>
-                              <code>{item.value.hash}</code>
-                              {item.value.operation.script && (
-                                <button
-                                  onClick={() =>
-                                    void perform(async () => {
-                                      const script = item.value.operation.script
-                                      if (script) await preview(props.artifact(sessionId, script.sha256))
-                                    })
-                                  }
-                                >
-                                  {t('preview')}
-                                </button>
-                              )}
-                              <button
-                                disabled={busy > 0 || item.value.status === 'approved'}
-                                onClick={() => void perform(() => command({ kind: 'approve', planId: item.value.id }))}
-                              >
-                                {t('approve')}
-                              </button>
-                              <button
-                                onClick={() => void perform(() => command({ kind: 'revoke', planId: item.value.id }))}
-                              >
-                                {t('revoke')}
-                              </button>
-                              <button
-                                disabled={busy > 0 || item.value.status !== 'approved'}
-                                onClick={() =>
-                                  void perform(async () => {
-                                    const next = await props.execute(
-                                      sessionId,
-                                      item.value.id,
-                                      randomUUID(),
-                                      view.revision,
-                                    )
-                                    if (activeSession.current === sessionId) { setView(next); setSearchResults(undefined) }
-                                  })
-                                }
-                              >
-                                {t('execute')}
-                              </button>
-                            </>
-                          )}
-                        </article>
+                        item.kind === 'finding' ? <article key={item.value.id} className={css.card}>
+                          <strong>{item.value.title}</strong>
+                          <p>{t(item.value.status)}</p>
+                          <p>{item.value.explanation}</p>
+                          <p>{item.value.conditions}</p>
+                          <p>{item.value.review}</p>
+                        </article> : <PlanReview key={item.value.id} t={t} plan={item.value} view={view}
+                          environment={configuration.environments.find(env => env.id === item.value.operation.environmentId)?.label
+                            ?? item.value.operation.environmentId}
+                          busy={busy > 0} disabled={Boolean(project?.value.stopped || project?.value.archived)}
+                          approve={() => void perform(() => command({ kind: 'approve', planId: item.value.id }))}
+                          revoke={() => void perform(() => command({ kind: 'revoke', planId: item.value.id }))}
+                          preview={() => void perform(async () => {
+                            const script = item.value.operation.script
+                            if (script) await preview(props.artifact(sessionId, script.sha256))
+                          })}
+                          execute={() => void perform(async () => {
+                            const operationId = randomUUID()
+                            let next: WorkbenchView
+                            try { next = await props.execute(sessionId, item.value.id, operationId, view.revision) }
+                            catch (error) {
+                              const refreshed = await props.load(sessionId)
+                              if (activeSession.current === sessionId) setView(refreshed)
+                              const execution = refreshed.records.find(record => record.kind === 'execution' && record.value.id === operationId)
+                              if (execution?.kind === 'execution' && ['failed', 'interrupted'].includes(execution.value.status))
+                                throw new Error(t('planExecutionFailed'), { cause: error })
+                              throw error
+                            }
+                            if (activeSession.current === sessionId) { setView(next); setSearchResults(undefined) }
+                          })} />
                       ))}
                   </>
                 )}

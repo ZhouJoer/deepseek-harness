@@ -61,6 +61,11 @@ export function Dashboard(props: Props) {
   const [reference, setReference] = useState<SessionReference>()
   const [assistant, setAssistant] = useState(false)
   const [advanced, setAdvanced] = useState(false)
+  const [reviewOpen, setReviewOpen] = useState(false)
+  const [assistantWidth, setAssistantWidth] = useState(40)
+  const [expanded, setExpanded] = useState(false)
+  const root = useRef<HTMLElement>(null)
+  const drag = useRef<{ x: number; width: number; available: number }>()
   const [missingSession, setMissingSession] = useState(false)
   const [artifact, setArtifact] = useState<{ text: string; size: number; truncated: boolean }>()
   const [reportId, setReportId] = useState('')
@@ -84,6 +89,7 @@ export function Dashboard(props: Props) {
   const assets = view.records.filter(item => item.kind === 'asset')
   const reports = view.records.filter(item => item.kind === 'report')
   const blocked = view.records.filter(item => item.kind === 'check').filter(item => ['blocked', 'interrupted'].includes(item.value.status))
+  const pendingPlans = view.records.filter(item => item.kind === 'plan' && item.value.status === 'draft')
   const chosenEvidence = evidence.find(item => item.value.id === evidenceId)?.value
   const selectedReport = reportId || reports.at(-1)?.value.id || ''
   const perform = async (action: () => Promise<void>) => {
@@ -182,7 +188,7 @@ export function Dashboard(props: Props) {
     setProjects(deletedProjects.current); setDeleting(''); setDeletedProject(item.archived ? undefined : item)
     setPurgedTitle(item.archived ? item.title : ''); listHeading.current?.focus()
   }
-  const connect = async (create: boolean, resume = false, showAdvanced = false) => {
+  const connect = async (create: boolean, resume = false, showAdvanced = false, showReviews = false) => {
     const current = generation.current
     let id = sessionId ?? await props.findSession(selected)
     if (current !== generation.current) return
@@ -195,7 +201,7 @@ export function Dashboard(props: Props) {
     }
     if (resume) await props.resumeProject(id)
     if (current !== generation.current) return
-    setSessionId(id); setAssistant(!showAdvanced); setAdvanced(showAdvanced); setMissingSession(false)
+    setSessionId(id); setAssistant(!showAdvanced); setAdvanced(showAdvanced); setReviewOpen(showReviews); setMissingSession(false)
     await refresh()
   }
   const visible = projects.filter(item => Boolean(item.archived) === (section === 'removed'))
@@ -208,7 +214,7 @@ export function Dashboard(props: Props) {
     {!workspaces.length && <><p>{t('dashboardNoWorkspace')}</p><label>{t('dashboardWorkspacePath')}<input value={path} onChange={(event) => { setPath(event.target.value) }} /></label>
       <button disabled={busy || !path.trim()} onClick={() => void perform(async () => { setWorkspace(await props.createWorkspace(path.trim())) })}>{t('dashboardAddWorkspace')}</button></>}
   </div>
-  return <section className={css.root} aria-label={t('title')}>
+  return <section ref={root} className={css.root} aria-label={t('title')}>
     <div className={css.main}>
       <header className={css.topbar}><div><span className={css.eyebrow}>{t('dashboardEyebrow')}</span><h1>{t('dashboardTitle')}</h1><p>{t('dashboardSubtitle')}</p></div>
         <div className={css.actions}><button disabled={busy} onClick={() => void perform(refresh)}>{t('refresh')}</button><button className={css.primary} onClick={() => { navigate(); setCreating(true); setSection('tasks') }}>{t('newAnalysis')}</button></div>
@@ -262,6 +268,10 @@ export function Dashboard(props: Props) {
               })()
             }}>{t(stopping ? 'activityStopping' : 'stop')}</button><button className={css.primary} disabled={busy} onClick={() =>{  if (assistant) setAssistant(false); else void perform(() => connect(false)) }}>{t(assistant ? 'dashboardHideAssistant' : 'dashboardAssistant')}</button></>}
           </div>
+          {!project.archived && <div className={css.notice}>
+            {pendingPlans.length > 0 && <p role="status">{t('pendingPlanHint')} ({pendingPlans.length})</p>}
+            <button disabled={busy} onClick={() => void perform(() => connect(false, false, true, true))}>{t('planApprovals')}</button>
+          </div>}
           {project.stopped && !project.archived && <div className={css.notice}><p>{t('dashboardStoppedHint')}</p><button disabled={busy} onClick={() => void perform(() => connect(true, true))}>{t('resume')}</button></div>}
           {missingSession && <div className={css.notice}><p>{t('dashboardMissingSession')}</p>{workspacePicker}<button className={css.primary} disabled={busy || !selectedWorkspace} onClick={() => void perform(() => connect(true, project.stopped))}>{t('dashboardContinue')}</button></div>}
           <nav className={css.detailTabs} aria-label={t('dashboardDetailNavigation')}>{(['overview', 'activityEntry', 'assets', 'findings', 'evidence', 'reports'] as const).map(key => <button key={key} aria-pressed={tab === key} onClick={() => { setTab(key); setEvidenceId('') }}>{t(key === 'overview' ? 'dashboardOverview' : key === 'assets' ? 'dashboardMaterials' : key)}</button>)}<button aria-pressed={tab === 'laboratories'} onClick={() =>{  setTab('laboratories') }}>{t('laboratories')}</button></nav>
@@ -311,6 +321,33 @@ export function Dashboard(props: Props) {
       </>}
       {reference && reference.sessionId === sessionId && creating && <props.SessionProvider session={reference}>{props.renderSlot('security.workbench.session', { creating: true, assistantOpen: false, advancedOpen: false, changed: () => void perform(refresh), started: (id) => { setCreating(false); setSelected(id); setAssistant(true) } })}</props.SessionProvider>}
     </div>
-    {reference && reference.sessionId === sessionId && !creating && <aside className={css.assistant} hidden={!assistant && !advanced} aria-label={t('dashboardAssistant')}><header><strong>{t(advanced ? 'advancedDetails' : 'dashboardAssistant')}</strong><button onClick={() => { setAssistant(false); setAdvanced(false); void perform(refresh) }}>{t('close')}</button></header><props.SessionProvider session={reference}>{props.renderSlot('security.workbench.session', { creating: false, assistantOpen: assistant, advancedOpen: advanced, changed: () => void perform(refresh), started: () => {} })}</props.SessionProvider></aside>}
+    {reference && reference.sessionId === sessionId && !creating && <aside className={css.assistant} data-expanded={expanded}
+      style={{ width: `${expanded ? 100 : assistantWidth}%` }} hidden={!assistant && !advanced} aria-label={t('dashboardAssistant')}>
+      {!expanded && <div className={css.assistantResize} role="separator" tabIndex={0} aria-orientation="vertical"
+        aria-label={t('resizeAssistant')} aria-valuemin={25} aria-valuemax={85} aria-valuenow={assistantWidth}
+        onPointerDown={(event) => {
+          if (event.button !== 0 || !root.current) return
+          event.preventDefault()
+          drag.current = { x: event.clientX, width: assistantWidth, available: root.current.getBoundingClientRect().width }
+          event.currentTarget.setPointerCapture(event.pointerId)
+        }}
+        onPointerMove={(event) => {
+          if (!drag.current || !event.currentTarget.hasPointerCapture(event.pointerId) || !drag.current.available) return
+          const width = drag.current.width + (drag.current.x - event.clientX) / drag.current.available * 100
+          setAssistantWidth(Math.min(85, Math.max(25, width)))
+        }}
+        onPointerUp={(event) => {
+          drag.current = undefined
+          if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
+        }}
+        onPointerCancel={() => { drag.current = undefined }} onLostPointerCapture={() => { drag.current = undefined }}
+        onKeyDown={(event) => {
+          if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return
+          event.preventDefault(); setAssistantWidth(value => Math.min(85, Math.max(25, value + (event.key === 'ArrowLeft' ? 5 : -5))))
+        }} />}
+      <header><strong>{t(reviewOpen && advanced ? 'planApprovals' : advanced ? 'advancedDetails' : 'dashboardAssistant')}</strong>
+        <div className={css.actions}><button onClick={() => { setExpanded(value => !value) }}>{t(expanded ? 'restoreAssistant' : 'expandAssistant')}</button>
+          <button onClick={() => { setAssistant(false); setAdvanced(false); void perform(refresh) }}>{t('close')}</button></div></header>
+      <props.SessionProvider session={reference}>{props.renderSlot('security.workbench.session', { creating: false, assistantOpen: assistant, advancedOpen: advanced, reviewOpen, changed: () => void perform(refresh), started: () => {} })}</props.SessionProvider></aside>}
   </section>
 }

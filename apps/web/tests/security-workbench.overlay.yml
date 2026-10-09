@@ -56,6 +56,8 @@
       name: '@deepseek-ai/dsh-experimental-security-analysis/ghidra'
       config:
         programs: []
+    - id: security-native
+      name: '@deepseek-ai/dsh-experimental-security-analysis/native'
     - id: security-offline
       name: '@deepseek-ai/dsh-experimental-security-analysis/offline'
     - id: security-packet-capture

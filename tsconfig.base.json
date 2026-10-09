@@ -58,6 +58,8 @@
       "@deepseek-ai/dsh-experimental-security-analysis/client": ["./packages/experimental/security-analysis/src/workbench-client.ts"],
       "@deepseek-ai/dsh-experimental-security-analysis/environment": ["./packages/experimental/security-analysis/src/environment-local.ts"],
       "@deepseek-ai/dsh-experimental-security-analysis/offline": ["./packages/experimental/security-analysis/src/offline-provider.ts"],
+      "@deepseek-ai/dsh-experimental-security-analysis/native": ["./packages/experimental/security-analysis/src/native-provider.ts"],
+      "@deepseek-ai/dsh-experimental-security-analysis/packet-capture": ["./packages/experimental/security-analysis/src/packet-capture-provider.ts"],
       "@deepseek-ai/dsh-experimental-security-analysis/web": ["./packages/experimental/security-analysis/src/web-provider.ts"],
       "@deepseek-ai/dsh-experimental-security-analysis/laboratory": ["./packages/experimental/security-analysis/src/laboratory.ts"],
       "@deepseek-ai/dsh-experimental-security-analysis/ghidra": ["./packages/experimental/security-analysis/src/ghidra-provider.ts"],

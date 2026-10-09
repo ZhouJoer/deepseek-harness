@@ -120,18 +120,45 @@ it('does not reveal an old project when its request completes after changing Ses
   await waitFor(() =>{  expect(screen.queryByRole('dialog')).toBeNull() })
   expect(screen.queryByText('Review the sample')).toBeNull()
 })
-it('submits explicit approval for the displayed plan identity', async () => {
+it('opens pending plans directly and requires approval before execution', async () => {
   const plan = recordSchema.parse({ kind: 'plan', value: { id: 'plan', engagementId: 'project', checkId: 'check', hypothesis: 'Check bounds', expectedObservation: 'A bounded observation', impact: 'Existing process instrumentation', cleanup: 'Unload and detach', durationMs: 100,
     operation: { provider: 'frida', operation: 'modules', environmentId: 'local', assetId: 'sample', parameters: {}, impact: 'observe' }, hash: 'a'.repeat(64), environmentHash: 'b'.repeat(64), status: 'draft' } })
-  const api = actions({ load: vi.fn(async () => ({ ...view, records: [project, plan] })) })
-  render(<Workbench {...props(api)} />)
-  fireEvent.click(screen.getByRole('button', { name: '安全分析' }))
-  await screen.findByRole('heading', { name: 'Review the sample' })
-  fireEvent.click(screen.getByRole('button', { name: '发现' }))
-  expect(screen.getByText('a'.repeat(64))).toBeDefined()
+  const approved = recordSchema.parse({ ...plan, value: { ...plan.value, status: 'approved' } })
+  const api = actions({ load: vi.fn(async () => ({ ...view, records: [project, plan] })),
+    command: vi.fn(async () => ({ revision: 9, records: [project, approved] })) })
+  render(<Workbench {...props(api)} autoOpen initialTab="planApprovals" />)
+  await screen.findByText('a'.repeat(64))
+  expect(screen.getByRole<HTMLButtonElement>('button', { name: zh.execute }).disabled).toBe(true)
+  expect(api.command).not.toHaveBeenCalled()
+  expect(api.execute).not.toHaveBeenCalled()
   fireEvent.click(screen.getByRole('button', { name: '批准此版本' }))
   await waitFor(() =>{  expect(api.command).toHaveBeenCalled() })
   expect(JSON.parse(vi.mocked(api.command).mock.calls[0]?.[1] ?? '{}')).toMatchObject({ expectedRevision: 8, action: { kind: 'approve', planId: 'plan' } })
+  await waitFor(() => { expect(screen.getByRole<HTMLButtonElement>('button', { name: zh.execute }).disabled).toBe(false) })
+  fireEvent.click(screen.getByRole('button', { name: zh.execute }))
+  await waitFor(() => { expect(api.execute).toHaveBeenCalledWith('parent', 'plan', expect.any(String), 9) })
+})
+
+it('refreshes a persisted execution failure instead of leaving only the approved status', async () => {
+  const plan = recordSchema.parse({ kind: 'plan', value: { id: 'plan', engagementId: 'project', checkId: 'check',
+    hypothesis: 'Read imported material', expectedObservation: 'Source text', impact: 'Read only', cleanup: 'Remove container', durationMs: 1000,
+    operation: { provider: 'offline', operation: 'python', environmentId: 'local', assetId: 'sample', parameters: {}, impact: 'observe' },
+    hash: 'a'.repeat(64), environmentHash: 'b'.repeat(64), status: 'approved' } })
+  let current: WorkbenchView = { revision: 8, records: [project, plan] }
+  const api = actions({ load: vi.fn(async () => current), execute: vi.fn<WorkbenchActions['execute']>(async (_id, _plan, operationId) => {
+    current = { revision: 9, records: [project, plan, recordSchema.parse({ kind: 'execution', value: {
+      id: operationId, engagementId: 'project', assetId: 'sample', planId: 'plan', status: 'failed',
+      detail: 'FileNotFoundError: /tmp/E:/workspace/check.py',
+    } })] }
+    throw new Error('FileNotFoundError: /tmp/E:/workspace/check.py')
+  }) })
+  render(<Workbench {...props(api)} autoOpen initialTab="planApprovals" />)
+  fireEvent.click(await screen.findByRole('button', { name: zh.execute }))
+  await screen.findByText(zh.planExecutionFailed)
+  expect(screen.getByText(zh.planOfflineMissingFile)).toBeDefined()
+  expect(screen.getByText(zh.approved)).toBeDefined()
+  expect(api.load).toHaveBeenCalledTimes(2)
+  expect(screen.queryByText(zh.prepare)).toBeNull()
 })
 
 it('separates concise knowledge cards from legacy text and evidence', async () => {

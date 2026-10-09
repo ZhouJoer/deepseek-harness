@@ -37,6 +37,12 @@ export function AnalysisStart(props: AnalysisStartProps) {
   const attempt = useRef<{ payload: string; operationId: string }>()
   const environmentId = environment ?? props.environments.find(item => item.kind === 'local')?.id ?? ''
   const locked = props.disabled || busy || prepared
+  const files = selection?.material.kind === 'files' && !selection.material.directory ? selection.material.files : undefined
+  const remaining = props.limits && files ? {
+    entries: props.limits.entries - files.length,
+    bytes: props.limits.bytes - files.reduce((sum, file) =>
+      sum + file.base64.length * 3 / 4 - (file.base64.match(/=*$/)?.[0].length ?? 0), 0),
+  } : props.limits
   const start = async () => {
     setBusy(true); setError('')
     try {
@@ -58,10 +64,16 @@ export function AnalysisStart(props: AnalysisStartProps) {
     <p className={css.summaryHint}>{t('analysisRecordHint')}</p>
     <label className={css.field}>{t('analysisRequest')}<textarea rows={3} value={objective} disabled={locked}
       placeholder={t('analysisRequestHint')} onChange={(event) => { setObjective(event.target.value) }} /></label>
-    {selection ? <p role="status">{t('selectedMaterial')} {selection.title}
-      <button disabled={locked} onClick={() => { setSelection(undefined) }}>{t('removeSelection')}</button></p>
-      : <MaterialPanel t={t} disabled={locked} limits={props.limits} onBusyChange={setSelecting}
-        submit={(material, title) => { setSelection({ material, title }); return Promise.resolve() }} />}
+    {selection && <div role="status" className={css.materialPanel}><p>{t('selectedMaterial')}</p>
+      {selection.material.kind === 'files' ? <ul>{selection.material.files.map((file, index) => <li key={index}>{file.name}</li>)}</ul> : <p>{selection.title}</p>}
+      <button disabled={locked || selecting} onClick={() => { setSelection(undefined) }}>{t('removeSelection')}</button></div>}
+    {(!selection || files) && <MaterialPanel t={t} disabled={locked} limits={remaining} filesOnly={!!files} onBusyChange={setSelecting}
+      submit={(material, title) => {
+        setSelection(selection && files && material.kind === 'files'
+          ? { material: { ...material, files: [...files, ...material.files] }, title: selection.title }
+          : { material, title })
+        return Promise.resolve()
+      }} />}
 
     {props.environments.length === 0 ? !props.disabled && <p role="alert" className={css.error}>{t('noAnalysisEnvironment')}</p> : <>
       <p className={css.summaryHint}>{environmentId

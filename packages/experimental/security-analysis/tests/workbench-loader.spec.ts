@@ -48,6 +48,7 @@ import * as Frida from '../src/frida-provider.ts'
 import * as Android from '../src/android-provider.ts'
 import * as Web from '../src/web-provider.ts'
 import * as Offline from '../src/offline-provider.ts'
+import * as Native from '../src/native-provider.ts'
 import * as PacketCapture from '../src/packet-capture-provider.ts'
 import { captureInterfaces, uncheckedDevices } from '../src/device-inventory.ts'
 import * as Laboratory from '../src/laboratory.ts'
@@ -233,6 +234,7 @@ async function load(inheritJobTool = false, knowledgeIntervalMs = 0,
     ['environments', Environments],
     ['web', Web],
     ['offline', Offline],
+    ['native-provider', Native],
     ['packet-capture', PacketCapture],
     ['laboratory', Laboratory],
   ])
@@ -339,6 +341,54 @@ function operator(controller: Awaited<Security['ready']>, agent: Agent) {
 }
 
 describe('security workbench Loader composition', () => {
+  it('requires approval for native Python, saves its output and stops a running local process', async () => {
+    const { agent, controller } = await load(false, 0, { native: true, installations: [{ id: 'python',
+      command: process.env.DSH_SECURITY_SCRIPT_PYTHON ?? (process.platform === 'win32' ? 'python' : 'python3'),
+      versionArgs: ['--version'], source: 'Test interpreter' }] })
+    const root = roots[roots.length - 1]!
+    const send = operator(controller, agent)
+    await send({ kind: 'create', title: 'Native validation', objective: 'Run an owned Python fixture', environmentIds: ['local'], maxAttempts: 3 })
+    const input = join(root, 'input.txt')
+    await writeFile(input, 'native input')
+    await send({ kind: 'import', path: input, label: 'Input' })
+    const asset = controller.view(agent.id).records.find(item => item.kind === 'asset')!
+    if (asset.kind !== 'asset') throw new Error('Missing input asset')
+    await send({ kind: 'check', check: { assetId: asset.value.id, title: 'Native check', phase: 'validation',
+      criterion: 'Read the local file and save bounded output', dependencies: [], evidenceIds: [] } })
+    const check = controller.view(agent.id).records.find(item => item.kind === 'check')!
+    if (check.kind !== 'check') throw new Error('Missing check')
+    const script = 'from pathlib import Path\nassert Path("input.txt").read_text() == "native input"\nPath("result.txt").write_text("42")\nprint("native result 42")\n'
+    const prepare = async (code: string) => {
+      await send({ kind: 'plan', checkId: check.value.id, hypothesis: 'Native Python can read its workspace',
+        expectedObservation: '42', impact: 'Write fixture files', cleanup: 'Keep output', durationMs: 30000,
+        operation: { provider: 'native', operation: 'python', environmentId: 'local', assetId: asset.value.id, parameters: {}, impact: 'observe' }, script: code })
+      const plan = controller.view(agent.id).records.filter(item => item.kind === 'plan').at(-1)!
+      if (plan.kind !== 'plan') throw new Error('Missing plan')
+      return plan.value
+    }
+    const plan = await prepare(script)
+    expect(plan.operation).toMatchObject({ impact: 'target-write', script: { mediaType: 'text/x-python' } })
+    const run = () => controller.execute(agent.id, plan.id, randomUUID(), controller.view(agent.id).revision, 'native-test', new AbortController().signal)
+    await expect(run()).rejects.toThrow('approved')
+    await expect(readFile(join(root, 'result.txt'))).rejects.toThrow()
+    await send({ kind: 'approve', planId: plan.id })
+    await run()
+    expect(await readFile(join(root, 'result.txt'), 'utf8')).toBe('42')
+    const evidence = controller.view(agent.id).records.find(item => item.kind === 'evidence' && item.value.planId === plan.id)
+    if (evidence?.kind !== 'evidence') throw new Error('Missing native evidence')
+    expect(evidence.value.incomplete).toBe(false)
+    expect(JSON.parse((await controller.artifacts.read(evidence.value.artifact)).toString())).toMatchObject({
+      stdout: 'native result 42' + (process.platform === 'win32' ? '\r\n' : '\n'), exitCode: 0, timedOut: false, cancelled: false, signal: null })
+    const waiting = await prepare('from pathlib import Path\nimport time\nPath("started.txt").write_text("ready")\nwhile True: time.sleep(1)\n')
+    await send({ kind: 'approve', planId: waiting.id })
+    const running = controller.execute(agent.id, waiting.id, randomUUID(), controller.view(agent.id).revision, 'native-stop', new AbortController().signal)
+    const settled = running.catch((error: unknown) => error)
+    try {
+      await vi.waitFor(async () => { expect(await readFile(join(root, 'started.txt'), 'utf8')).toBe('ready') }, { timeout: 15000 })
+    } finally { await send({ kind: 'stop' }) }
+    expect(await settled).toBeInstanceOf(Error)
+    expect(controller.view(agent.id).records.some(item => item.kind === 'execution' && item.value.planId === waiting.id && item.value.status === 'interrupted')).toBe(true)
+  })
   it.skipIf(!process.env.DSH_SECURITY_TSHARK)('stores offline wireless provider evidence through the Loader and operator Remote', async () => {
     const { ctx, agent, controller } = await load(false, 0, { native: true, installations: [
       { id: 'tshark', command: process.env.DSH_SECURITY_TSHARK!, prefixArgs: [], versionArgs: ['--version'], source: 'Test installation' },
@@ -700,7 +750,7 @@ describe('security workbench Loader composition', () => {
   })
   it('loads independent providers and logs model-visible scope through the unchanged loop', async () => {
     const { ctx, agent, controller, model } = await load()
-    expect(controller.providers.list().sort()).toEqual(['android', 'binary', 'frida', 'ghidra', 'offline', 'packet-capture', 'source', 'web'])
+    expect(controller.providers.list().sort()).toEqual(['android', 'binary', 'frida', 'ghidra', 'native', 'offline', 'packet-capture', 'source', 'web'])
     expect(controller.environments.list()).toEqual(['local'])
     agent.followup(
       createUserMessage({ content: [{ type: 'text', text: 'Inspect the scope.' }], source: { kind: 'user' } }),

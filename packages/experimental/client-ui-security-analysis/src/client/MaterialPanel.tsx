@@ -15,6 +15,7 @@ export type MaterialSelection = { kind: 'text'; name: string; text: string }
 export function MaterialPanel(props: PropsLocale<typeof NS> & {
   disabled: boolean
   limits: { bytes: number; entries: number } | undefined
+  filesOnly?: boolean
   onBusyChange?(busy: boolean): void
   submit(material: MaterialSelection, title: string): Promise<void>
 }) {
@@ -58,11 +59,11 @@ export function MaterialPanel(props: PropsLocale<typeof NS> & {
   return <section className={css.materialPanel}>
     <h3>{t('addMaterials')}</h3><p>{t('materialsHint')}</p>
     <div className={css.taskActions}>
-      {(['files', 'text', 'path'] as const).map(key => <button key={key} disabled={disabled} aria-pressed={mode === key}
+      {!props.filesOnly && (['files', 'text', 'path'] as const).map(key => <button key={key} disabled={disabled} aria-pressed={mode === key}
         onClick={() => { setMode(key); setError('') }}>{t(key === 'files' ? 'chooseFiles' : key === 'text' ? 'pasteText' : 'hostPath')}</button>)}
     </div>
     {mode === 'files' && <div className={css.uploadChoices}>
-      {[false, true].map(directory => <label key={String(directory)} className={css.field}>{t(directory ? 'chooseFolder' : 'chooseFiles')}
+      {(props.filesOnly ? [false] : [false, true]).map(directory => <label key={String(directory)} className={css.field}>{t(directory ? 'chooseFolder' : 'chooseFiles')}
         <input type="file" multiple disabled={disabled || !props.limits} {...(directory ? { webkitdirectory: '' } : {})}
           onChange={(event) => { const files = Array.from(event.target.files ?? []); event.target.value = ''; if (files.length) void upload(files, directory) }} />
       </label>)}

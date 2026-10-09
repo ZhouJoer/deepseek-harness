@@ -64,6 +64,10 @@
       "types": "./lib/types/laboratory.d.ts",
       "default": "./lib/laboratory.js"
     },
+    "./native": {
+      "types": "./lib/types/native-provider.d.ts",
+      "default": "./lib/native.js"
+    },
     "./offline": {
       "types": "./lib/types/offline-provider.d.ts",
       "default": "./lib/offline.js"
@@ -84,6 +88,7 @@
     "lib/web.js",
     "lib/laboratory.js",
     "lib/offline.js",
+    "lib/native.js",
     "lib/packet-capture.js",
     "lib/model-*.js",
     "lib/process-*.js",

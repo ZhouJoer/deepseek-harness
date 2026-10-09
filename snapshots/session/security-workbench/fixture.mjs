@@ -78,6 +78,9 @@ export async function apply(ctx) {
   const environmentEntry = process.env.DSH_EXAMPLE_MODE === 'lib' ? 'lib/environment-local.js' : 'src/environment-local.ts'
   const environments = await import(new URL(`../../../packages/experimental/security-analysis/${environmentEntry}`, import.meta.url))
   await ctx.plugin(environments, {})
+  const nativeEntry = process.env.DSH_EXAMPLE_MODE === 'lib' ? 'lib/native.js' : 'src/native-provider.ts'
+  const native = await import(new URL(`../../../packages/experimental/security-analysis/${nativeEntry}`, import.meta.url))
+  await ctx.plugin(native, {})
   if (observationFailure) {
     const failure = await import('../security-observation-failure/fixture.mjs')
     failure.apply(ctx)

@@ -104,6 +104,41 @@ it('retains the assistant and its draft when collapsed, and releases it on task 
   mounted.unmount()
   expect(release).toHaveBeenCalledTimes(1)
 })
+it('resizes and expands the assistant without discarding its draft', async () => {
+  const { props } = harness()
+  render(<Dashboard {...props} />)
+  fireEvent.click(await screen.findByRole('button', { name: /Alpha/ }))
+  fireEvent.click(await screen.findByRole('button', { name: en.dashboardAssistant }))
+  const draft = await screen.findByLabelText<HTMLTextAreaElement>('Assistant draft')
+  fireEvent.change(draft, { target: { value: 'Retained while resizing' } })
+  const separator = screen.getByRole('separator', { name: en.resizeAssistant })
+  fireEvent.keyDown(separator, { key: 'ArrowLeft' })
+  expect(separator.getAttribute('aria-valuenow')).toBe('45')
+  fireEvent.keyDown(separator, { key: 'ArrowRight' })
+  expect(separator.getAttribute('aria-valuenow')).toBe('40')
+  fireEvent.click(screen.getByRole('button', { name: en.expandAssistant }))
+  expect(screen.getByRole('complementary').style.width).toBe('100%')
+  fireEvent.click(screen.getByRole('button', { name: en.restoreAssistant }))
+  expect(screen.getByRole('complementary').style.width).toBe('40%')
+  expect(draft.value).toBe('Retained while resizing')
+})
+it('opens plan approvals directly on the existing coordinator Session', async () => {
+  const renderSlot = vi.fn(() => <div />)
+  const plan = recordSchema.parse({ kind: 'plan', value: { id: 'plan', engagementId: 'Alpha', checkId: 'check',
+    hypothesis: 'Inspect modules', expectedObservation: 'Module list', impact: 'Observe process', cleanup: 'Detach', durationMs: 100,
+    operation: { provider: 'frida', operation: 'modules', environmentId: 'local', assetId: 'sample', parameters: {}, impact: 'observe' },
+    hash: 'a'.repeat(64), environmentHash: 'b'.repeat(64), status: 'draft' } })
+  const { api, props } = harness({ renderSlot, project: async () => ({ revision: 2, records: [alpha, plan] }) })
+  render(<Dashboard {...props} />)
+  fireEvent.click(await screen.findByRole('button', { name: /Alpha/ }))
+  await screen.findByText(en.pendingPlanHint, { exact: false })
+  fireEvent.click(screen.getByRole('button', { name: en.planApprovals }))
+  await waitFor(() => { expect(renderSlot).toHaveBeenCalledWith('security.workbench.session', expect.objectContaining({
+    advancedOpen: true, reviewOpen: true, assistantOpen: false,
+  })) })
+  expect(api.createSession).not.toHaveBeenCalled()
+  expect(api.associateSession).not.toHaveBeenCalled()
+})
 it('requires an explicit continue action before creating a missing historical Session', async () => {
   const { api, props } = harness({ findSession: vi.fn(async () => undefined) })
   render(<Dashboard {...props} />)

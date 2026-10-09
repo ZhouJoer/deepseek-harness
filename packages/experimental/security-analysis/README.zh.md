@@ -45,7 +45,7 @@ kind: "package-reference"
 <a id="configure-analysis-providers"></a>
 ### 配置分析 provider
 
-包分别导出 `./offline`、`./web`、`./laboratory`、`./environment`、`./ghidra`、`./frida`、`./android` 和 `./commands` 插件。[配置源码](src/index.ts) 定义制品、输出、时长、审批有效期和委派限制。仅允许已配置的本地、Docker 和 Android 环境；Docker 控制留在 Host。
+包分别导出 `./native`、`./offline`、`./web`、`./laboratory`、`./environment`、`./ghidra`、`./frida`、`./android` 和 `./commands` 插件。[配置源码](src/index.ts) 定义制品、输出、时长、审批有效期和委派限制。仅允许已配置的本地、Docker 和 Android 环境；Docker 控制留在 Host。
 
 Docker 环境通过 `externalContainer: { name, workdir }` 使用已有容器，不能同时设置 `image`。`workdir` 是容器内的绝对目录。Docker 安装项的 `prefixArgs` 选择本机或远程 context。外部容器支持清单检测与原生 Shell 调用；分析 provider 操作会拒绝它们，因为尚不支持传输宿主制品。生命周期与网络设置仍由操作者管理；DSH 不挂载宿主文件，也不在取消或释放时停止容器。取消仅等待宿主 Docker 客户端退出，远程进程是否完成仍未确认。清单返回宿主可执行文件及完整启动参数，同时单独保留容器安装信息。[部署指南](../../../docs/user/guide/security-analysis.zh.md#external-docker-containers)说明配置与命令行管理方式。
 
@@ -127,7 +127,9 @@ Host 运行期间，配置成对的 `knowledgeProvider` 和 `knowledgeModel` 后
 
 `import-source` 将选定的源码文件或目录保存为一个资产，包含相对路径、SHA-256 哈希和不可变内容制品。选择单个文件时，清单仅包含以该文件名命名的一项，不会导入相邻文件。目录遍历会记录排除的链接而不跟随它们。`maxDerivedAssets` 限制遍历条目，`maxArtifactBytes` 限制源码总字节数。`source` provider 提供有界的 `list`、`read` 和字面文本 `search` 操作；结果保留文件哈希、行号和续读位置。旧文件资产仍可读取。
 
-`./offline` 插件仅通过已审批的不可变计划接收 Python 或浏览器脚本。配置本地 `docker` 和包含 Python、Node、Playwright、Chromium 的现有镜像；[镜像配方](resources/offline/Dockerfile) 与[浏览器运行器](resources/offline/browser.mjs) 定义运行时布局。准备阶段固定已安装镜像 ID，provider 不拉取镜像。可配置限制为 `image`、`memoryMb`、`cpus`、`pids`、`temporaryMb` 和 `graceMs`。
+`./native` 插件直接在 Host（包括 Windows）执行已审批的 `native/python` 计划。选择验证检查项和本机环境，提交完整 Python 脚本，参数为 `{}` 或环境工作区内的 `{cwd: 绝对目录}`。准备阶段发现已配置或可用的 Python，固定程序路径、版本、操作系统和已存在的工作目录。执行前重新核对这些值，通过标准输入和 `-I -u -B` 运行已保存脚本，不另行加载可变脚本包装器。输入和依赖仍为本机当前文件，应使用绝对路径并在结果中记录其身份。本机执行具有 Host 当前用户的文件、网络和设备权限，不提供 Docker 隔离；计划须说明影响和清理方式。审批、时长与输出上限、项目停止和子进程清理仍生效。脚本生成的文件保留；`graceMs` 配置进程清理宽限期。Windows DLL 需要 Windows 和兼容的 Python 架构。应新建本机计划，不能复用离线审批。
+
+`./offline` 插件仅通过已审批的不可变计划接收 Python 或浏览器脚本。配置本地 `docker` 和包含 Python、Node、Playwright、Chromium 的现有镜像；[镜像配方](resources/offline/Dockerfile) 与[浏览器运行器](resources/offline/browser.mjs) 定义运行时布局。准备阶段固定已安装镜像 ID，provider 不拉取镜像。可配置限制为 `image`、`memoryMb`、`cpus`、`pids`、`temporaryMb` 和 `graceMs`。这种 Linux 模拟不能读取 Host 磁盘路径或原生加载 Windows DLL；此类检查应选择 `native/python`。
 
 每次执行使用新的非特权容器，禁用网络和设备访问，根目录与源码挂载只读，临时存储有界。浏览器请求从快照拦截到 `http://localhost`。脚本注入模拟硬件，打印运行时版本、事件与断言，并在断言失败时返回失败。证据区分模拟、静态和设备观察，保留失败及清理详情。容器测试覆盖 Python 和 Chromium，但不能证明固件或无线行为；Host 崩溃后仍需操作者核对残留离线容器。
 

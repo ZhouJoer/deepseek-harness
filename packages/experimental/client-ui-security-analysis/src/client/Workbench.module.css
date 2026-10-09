@@ -45,6 +45,8 @@
   padding: 14px;
   border-bottom: 0.5px solid var(--dsw-alias-border-l2);
 }
+.panel[data-embedded='true'] { position: static; height: 100%; min-height: 0; box-shadow: none; }
+.panel[data-embedded='true'] .header { flex-wrap: wrap; }
 .header { flex-shrink: 0; min-width: 0; }
 .header strong {
   flex: 1;
@@ -101,6 +103,17 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+.planReview { padding: 16px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; margin: 10px 0; overflow-wrap: anywhere; }
+.planReview h3 { margin: 0 0 12px; font-size: 16px; font-weight: 500; }
+.planFacts { margin: 16px 0; display: grid; gap: 8px 16px; grid-template-columns: minmax(90px, auto) minmax(0, 1fr); }
+.planFacts dt { color: var(--dsw-alias-label-secondary); }
+.planFacts dd { margin: 0; min-width: 0; }
+.planFacts dd p { margin: 0; }
+.planNotice { padding: 12px; margin: 12px 0; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; background: var(--dsw-alias-bg-module-platform); line-height: 1.7; }
+.planNotice strong { font-weight: 500; }
+.planReview pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 280px; overflow: auto; font-size: 12px; }
+.planReview summary { cursor: pointer; color: var(--dsw-alias-label-secondary); margin: 12px 0; }
+@media (max-width: 560px) { .planFacts { grid-template-columns: minmax(0, 1fr); } }
 .card small {
   display: block;
   overflow-wrap: anywhere;
@@ -196,6 +209,9 @@
 .main { display: flex; flex-direction: column; flex: 1; min-width: 0; }
 .workspace .tabs { width: 172px; flex-shrink: 0; flex-direction: column; align-items: stretch; gap: 6px; padding: 20px 12px; border-bottom: 0; border-right: 0.5px solid var(--dsw-alias-border-l2); background: var(--dsw-alias-bg-layer-2); }
 .workspace .tabs button { text-align: left; padding: 10px 14px; border: 0; border-radius: 8px; }
+.panel[data-embedded='true'] .workspace { flex-direction: column; }
+.panel[data-embedded='true'] .tabs { width: auto; flex-direction: row; flex-wrap: wrap; border-right: 0; border-bottom: 0.5px solid var(--dsw-alias-border-l2); }
+.panel[data-embedded='true'] .main { min-height: 0; }
 .body { padding: 28px; }
 @media (max-width: 720px) {
   .workspace { flex-direction: column; }
