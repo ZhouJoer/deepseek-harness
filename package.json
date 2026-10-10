@@ -1,5 +1,6 @@
 {
   "name": "@deepseek-ai/dsh-root",
+  "description": "以 DSH 为底座的智能化安全分析工作台，结合多角色协作、可追溯证据、受控验证与知识沉淀，支持逆向、Web 与 IoT 安全研究。",
   "version": "0.2.0-rc.2",
   "license": "MIT",
   "private": true,

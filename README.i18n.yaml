@@ -2,33 +2,45 @@
 # section, a hash of its English and Chinese blocks outside code blocks and generated regions.
 # After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write README.md
-/deepseek-harness:
-  en: bb6f4965b12936d5
-  zh: 8aab6b9f5decca69
-/deepseek-harness/developer-preview:
-  en: 4ef4d8a71ac143f0
-  zh: 1bfc3149ba8e5543
-/deepseek-harness/run:
-  en: 4e0248e4c6474fc6
-  zh: eb2fb8d78c7d6bc0
-/deepseek-harness/run/run-from-npm:
-  en: e22005cd42e6cbad
-  zh: 0f536f4208df1d60
-/deepseek-harness/run/run-from-source:
-  en: 819e3f7c144d0d64
-  zh: de815f040975dba7
-/deepseek-harness/community-and-support:
-  en: 20acf6451fdc869b
-  zh: d06246dd019ecef7
-/deepseek-harness/contributing:
-  en: cabc2d3e9f8898bd
-  zh: 83b6d238bae29ce3
-/deepseek-harness/development:
-  en: 803ca2b11b497bed
-  zh: 8b4071eb0e7783ef
-/deepseek-harness/citation:
-  en: 6704e9e5a8d49a91
-  zh: 85c9cdd8d56f8e9d
-/deepseek-harness/license:
+/:
+  en: f572415ff010c854
+  zh: 667b7cdc6e30ee56
+/intelligent-security-analysis-workbench:
+  en: ed7c823c8dd48487
+  zh: e0e4f709e5403393
+/intelligent-security-analysis-workbench/interface-preview:
+  en: 6d1a5d542623a2ca
+  zh: c85386efb63efb0a
+/intelligent-security-analysis-workbench/interface-preview/analysis-toolbox:
+  en: 4cb292aa8f477a30
+  zh: 2e0fae583fa940cc
+/intelligent-security-analysis-workbench/interface-preview/validation-plan-approval:
+  en: fd2cf3f16b2f0b44
+  zh: f4de0906686c9ae9
+/intelligent-security-analysis-workbench/what-makes-this-workbench-different:
+  en: 817a23801980e247
+  zh: df42f12abb70ea0b
+/intelligent-security-analysis-workbench/analysis-scenarios:
+  en: aa72185daf3de4e6
+  zh: 6dd7f90192f999ce
+/intelligent-security-analysis-workbench/architecture-dsh-foundation-security-domain-workbench:
+  en: dc38c183ce8c01aa
+  zh: 1ecdeaa051fd710f
+/intelligent-security-analysis-workbench/run:
+  en: 63b93bf060a5df7b
+  zh: f1f7abd373558714
+/intelligent-security-analysis-workbench/run/run-from-source:
+  en: cb7c974e8cd53105
+  zh: 9626428ea43e658d
+/intelligent-security-analysis-workbench/current-limits:
+  en: 2f107c502f994b71
+  zh: ac23230d970b0527
+/intelligent-security-analysis-workbench/documentation-and-development:
+  en: 335e939f94ddef5e
+  zh: 4810ddb0f7867fcf
+/intelligent-security-analysis-workbench/upstream-and-acknowledgements:
+  en: aa02ff7912334115
+  zh: 7ad44bf0322909c3
+/intelligent-security-analysis-workbench/license:
   en: 926995344fc1c72b
   zh: c92fab5abf85932f
