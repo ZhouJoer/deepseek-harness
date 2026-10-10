@@ -53,6 +53,7 @@ it('updates counts during a turn without adding a stage and preserves a return t
   await act(async () => { deliver({ type: 'activity', briefs: [], cursor: 2, usage: [{ ...usage, running: 0, failed: 1 }] }) })
   expect(screen.getByRole('group', { name: 'ghidra ×1' }).textContent).toContain('Failed 1')
   expect(screen.getAllByRole('heading', { level: 4 })).toHaveLength(3)
+  expect(screen.getAllByText('A new caller needs inspection').every(element => !element.closest('details'))).toBe(true)
   expect(screen.getAllByText('Analysis summary')).toHaveLength(3)
   fireEvent.click(screen.getAllByText('Inspect calls and evidence')[2]!)
   await waitFor(() =>{  expect(details).toHaveBeenCalledWith('project', 'third', 0, undefined) })

@@ -67,7 +67,7 @@ export const builtinToolPack = parseToolPack({
     {
       'id': 'radare2',
       'label': 'radare2',
-      'description': 'Native binary disassembly, functions and cross references: ELF SO DLL PE Mach-O / 逆向 二进制 固件 反汇编',
+      'description': 'Native binary disassembly, functions and cross references: ELF SO DLL PE Mach-O / 逆向 二进制 固件 反汇编 IoT 物联网',
       'category': 'reverse',
       'tags': [
         'reverse',
@@ -93,7 +93,7 @@ export const builtinToolPack = parseToolPack({
     {
       'id': 'r2ghidra',
       'label': 'r2ghidra',
-      'description': 'Native binary decompilation / 反编译',
+      'description': 'Native binary decompilation / 逆向 二进制 固件 反编译',
       'category': 'reverse',
       'tags': [
         'reverse',
@@ -142,7 +142,7 @@ export const builtinToolPack = parseToolPack({
     {
       'id': 'unicorn',
       'label': 'unicorn',
-      'description': 'CPU emulation for binary and firmware analysis / 仿真 模拟执行',
+      'description': 'CPU emulation for binary and firmware analysis / 逆向 二进制 固件 仿真 模拟执行',
       'category': 'reverse',
       'tags': [
         'reverse',
@@ -297,7 +297,7 @@ export const builtinToolPack = parseToolPack({
     {
       'id': 'curl',
       'label': 'curl',
-      'description': 'HTTP requests / Web HTTP',
+      'description': 'HTTP requests and responses for registered Web targets / 网站 HTTP 请求 响应',
       'category': 'web',
       'tags': [
         'web',
@@ -318,7 +318,7 @@ export const builtinToolPack = parseToolPack({
     {
       'id': 'nmap',
       'label': 'nmap',
-      'description': 'Network service discovery / 网络 端口 服务',
+      'description': 'Network service discovery for Web and IoT targets / 网络 端口 服务 物联网',
       'category': 'web',
       'tags': [
         'web',
@@ -351,15 +351,23 @@ export const builtinToolPack = parseToolPack({
     },
     {
       'id': 'tshark',
-      'skills': ['security-packet-analysis', 'security-mqtt'],
+      'skills': ['security-packet-analysis', 'security-mqtt', 'security-iot-offline'],
       'label': 'tshark',
-      'description': 'Packet analysis and capture, USBPcap extcap / 抓包 USB 网络',
+      'description': 'PCAP/PCAPNG packet analysis: MQTT, Wi-Fi, BLE/Bluetooth, USBPcap extcap / 物联网 抓包 流量 无线 蓝牙 网络',
       'category': 'utility',
       'tags': [
         'utility',
         'capture',
         'usb',
         'network',
+        'iot',
+        'mqtt',
+        'pcap',
+        'pcapng',
+        'wifi',
+        'wi-fi',
+        'ble',
+        'bluetooth',
       ],
       'commands': [
         'tshark',
@@ -590,6 +598,16 @@ On reuse, verify saved file hashes, reread the recipe's applicability, bind the 
     },
   ],
   'collections': [
+    {
+      'id': 'reverse',
+      'label': 'Reverse engineering / 逆向分析',
+      'toolIds': ['radare2', 'r2ghidra', 'r2pipe', 'ghidra', 'unicorn', 'frida', 'jadx', 'readelf', 'objdump', 'nm', 'strings'],
+    },
+    {
+      'id': 'iot',
+      'label': 'IoT / 物联网',
+      'toolIds': ['tshark', 'radare2', 'r2ghidra', 'readelf', 'objdump', 'strings', 'unicorn', 'nmap'],
+    },
     {
       'id': 'firmware',
       'label': 'Firmware and native binaries',

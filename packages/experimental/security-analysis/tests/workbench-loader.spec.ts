@@ -475,6 +475,8 @@ describe('security workbench Loader composition', () => {
     const request = JSON.stringify(model.requests[0])
     expect(request).toContain('query security_capabilities')
     expect(request).toContain('Prefer native machine-readable results')
+    expect(request).toContain('observed contents of all relevant materials')
+    expect(request).toContain('User preferences are soft priorities, not exclusions')
     expect(request).not.toContain('/tools/radare2')
     expect(request).not.toContain('USBPcapCMD.exe')
     expect(request).not.toContain('pdgj')
@@ -488,6 +490,16 @@ describe('security workbench Loader composition', () => {
     expect(JSON.stringify(web.value)).not.toContain('radare2')
     expect(JSON.stringify(web.value)).not.toContain('Prefer native XML')
     expect(JSON.stringify(web.value)).not.toContain('rcTemplate')
+    for (const query of ['IoT', '物联网', 'MQTT', 'pcapng', 'BLE', 'Wi-Fi']) {
+      const discovered = await execute(ctx, agent, 'security_capabilities', { query })
+      expect(discovered.isError).toBe(false)
+      const value = JSON.parse(discovered.content.filter(block => block.type === 'text').map(block => block.text).join('')) as {
+        catalog: { id: string; skills: string[] }[]
+      }
+      const tshark = value.catalog.find(tool => tool.id === 'tshark')
+      expect(tshark?.skills).toEqual(['security-packet-analysis', 'security-mqtt', 'security-iot-offline'])
+      expect(JSON.stringify(value)).not.toContain('USBPcapCMD.exe')
+    }
     for (const id of ['radare2', 'r2ghidra', 'r2pipe', 'unicorn', 'frida', 'jadx', 'adb', 'curl', 'nmap', 'nuclei', 'metasploit', 'tshark', 'file', 'strings', 'readelf', 'objdump', 'nm']) {
       const detail = await execute(ctx, agent, 'security_capabilities', { toolIds: [id], details: true })
       expect(detail.isError).toBe(false)
@@ -515,6 +527,8 @@ describe('security workbench Loader composition', () => {
     await other.dispose()
     expect(ctx.securityWorkbench.toolPreferences(other.agent).toolIds).toEqual([])
     expect(ctx.securityWorkbench.toolPreferences(agent).toolIds).toEqual(['radare2'])
+    ctx.securityWorkbench.toolPreferences(agent, JSON.stringify({ toolIds: [], tags: [], collectionIds: [] }))
+    expect(ctx.securityWorkbench.toolPreferences(agent)).toEqual({ toolIds: [], tags: [], collectionIds: [] })
   })
   it('runs generated scripts and relative outputs in the analysis directory and captures the execution log', async () => {
     const { ctx, agent, model, controller } = await load(false, 0, { native: true })

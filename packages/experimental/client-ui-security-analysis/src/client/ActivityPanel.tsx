@@ -95,6 +95,7 @@ export function ActivityTimeline(props: Props & { activity: ProjectActivity }) {
         <header className={css.stageHeader}><span className={css.stageNumber} aria-hidden="true">{index + 1}</span><div>
           {direction.phase && <span className={css.phase}>{t(direction.phase)}</span>}<h4>{direction.title}</h4>
         </div></header>
+        {direction.reason && <p><span className={css.briefLabel}>{t('activityReason')}</span> {direction.reason}</p>}
         <div className={css.toolGrid} aria-label={t('activityTools')}>
           {tools.size ? [...tools.values()].map(item => <div className={css.toolCard} key={item.tool} role="group"
             aria-label={`${item.tool === 'script' ? t('activityScriptShort') : item.tool} ×${item.total}`}>
@@ -124,7 +125,6 @@ export function ActivityTimeline(props: Props & { activity: ProjectActivity }) {
           openChild={props.openChild} t={t} />
         <details onToggle={(event) => { if (event.currentTarget.open) void read(direction.id) }}>
           <summary>{t('activityDetails')}</summary>
-          {direction.reason && <p>{t('activityReason')}: {direction.reason}</p>}
           {!direction.evidenceIds.length && <p>{t('activityNoEvidence')}</p>}
           {direction.evidenceIds.map((id) => {
             const evidence = props.view.records.find(item => item.kind === 'evidence' && item.value.id === id)

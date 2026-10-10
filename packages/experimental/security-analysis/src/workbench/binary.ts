@@ -1,6 +1,7 @@
 /** Bounded inspection of immutable samples without external executables. @module */
 import { z } from 'zod'
 import { fileAsset } from './assessment.ts'
+import { isPacketCapture } from './artifacts.ts'
 import type { AnalysisContext, AnalysisProvider, AnalysisResult } from './providers.ts'
 import type { AnalysisOperation } from './model.ts'
 
@@ -31,7 +32,9 @@ export class BinaryProvider implements AnalysisProvider {
     let value: object
     let incomplete = false
     if (request.operation === 'identity') {
-      const header: Record<string, string | number> = { prefixHex: bytes.subarray(0, 16).toString('hex') }
+      const header: Record<string, string | number | boolean> = {
+        prefixHex: bytes.subarray(0, 16).toString('hex'), packetCapture: isPacketCapture(bytes),
+      }
       if (bytes.subarray(0, 2).toString('ascii') === 'MZ') {
         if (bytes.length < 64) throw new Error('Truncated DOS header')
         const pe = bytes.readUInt32LE(60)

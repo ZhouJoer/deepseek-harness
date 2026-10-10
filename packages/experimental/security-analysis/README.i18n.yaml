@@ -3,8 +3,8 @@
 # After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/experimental/security-analysis/README.md
 /:
-  en: 2a377ac01f7abe0d
-  zh: 365867ed639f5bcc
+  en: 48d1f4fc57f08be5
+  zh: 2cdb51bb487edcad
 /deepseek-ai-dsh-experimental-security-analysis:
   en: 7e94d401058e063f
   zh: 5914bf07c0217908
@@ -15,8 +15,8 @@
   en: eb68ca73b584a748
   zh: 2d618bce316ba639
 /deepseek-ai-dsh-experimental-security-analysis/use-this-package:
-  en: b24e13dea98b7682
-  zh: fe4dd21010149d0a
+  en: 68a68fedbbd8c2af
+  zh: 768959edea43ff0a
 /deepseek-ai-dsh-experimental-security-analysis/use-this-package/configure-analysis-providers:
   en: 33d3529bd894390f
   zh: 690887e6e3674889

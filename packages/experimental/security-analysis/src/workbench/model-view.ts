@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict'
 import { z } from 'zod'
 import { findingHash } from './assessment.ts'
-import type { SecurityRecord, WorkbenchView } from './model.ts'
+import type { FileAsset, SecurityRecord, WorkbenchView } from './model.ts'
 
 /** Page selector within the caller's already scoped records. */
 export interface RecordQuery {
@@ -18,6 +18,11 @@ interface RecordSummary {
     status?: string
     findingHash?: string
     assetId?: string
+    assetKind?: 'file' | 'source' | 'web' | 'external-web'
+    format?: FileAsset['format']
+    origin?: string
+    pathPrefix?: string
+    environmentId?: string
     provider?: string
     operation?: string
     sourcePath?: string
@@ -67,6 +72,12 @@ export function modelPage(view: WorkbenchView, query: RecordQuery, maxBytes: num
       ...('label' in item.value ? { label: item.value.label.slice(0, 120) } : {}),
       ...('status' in item.value ? { status: item.value.status } : {}),
       ...(item.kind === 'finding' ? { findingHash: findingHash(item.value) } : {}),
+      ...(item.kind === 'asset' ? {
+        assetKind: 'kind' in item.value ? item.value.kind : 'file',
+        ...('format' in item.value ? { format: item.value.format } : {}),
+        ...('origin' in item.value ? { origin: item.value.origin,
+          pathPrefix: item.value.pathPrefix, environmentId: item.value.environmentId } : {}),
+      } : {}),
       ...(item.kind === 'delegation' ? { title: item.value.question.slice(0, 120), role: item.value.role,
         task: item.value.task, assetId: item.value.assetId, checkpointId: item.value.checkpointId,
         ...(item.value.checkId ? { checkId: item.value.checkId } : {}),

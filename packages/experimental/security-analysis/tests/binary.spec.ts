@@ -25,6 +25,19 @@ async function fixture(bytes: Buffer) {
 }
 
 describe('immutable binary inspection', () => {
+  it.each(['d4c3b2a1', 'a1b2c3d4', '4d3cb2a1', 'a1b23c4d', '0a0d0d0a'])
+  ('identifies capture magic %s without asserting packet validity', async (magic) => {
+    const { run } = await fixture(Buffer.from(magic, 'hex'))
+    const value: unknown = JSON.parse(Buffer.from((await run('identity')).bytes).toString())
+    expect(value).toMatchObject({ format: 'other', header: { packetCapture: true, prefixHex: magic } })
+    expect(value).toMatchObject({ coverage: 'Identity and selected header fields only; format validity and reachability are not established.' })
+  })
+  it('keeps unknown bytes unknown even when the label claims a capture', async () => {
+    const { run, context } = await fixture(Buffer.from('not a capture'))
+    context.asset.label = 'device.pcapng'
+    expect(JSON.parse(Buffer.from((await run('identity')).bytes).toString()))
+      .toMatchObject({ format: 'other', header: { packetCapture: false } })
+  })
   it('records exact bytes and partial string coverage with offsets', async () => {
     const { run } = await fixture(Buffer.from('secret\0other\0'))
     const page = await run('strings', { offset: 0, length: 7 })

@@ -3,44 +3,44 @@
 # After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write docs/user/guide/security-analysis.md
 /:
-  en: 715c9d73bf8cdca0
-  zh: 8a24721b26fc9cd3
-/reverse-analysis-workbench:
-  en: 8e979433b815f8d8
-  zh: 825ee35762f3fca7
-/reverse-analysis-workbench/1-prepare-the-profile:
-  en: 6d05a75d0e4eb2eb
-  zh: 7b15ec1ada1a78e0
-/reverse-analysis-workbench/1-prepare-the-profile/existing-local-or-remote-docker-containers:
+  en: 95f3d436cedff9cd
+  zh: 702b3070e4e94393
+/security-analysis-workbench:
+  en: 530f0642053ca245
+  zh: 6a8edc037eeaa0d7
+/security-analysis-workbench/1-prepare-the-profile:
+  en: 2fd2009f8766b7d5
+  zh: 73a20728f794ac82
+/security-analysis-workbench/1-prepare-the-profile/existing-local-or-remote-docker-containers:
   en: 1791028e9ff8ed02
   zh: ded2acd8ac51ded3
-/reverse-analysis-workbench/1-prepare-the-profile/launch:
+/security-analysis-workbench/1-prepare-the-profile/launch:
   en: 2703a9386a179db3
   zh: c5be71959ffeeb84
-/reverse-analysis-workbench/2-start-an-analysis:
+/security-analysis-workbench/2-start-an-analysis:
   en: cb7ca01c4811d458
   zh: 666c1612d9e3f1b7
-/reverse-analysis-workbench/2-start-an-analysis/inspect-windows-devices-and-analyze-wireless-recordings:
+/security-analysis-workbench/2-start-an-analysis/inspect-windows-devices-and-analyze-wireless-recordings:
   en: 162639c3d95cbd56
   zh: d7694b030067f554
-/reverse-analysis-workbench/2-start-an-analysis/turn-observations-into-source-code-improvements:
+/security-analysis-workbench/2-start-an-analysis/turn-observations-into-source-code-improvements:
   en: 107f9e2cf4e4d94a
   zh: a0982d3570219583
-/reverse-analysis-workbench/3-collect-and-evaluate-evidence:
+/security-analysis-workbench/3-collect-and-evaluate-evidence:
   en: ada432f3befdceac
   zh: d88f0b59e2abea7b
-/reverse-analysis-workbench/4-approve-and-stop-validation:
+/security-analysis-workbench/4-approve-and-stop-validation:
   en: 6f61dd707393ee28
   zh: 32b8d687441c1e44
-/reverse-analysis-workbench/verify-without-an-android-device:
+/security-analysis-workbench/verify-without-an-android-device:
   en: fa28a6c5b36325e4
   zh: ce1dc60a09865877
-/reverse-analysis-workbench/current-acceptance-limits:
+/security-analysis-workbench/current-acceptance-limits:
   en: 05637cc148e589a5
   zh: b77c34c2d2d8116f
-/reverse-analysis-workbench/local-web-laboratory:
+/security-analysis-workbench/local-web-laboratory:
   en: 71c5e663c4dc2080
   zh: cc6640325722e4da
-/reverse-analysis-workbench/source-and-static-frontend-projects:
+/security-analysis-workbench/source-and-static-frontend-projects:
   en: a6d24d35f960e337
   zh: dc3dbd9161cfa6ee

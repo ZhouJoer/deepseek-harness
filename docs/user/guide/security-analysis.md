@@ -1,18 +1,20 @@
 ---
-description: "Start an isolated security workbench and prepare an approved reverse-analysis check."
+description: "Start a security workbench for reverse engineering, Web and IoT analysis."
 ---
 
-# Reverse-analysis workbench
+# Security analysis workbench
 
 English | [中文](security-analysis.zh.md)
 
-Use a separate security profile for authorized samples. This guide assumes a built source checkout, Node and pnpm, and external reverse tools installed by the operator. A DeepSeek model key is needed for agent work; project setup and evidence review can be performed before configuring a model. The complete external-tool acceptance matrix is in the [security package](../../../packages/experimental/security-analysis/README.md#known-limitations-and-deferred-work).
+Use a separate security profile for authorized materials and targets. This guide assumes a built source checkout, Node and pnpm, and any required external analysis tools installed by the operator. A DeepSeek model key is needed for agent work; project setup and evidence review can be performed before configuring a model. The complete external-tool acceptance matrix is in the [security package](../../../packages/experimental/security-analysis/README.md#known-limitations-and-deferred-work).
+
+Add programs, website source, firmware or captures, or register a Web target, and describe the question. The assistant selects and combines reverse engineering, Web and IoT methods from the contents and available environment. Open **Analysis toolbox** to browse tools by domain; browsing filters do not restrict the task. Use **More options → Active session tool preferences** before starting to suggest tools, then apply the preferences or choose **Restore automatic selection**. Preferences remain optional and do not exclude other suitable tools. Read **Selection rationale** in analysis progress for the saved basis of the chosen method and inspect recorded calls for actual execution.
 
 ## 1. Prepare the profile
 
 For reusable methods, open **Toolbox → Analysis scripts**. Packet analysis covers capture summaries and filtered frames; MQTT covers connection timelines and topics; dynamic observation covers native modules and exported functions. Expand an entry to inspect dependencies, required parameters and examples. Ask the analysis assistant to use the matching bundled script on your material. It loads the associated skill, fills parameters and saves results in the current task's analysis directory. Dynamic templates still use the existing validation-plan approval workflow. Browsing the library neither requires a selected environment nor installs tools.
 
-From the repository root, build the checkout with `pnpm run build`. The source launcher still loads built workspace plugins. After changing a Host or Client plugin, rebuild before restarting; refreshing the page does not replace the build. Open **Security analysis → Toolbox**, then choose **Configure tool** on a tool card or **Add tool** for a custom installation. **Choose tool file** browses files on the computer running DSH; it does not upload executables. Choose **Check** to see the version and diagnostics, or **Check and save** to apply a successful probe immediately. Failed probes leave the saved configuration intact. Advanced arguments use one argument per line for interpreters and custom version queries. **Restore defaults** removes the local override. The model discovers saved paths through its next selected environment check, without restarting the service. The source security profile enables editing for its local environment. Command-line management is also available below. `python` must have the official Frida bindings installed when using Frida. Tool availability and target readiness are checked separately.
+From the repository root, build the checkout with `pnpm run build`. The source launcher still loads built workspace plugins. After changing a Host or Client plugin, rebuild before restarting; refreshing the page does not replace the build. Open **Security analysis → Analysis toolbox**, then choose **Configure tool** on a tool card or **Add tool** for a custom installation. **Choose tool file** browses files on the computer running DSH; it does not upload executables. Choose **Check** to see the version and diagnostics, or **Check and save** to apply a successful probe immediately. Failed probes leave the saved configuration intact. Advanced arguments use one argument per line for interpreters and custom version queries. **Restore defaults** removes the local override. The model discovers saved paths through its next selected environment check, without restarting the service. The source security profile enables editing for its local environment. Command-line management is also available below. `python` must have the official Frida bindings installed when using Frida. Tool availability and target readiness are checked separately.
 
 ```sh
 pnpm security:doctor

@@ -386,7 +386,7 @@ export default class SecurityWorkbench extends TypertRemoteService {
             total: matches.length, nextOffset: offset + page.length < matches.length ? offset + page.length : null,
             catalog: page.map(tool => args.details ? tool : ({ id: tool.id, label: tool.label,
               description: tool.description, tags: tool.tags, invocation: tool.invocation,
-              dependency: tool.dependency, provider: tool.provider })),
+              dependency: tool.dependency, provider: tool.provider, skills: tool.skills })),
             collections: catalog.collections.slice(offset, offset + limit).map(({ id, label }) => ({ id, label })),
             preferences: this.preferences.get(exec.agent.id) ?? null,
             providers: controller.providers.list().map(id => ({ id,

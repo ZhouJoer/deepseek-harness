@@ -7,6 +7,22 @@ import { ToolCatalog } from '../src/tool-catalog.ts'
 import { discoverTools, orderTools, parseToolPack } from '../src/tool-definitions.ts'
 import { probeArguments, probeIdentity } from '../src/tool-probes.ts'
 const roots: string[] = []
+it.each([
+  ['逆向', 'radare2'], ['reverse', 'radare2'], ['web', 'curl'], ['HTTP', 'curl'],
+  ['IoT', 'tshark'], ['物联网', 'tshark'], ['MQTT', 'tshark'], ['pcapng', 'tshark'],
+  ['BLE', 'tshark'], ['Wi-Fi', 'tshark'], ['bluetooth', 'tshark'],
+])('discovers a relevant tool for %s without a probe', (query, expected) => {
+  const { tools, collections } = new ToolCatalog().read()
+  expect(discoverTools(tools, collections, { query }).map(tool => tool.id)).toContain(expected)
+})
+it('offers overlapping analysis collections and preserves existing selections', () => {
+  const { tools, collections } = new ToolCatalog().read()
+  expect(collections.map(collection => collection.id)).toEqual(expect.arrayContaining(['reverse', 'iot', 'web', 'firmware', 'android', 'capture']))
+  expect(discoverTools(tools, collections, { collectionIds: ['iot'] }).map(tool => tool.id))
+    .toEqual(expect.arrayContaining(['tshark', 'radare2']))
+  expect(discoverTools(tools, collections, { collectionIds: ['reverse'] }).map(tool => tool.id)).toContain('radare2')
+  expect(discoverTools(tools, collections, { collectionIds: ['capture'] }).map(tool => tool.id)).toEqual(['tshark'])
+})
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 }) })
 function fixture() {
   const root = mkdtempSync(join(tmpdir(), 'dsh-catalog-')); roots.push(root)

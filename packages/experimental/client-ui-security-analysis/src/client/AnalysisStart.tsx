@@ -3,6 +3,8 @@ import { useRef, useState } from 'react'
 import { randomUUID } from '@deepseek-ai/dsh-util-crypto'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import { MaterialPanel, type MaterialSelection } from './MaterialPanel.tsx'
+import { ToolPreferences, type ToolPreferenceActions } from './ToolPreferences.tsx'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { NS } from './locales.ts'
 import css from './Workbench.module.css'
 
@@ -11,6 +13,7 @@ export interface AnalysisStartProps extends PropsLocale<typeof NS> {
   disabled: boolean
   environments: { id: string; label: string; kind: string }[]
   limits: { bytes: number; entries: number } | undefined
+  toolPreferences?: ToolPreferenceActions & { sessionId: SessionId }
   prepare(input: {
     operationId: string
     material?: MaterialSelection
@@ -35,6 +38,7 @@ export function AnalysisStart(props: AnalysisStartProps) {
   const [prepared, setPrepared] = useState(false)
   const [busy, setBusy] = useState(false)
   const [selecting, setSelecting] = useState(false)
+  const [preferencesReady, setPreferencesReady] = useState(true)
   const [error, setError] = useState('')
   const attempt = useRef<{ payload: string; operationId: string }>()
   const environmentId = environment ?? props.environments.find(item => item.kind === 'local')?.id ?? ''
@@ -91,11 +95,14 @@ export function AnalysisStart(props: AnalysisStartProps) {
         <label className={css.field}>{t('environment')}<select value={environmentId} disabled={locked}
           onChange={(event) => { setEnvironment(event.target.value) }}><option value="">{t('notSelected')}</option>
           {props.environments.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label>
+        {props.toolPreferences && <ToolPreferences {...props.toolPreferences} t={t}
+          disabled={locked} onReadyChange={setPreferencesReady} />}
       </details></>}
     {prepared && <p>{t('analysisPrepared')}</p>}
     {error && <p role="alert" className={css.error}>{error}</p>}
     <div className={css.taskActions}><button className={css.primaryAction}
-      disabled={props.disabled || busy || selecting || !objective.trim() || !props.environments.some(item => item.id === environmentId)}
+      disabled={props.disabled || busy || selecting || !preferencesReady || !objective.trim()
+        || !props.environments.some(item => item.id === environmentId)}
       onClick={() => void start()}>{t(prepared ? 'retryAnalysis' : 'startAnalysis')}</button></div>
   </section>
 }

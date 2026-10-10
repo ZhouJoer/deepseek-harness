@@ -49,6 +49,7 @@ function ToolInstallations(props: ToolboxActions & PropsLocale<typeof NS>) {
   const [editing, setEditing] = useState<string>()
   const [catalog, setCatalog] = useState<ToolCatalogSnapshot>()
   const [tag, setTag] = useState(''), [pack, setPack] = useState(''), [query, setQuery] = useState('')
+  const [domain, setDomain] = useState('all')
   const generation = useRef(0)
   useEffect(() => {
     let current = true
@@ -65,9 +66,14 @@ function ToolInstallations(props: ToolboxActions & PropsLocale<typeof NS>) {
   const inventory = directory?.inventory
   const visible = inventory?.tools.filter((tool) => {
     const definition = catalog?.tools.find(item => item.id === tool.id)
-    return (!tag || definition?.tags.includes(tag))
+    const inDomain = domain === 'all' || (domain === 'general'
+      ? ['runtime', 'utility', 'custom'].includes(tool.category)
+      : tool.category === domain || definition?.tags.includes(domain)
+        || catalog?.collections.find(item => item.id === domain)?.toolIds.includes(tool.id))
+    return inDomain && (!tag || definition?.tags.includes(tag))
       && (!pack || catalog?.packs.find(item => item.id === pack)?.tools.some(item => item.id === tool.id))
-      && (!query || [tool.id, definition?.label, definition?.description].join(' ').toLowerCase().includes(query.toLowerCase()))
+      && (!query || [tool.id, definition?.label, definition?.description, ...definition?.tags ?? []]
+        .join(' ').toLowerCase().includes(query.toLowerCase()))
   }) ?? []
   const check = async (ids: string[]) => {
     const current = generation.current
@@ -88,6 +94,12 @@ function ToolInstallations(props: ToolboxActions & PropsLocale<typeof NS>) {
   const invocations = { shell: 'toolViaShell', plugin: 'toolViaPlugin', python: 'toolViaPython', provider: 'toolViaProvider' } as const
   return <section aria-label={t('toolbox')}>
     <p>{t('toolboxHelp')}</p>
+    <div className={css.segments} role="group" aria-label={t('toolDomain')}>
+      {([['all', 'toolAll'], ['reverse', 'toolDomainReverse'], ['web', 'toolWeb'],
+        ['iot', 'toolDomainIot'], ['general', 'toolDomainGeneral']] as const)
+        .map(([value, label]) => <button key={value} aria-pressed={domain === value}
+          onClick={() => { setDomain(value) }}>{t(label)}</button>)}
+    </div>
     {catalog && <ToolPacks {...props} catalog={catalog} changed={() => { setRevision(value => value + 1) }} />}
     <label className={css.field}>{t('toolPurposeSearch')}<input value={query} onChange={(event) => { setQuery(event.target.value) }} /></label>
     <label className={css.field}>{t('toolTagFilter')}<select value={tag} onChange={(event) => { setTag(event.target.value) }}><option value="">{t('toolAll')}</option>
@@ -124,6 +136,7 @@ function ToolInstallations(props: ToolboxActions & PropsLocale<typeof NS>) {
       {inventory.checkedAt > 0 && <p>{t('toolCheckedAt')} {new Date(inventory.checkedAt).toLocaleString()}</p>}
       <code>{inventory.containerId ?? inventory.workdir}</code>
       {inventory.detail && <p>{inventory.detail}</p>}
+      {!visible.length && <p>{t('toolNoMatches')}</p>}
       {Object.entries(categories).filter(([category]) => visible.some(tool => tool.category === category))
         .map(([category, label]) => <section key={category} aria-label={t(label)}>
           <h3>{t(label)}</h3>

@@ -74,6 +74,7 @@ export function DashboardSession(props: PropsRuntime<'security.workbench.session
           }} />}
       </>}
       <AnalysisStart t={t} disabled={!configuration || maxAttempts === undefined || saving}
+        toolPreferences={{ sessionId, toolCatalog: props.toolCatalog, toolPreferences: props.toolPreferences }}
         environments={configuration?.environments ?? []} limits={configuration?.materialLimits}
         prepare={async (input) => {
           if (maxAttempts === undefined) throw new Error(t(workspace ? 'missingAttemptLimit' : 'missingAnalysisWorkspace'))

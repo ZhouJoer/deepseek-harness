@@ -1,7 +1,34 @@
 /** Model pages preserve durable identities without repeating source bodies. @module */
 import { expect, it } from 'vitest'
 import { modelPage, recordDetail, commandReceipt, sourceEvidenceLines } from '../src/workbench/model-view.ts'
-import { delegationSchema, evidenceSchema, type WorkbenchView } from '../src/workbench/model.ts'
+import { assetSchema, delegationSchema, evidenceSchema, type WorkbenchView } from '../src/workbench/model.ts'
+it('pages mixed material kinds and target scopes without copying artifact bodies', () => {
+  const artifact = { sha256: 'a'.repeat(64), size: 4000, mediaType: 'application/octet-stream' }
+  const values = [
+    ...(['pe', 'elf', 'other'] as const).map(format => ({ id: format, format, artifact, identity: 'measured' })),
+    { id: 'source', kind: 'source', artifact, identity: 'measured' },
+    { id: 'web', kind: 'web', environmentId: 'lab', origin: 'http://fixture.invalid', pathPrefix: '/app', instanceId: 'lab' },
+    { id: 'external', kind: 'external-web', environmentId: 'local', origin: 'https://fixture.invalid', pathPrefix: '/api', allowedAddresses: ['192.0.2.1'] },
+  ]
+  const view: WorkbenchView = { revision: 1, records: values.map(value => ({ kind: 'asset',
+    value: assetSchema.parse({ engagementId: 'project', label: 'Mixed material', ...value }) })) }
+  const summaries = []
+  let offset = 0
+  do {
+    const page = modelPage(view, { kind: 'asset', offset }, 420)
+    expect(Buffer.byteLength(JSON.stringify(page))).toBeLessThanOrEqual(420)
+    summaries.push(...page.records.map(record => record.value))
+    if (!page.hasMore) break
+    offset = page.nextOffset!
+  } while (true)
+  expect(summaries).toMatchObject([
+    { assetKind: 'file', format: 'pe' }, { assetKind: 'file', format: 'elf' }, { assetKind: 'file', format: 'other' },
+    { assetKind: 'source' },
+    { assetKind: 'web', origin: 'http://fixture.invalid', pathPrefix: '/app', environmentId: 'lab' },
+    { assetKind: 'external-web', origin: 'https://fixture.invalid', pathPrefix: '/api', environmentId: 'local' },
+  ])
+  expect(JSON.stringify(summaries)).not.toContain(artifact.sha256)
+})
 function fixture(): WorkbenchView {
   return { revision: 7, records: Array.from({ length: 20 }, (_, index) => ({ kind: 'evidence' as const,
     value: evidenceSchema.parse({ id: 'e' + String(index), engagementId: 'project', assetId: 'source', title: 'read',

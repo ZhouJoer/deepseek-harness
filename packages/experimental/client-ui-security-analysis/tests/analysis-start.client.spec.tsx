@@ -1,13 +1,49 @@
 // @vitest-environment jsdom
 /** User-owned analysis intake, submission retry and explicit environment choice. @module */
 import { afterEach, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { SessionId } from '@deepseek-ai/dsh-session'
+import type { ToolPreferences as Preferences } from '@deepseek-ai/dsh-experimental-security-analysis/client'
+import { builtinToolPack } from '../../security-analysis/src/builtin-tools.ts'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
 import { AnalysisStart, type AnalysisStartProps } from '../src/client/AnalysisStart.tsx'
 import { zh } from '../src/client/locales.ts'
 
 afterEach(cleanup)
+it('waits for applied preferences and preserves the objective after a failed save', async () => {
+  const initial: Preferences = { toolIds: [], collectionIds: [], tags: [] }
+  const pending = Promise.withResolvers<Preferences>()
+  const preferences = vi.fn(async (_id: SessionId, input?: string) => input ? pending.promise : initial)
+  const prepare = vi.fn(async () => {}), send = vi.fn(async () => {})
+  render(<AnalysisStart t={makeTranslate(zh, commonZh)} disabled={false}
+    environments={[{ id: 'host', label: 'Host', kind: 'local' }]} limits={{ bytes: 1024, entries: 10 }}
+    prepare={prepare} send={send} started={() => {}}
+    toolPreferences={{ sessionId: SessionId('session'), toolPreferences: preferences,
+      toolCatalog: async () => ({ editable: false, revision: '', packs: [builtinToolPack], tools: builtinToolPack.tools, collections: builtinToolPack.collections }) }} />)
+  fireEvent.change(screen.getByLabelText(zh.analysisRequest), { target: { value: 'Compare firmware and traffic' } })
+  const options = screen.getByText(zh.analysisOptions).closest('details')!
+  options.open = true
+  const details = screen.getByText(zh.toolPreferenceTitle).closest('details')!
+  details.open = true; fireEvent(details, new Event('toggle'))
+  fireEvent.click(await screen.findByRole('checkbox', { name: 'IoT / 物联网' }))
+  const start = screen.getByRole<HTMLButtonElement>('button', { name: zh.startAnalysis })
+  expect(start.disabled).toBe(true)
+  fireEvent.click(screen.getByRole('button', { name: zh.toolPreferenceSave }))
+  fireEvent.click(start)
+  expect(send).not.toHaveBeenCalled()
+  await act(async () => { pending.reject(new Error('Save unavailable')); await pending.promise.catch(() => {}) })
+  expect(screen.getByRole('alert').textContent).toContain('Save unavailable')
+  expect(start.disabled).toBe(true)
+  expect(screen.getByLabelText<HTMLTextAreaElement>(zh.analysisRequest).value).toBe('Compare firmware and traffic')
+  preferences.mockImplementation(async (_id, input) => input ? JSON.parse(input) as Preferences : initial)
+  fireEvent.click(screen.getByRole('button', { name: zh.toolPreferenceSave }))
+  await waitFor(() => { expect(start.disabled).toBe(false) })
+  expect(preferences).toHaveBeenLastCalledWith('session', JSON.stringify({ ...initial, collectionIds: ['iot'] }))
+  fireEvent.click(start)
+  await waitFor(() => { expect(send).toHaveBeenCalledWith('Compare firmware and traffic') })
+  expect(prepare).toHaveBeenCalledOnce()
+})
 function setup(local = true) {
   const prepare = vi.fn<AnalysisStartProps['prepare']>(async () => {})
   const send = vi.fn(async (_objective: string) => {})

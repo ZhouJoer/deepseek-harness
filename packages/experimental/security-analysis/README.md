@@ -1,5 +1,5 @@
 ---
-description: "Scoped reverse checks, plan approval and project evidence."
+description: "Scoped security analysis, plan approval and project evidence."
 kind: "package-reference"
 ---
 
@@ -27,6 +27,8 @@ Authenticated operator material imports accept pasted UTF-8 text, uploaded files
 ## Use this package
 
 Use [security-profile](../security-profile/README.md) in a dedicated `dsh` profile. Add [security-web-profile](../security-web-profile/README.md) for the conversation workbench. The default general profiles do not load these bundles.
+
+Analysis supports reverse engineering, Web and IoT. The Agent chooses and combines methods from the objective, observed material contents and available environment; session tool preferences are soft priorities. `security_scope` asset summaries project the saved `assetKind`, file `format` or Web `origin`, `pathPrefix` and `environmentId`. Unknown files can use built-in `binary.identity`; `header.packetCapture` observes PCAP/PCAPNG magic without asserting packet validity. Source directories require listing and targeted reads; binary members that the available tools cannot inspect need separate file imports. `security_capabilities` includes skill references in brief tool results and offers overlapping `reverse` and `iot` collections alongside existing collections. Check only the external tools needed for the question. Record concise material-based selection reasons in `checkpoint.reason`, observations in `summary` and follow-up work in `next`; recorded calls and evidence establish actual execution. These projections and observations use existing records and logged tool results.
 
 Load `security-investigation` through the ordinary `skill` tool, then combine `security-web`, `security-firmware`, `security-android` and `security-iot-offline` as the materials and question require. These [methods](src/methods.ts) guide evidence-driven hypotheses, distinguishing checks, tool selection and bounded delegation. Web work follows identities, inputs and handlers; firmware work connects extracted components to reachable consumers; Android work distinguishes APK/DEX inspection from observations on an explicitly selected adb device. Missing device access leaves device behavior unverified without blocking useful static work. Methods do not install tools or grant permissions: existing role checks, project scope and execution approval remain authoritative.
 

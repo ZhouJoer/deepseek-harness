@@ -114,8 +114,16 @@ export async function apply(ctx) {
       let selected = await service.view(exec.agent)
       const project = selected.records.find(record => record.kind === 'engagement')
       assert(project)
+      const elf = Buffer.alloc(64)
+      elf.set([0x7f, 0x45, 0x4c, 0x46, 2, 1])
       selected = await service.importMaterials(exec.agent, JSON.stringify({ operationId: 'fixture-paste', expectedRevision: selected.revision,
-        title: 'Notes', objective: 'Inspect the pasted notes', material: { kind: 'text', name: 'notes.txt', text: 'Owned static notes.\n' } }))
+        title: 'Mixed materials', objective: 'Inspect source, firmware and traffic together', material: { kind: 'files', directory: false,
+          files: [
+            { name: 'handler.js', base64: Buffer.from('export const read = request => request.query;\n').toString('base64') },
+            { name: 'firmware.elf', base64: elf.toString('base64') },
+            { name: 'traffic.pcapng', base64: Buffer.from('0a0d0d0a', 'hex').toString('base64') },
+            { name: 'unknown.bin', base64: Buffer.from([0, 1, 2, 3]).toString('base64') },
+          ] } }))
       assert(selected.records.some(record => record.kind === 'asset'))
       for (const kind of ['rename', 'archive', 'restore']) {
         await service.manageProject(project.value.id, JSON.stringify({ operationId: 'fixture-' + kind, expectedRevision: selected.revision,
@@ -131,8 +139,8 @@ export async function apply(ctx) {
         [3, 'assessment', '证据评估'], [4, 'recon', '补充侦察']]) {
         selected = await service.command(exec.agent, JSON.stringify({ operationId: 'fixture-checkpoint-' + index,
           expectedRevision: selected.revision, action: { kind: 'checkpoint', phase, title,
-            ...(index === 2 ? { id: checkpointId } : {}), reason: index === 4 ? '实现证据不足' : '',
-            summary: '仅有静态笔记，尚无安全结论。', next: '补充实现材料。', evidenceIds: [], findingIds: [] } }))
+            ...(index === 2 ? { id: checkpointId } : {}), reason: index === 4 ? '实现证据不足' : '源码、固件与抓包需要组合 Web、逆向和 IoT 方法。',
+            summary: '已导入混合材料，尚无安全结论。', next: '先核对源码和文件内容，再选择所需工具。', evidenceIds: [], findingIds: [] } }))
         checkpointId = selected.records.filter(record => record.kind === 'checkpoint').at(-1).value.id
       }
       assert.equal(selected.records.filter(record => record.kind === 'checkpoint').length, 3)
