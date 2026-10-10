@@ -9,11 +9,15 @@ import type { AnalysisOperation } from './model.ts'
 export class BinaryProvider implements AnalysisProvider {
   resourceKey(): null { return null }
   readonly id = 'binary'
-  readonly inputGuide = 'identity requires {}. hex and strings accept byte offset and length; length defaults to maxOutputBytes/8 and cannot exceed it. strings also accepts minLength (default 4), encoding ascii or utf16le (default ascii); only printable ASCII characters are extracted. Overlap pages to check strings crossing a page edge. Input is the immutable imported artifact; no executable is needed.'
+  readonly inputGuide = 'Select an imported single file with assetId, not a source directory or parameters.path. The coordinator can read security_help(action: "import") and use security_command with action.kind "import" and the authorized absolute file path; delegated analysts must ask the coordinator to import it. identity requires parameters "{}". hex and strings accept byte offset and length; length defaults to maxOutputBytes/8 and cannot exceed it. strings also accepts minLength (default 4), encoding ascii or utf16le (default ascii); only printable ASCII characters are extracted. Overlap pages to check strings crossing a page edge. Input is the immutable imported artifact; no executable is needed.'
   readonly operations = ['identity', 'hex', 'strings']
   resolve(request: AnalysisOperation, context: AnalysisContext): AnalysisOperation {
     if (!this.operations.includes(request.operation) || request.script || request.impact !== 'observe')
       throw new Error('Binary inspection accepts read-only built-in operations')
+    if ('kind' in context.asset)
+      throw new Error('binary requires an imported single-file assetId; source snapshots and parameters.path cannot select a file. The coordinator must read security_help(action: "import"), then use security_command with action.kind "import" and the authorized absolute file path. Use the returned file assetId for identity with parameters "{}". Delegated analysts must ask the coordinator to import the file.')
+    if (request.operation === 'identity' && Object.keys(request.parameters).length)
+      throw new Error('binary identity accepts no parameter keys; select the imported file with assetId and pass parameters "{}". Example: {"provider":"binary","operation":"identity","assetId":"<file assetId>","environmentId":"<environmentId>","parameters":"{}"}. Use hex or strings for offset and length.')
     const schema = request.operation === 'identity' ? z.object({}).strict() : z.object({
       offset: z.number().int().nonnegative().default(0),
       length: z.number().int().positive().max(Math.floor(context.maxOutputBytes / 8))
@@ -23,6 +27,9 @@ export class BinaryProvider implements AnalysisProvider {
         encoding: z.enum(['ascii', 'utf16le']).default('ascii'),
       } : {}),
     }).strict()
+    const unknown = Object.keys(request.parameters).filter(key => !Object.hasOwn(schema.shape, key))
+    if (unknown.length)
+      throw new Error(`binary ${request.operation} received unknown parameter keys: ${unknown.join(', ')}. Allowed keys: ${Object.keys(schema.shape).join(', ')}. Example: {"provider":"binary","operation":"${request.operation}","assetId":"<file assetId>","environmentId":"<environmentId>","parameters":"{}"}. Select the imported file with assetId.`)
     return { ...request, parameters: schema.parse(request.parameters) }
   }
   async run(request: AnalysisOperation, context: AnalysisContext): Promise<AnalysisResult> {

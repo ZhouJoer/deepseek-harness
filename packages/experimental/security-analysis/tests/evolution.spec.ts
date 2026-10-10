@@ -9,7 +9,7 @@ import { JsonStorageBackend } from '@deepseek-ai/dsh-storage-json'
 import { expect, it, onTestFinished } from 'vitest'
 import { evolutionInputSchema, evolutionRunSchema, type EvolutionInput } from '../src/evolution-model.ts'
 import { EvolutionStore } from '../src/evolution-store.ts'
-import { evolutionExcerpt } from '../src/evolution.ts'
+import { evolutionExcerpt, evolutionPrompt, evolutionRequest, selectEvolutionInput } from '../src/evolution.ts'
 
 async function harness() {
   const root = await mkdtemp(join(tmpdir(), 'dsh-evolution-'))
@@ -122,4 +122,57 @@ it('checks cancellation at publication and bounds multibyte excerpts', async () 
   expect(store.view().proposals).toEqual([])
   expect(evolutionExcerpt('中文🙂tail', 9)).toEqual({ excerpt: '中文', truncated: true })
   expect(evolutionExcerpt('中文', 6)).toEqual({ excerpt: '中文', truncated: false })
+})
+
+function selectionBudget(data: EvolutionInput, extra: number) {
+  const request = evolutionRequest({ ...data, sources: [], candidates: [] }, 5)
+  return { inputBytes: Buffer.byteLength(evolutionPrompt) + Buffer.byteLength(request) + extra, maxSuggestions: 5 }
+}
+
+it('retains visible events, project evidence and merge candidates under activity pressure', () => {
+  const data = input()
+  const source = data.sources[0]!
+  data.sources = [source, { ...source, id: 'evidence', kind: 'evidence' },
+    ...Array.from({ length: 100 }, (_, index) => ({ ...source, id: `activity-${index}`, kind: 'activity',
+      recordedAt: index, excerpt: '活动摘要'.repeat(100) }))]
+  data.candidates = evolutionInputSchema.parse({ ...data, candidates: [{ id: 'candidate', title: 'Parser',
+    component: 'scripts', conditions: 'Repeated work', problem: 'Manual parsing', change: 'Reuse parser' }] }).candidates
+  const original = structuredClone(data)
+  const config = selectionBudget(data, 4000)
+  const selected = selectEvolutionInput(data, config)
+  expect(selected.sources.map(item => item.kind)).toEqual(expect.arrayContaining(['tool/call', 'evidence', 'activity']))
+  expect(selected.candidates).toEqual(data.candidates)
+  expect(selected.sources.length).toBeLessThan(data.sources.length)
+  expect(selected.gaps).toContain(`${data.sources.length - selected.sources.length} observations omitted to fit the complete request`)
+  expect(Buffer.byteLength(evolutionPrompt) + Buffer.byteLength(evolutionRequest(selected, config.maxSuggestions)))
+    .toBeLessThanOrEqual(config.inputBytes)
+  expect(data).toEqual(original)
+})
+
+it('skips oversized entries and admits a source before considering merge candidates', () => {
+  const data = input()
+  const source = data.sources[0]!
+  data.sources = [{ ...source, id: 'large', recordedAt: 2, excerpt: 'x'.repeat(20000) }, source]
+  data.candidates = evolutionInputSchema.parse({ ...data, candidates: [{ id: 'large-candidate', title: 'Parser', component: 'scripts', conditions: 'large',
+    problem: 'x'.repeat(2000), change: 'Use parser' },
+  { id: 'small-candidate', title: 'Parser', component: 'scripts', conditions: 'small', problem: 'Repeated work', change: 'Reuse parser' }] }).candidates
+  const selected = selectEvolutionInput(data, selectionBudget(data, 1500))
+  expect(selected.sources).toEqual([source])
+  expect(selected.candidates.map(item => item.id)).toEqual(['small-candidate'])
+  expect(selected.gaps).toEqual([...data.gaps, '1 observations omitted to fit the complete request',
+    '1 merge candidates omitted to fit the complete request'])
+})
+
+it('keeps empty sources and disabled merge discovery empty', () => {
+  const data = { ...input(), sources: [], candidates: [] }
+  expect(selectEvolutionInput(data, selectionBudget(data, 0))).toEqual(data)
+  const available = input()
+  expect(selectEvolutionInput(available, selectionBudget(available, 2000)).candidates).toEqual([])
+})
+
+it('reports insufficient instructions or observation budgets instead of an empty analysis', () => {
+  const data = input()
+  expect(() => selectEvolutionInput(data, { inputBytes: 1, maxSuggestions: 5 })).toThrow('instructions, objective and gap notices')
+  data.sources[0]!.excerpt = '中文'.repeat(10000)
+  expect(() => selectEvolutionInput(data, selectionBudget(data, 1000))).toThrow('cannot fit any observation')
 })

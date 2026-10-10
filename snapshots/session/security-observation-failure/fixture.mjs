@@ -16,7 +16,25 @@ export function apply(ctx) {
           material: { kind: 'files', directory: false, files: [{ name: 'sample.bin', base64: 'AAECAw==' }] } }))
       }
       const result = await next()
-      if (exec.name === 'security_static') {
+      if (exec.callId === 'identity-invalid-path') {
+        assert.equal(result.isError, true)
+        assert.match(result.content[0].text, /binary identity accepts no parameter keys/)
+        const view = await service.view(exec.agent)
+        assert.equal(view.records.filter(record => record.kind === 'evidence').length, 1)
+      }
+      if (exec.callId === 'identity-corrected') {
+        assert.notEqual(result.isError, true)
+        const view = await service.view(exec.agent)
+        const evidence = view.records.filter(record => record.kind === 'evidence')
+        assert.equal(evidence.length, 2)
+        const identity = evidence.find(record => record.value.operation === 'identity')
+        assert(identity)
+        const controller = await service.ready
+        const value = JSON.parse((await controller.artifacts.read(identity.value.artifact)).toString())
+        assert.equal(value.size, 4)
+        assert.match(value.sha256, /^[a-f0-9]{64}$/)
+      }
+      if (exec.callId === 'observe-outside-sample') {
         assert.equal(result.isError, true)
         assert.equal(result.content[0].text, 'Error: Offset exceeds sample size')
         assert(exec.agent)

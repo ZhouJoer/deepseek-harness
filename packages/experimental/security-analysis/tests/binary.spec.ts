@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { describe, expect, it, onTestFinished } from 'vitest'
 import { ArtifactStore } from '../src/workbench/artifacts.ts'
 import { BinaryProvider } from '../src/workbench/binary.ts'
-import { fileAssetSchema } from '../src/workbench/model.ts'
+import { fileAssetSchema, sourceAssetSchema } from '../src/workbench/model.ts'
 
 async function fixture(bytes: Buffer) {
   const root = await mkdtemp(join(tmpdir(), 'dsh-binary-'))
@@ -25,6 +25,26 @@ async function fixture(bytes: Buffer) {
 }
 
 describe('immutable binary inspection', () => {
+  it('explains how to replace a source snapshot with an imported file before collection', async () => {
+    const { provider, context, request } = await fixture(Buffer.from('sample'))
+    expect(provider.inputGuide).toMatchSnapshot('binary input guide')
+    const operation = request('identity')
+    const { format: _format, ...file } = context.asset
+    const asset = sourceAssetSchema.parse({ ...file, kind: 'source' })
+    for (const parameters of [{ path: 'bin64/sample.dll' }, {}])
+      expect(() => provider.resolve({ ...operation, parameters }, { ...context, asset }))
+        .toThrow('The coordinator must read security_help(action: "import")')
+    expect(() => request('identity', { path: 'sample.dll' })).toThrow('select the imported file with assetId')
+    expect(request('identity').parameters).toEqual({})
+  })
+  it.each(['hex', 'strings'])('lists valid %s parameters and a usable example for unknown keys', async (operation) => {
+    const { request } = await fixture(Buffer.from('sample'))
+    expect(() => request(operation, { path: 'sample.dll' })).toThrow(`binary ${operation} received unknown parameter keys: path`)
+    expect(() => request(operation, { path: 'sample.dll' })).toThrow(operation === 'hex'
+      ? 'Allowed keys: offset, length.' : 'Allowed keys: offset, length, minLength, encoding.')
+    expect(() => request(operation, { path: 'sample.dll' })).toThrow('"parameters":"{}"')
+    expect(request(operation).parameters).toMatchObject({ offset: 0, length: 512 })
+  })
   it.each(['d4c3b2a1', 'a1b2c3d4', '4d3cb2a1', 'a1b23c4d', '0a0d0d0a'])
   ('identifies capture magic %s without asserting packet validity', async (magic) => {
     const { run } = await fixture(Buffer.from(magic, 'hex'))

@@ -30,7 +30,7 @@ kind: "package-reference"
 
 分析支持逆向、Web 与 IoT。Agent 根据目标、已观察的材料内容和可用环境自主选择并组合方法，会话工具偏好仅作为优先建议。`security_scope` 资产摘要投影已保存的 `assetKind`、文件 `format` 或 Web 的 `origin`、`pathPrefix` 和 `environmentId`。未知文件可使用内置 `binary.identity`；`header.packetCapture` 仅观察 PCAP/PCAPNG 魔数，不确认报文有效性。源码目录先列举再按需读取，可用工具无法检查的二进制成员需要单独导入为文件。`security_capabilities` 的工具摘要包含技能引用，并在已有集合之外提供可交叉使用的 `reverse` 与 `iot` 集合。只检测当前问题所需的外部工具。在 `checkpoint.reason` 保存简短的材料与方法选择依据，`summary` 保存观察，`next` 保存后续工作；实际执行以调用记录和证据为准。这些投影与观察使用已有记录和已记录的工具结果。
 
-通过常规 `skill` 工具加载 `security-investigation`，再按材料与问题组合 `security-web`、`security-firmware`、`security-android` 和 `security-iot-offline`。这些 [skill（技能）方法](src/methods.ts) 指导根据证据提出假设、设计可区分假设的检查、选择工具和限定委派范围。Web 调查追踪身份、输入和处理入口；固件调查连接提取组件与可达的使用方；Android 调查区分 APK/DEX 检查与明确选择的 adb 设备观察。无法访问设备时，设备行为保持未验证，不妨碍有价值的静态工作。方法不安装工具，也不授予权限：现有角色检查、项目范围和执行审批仍决定执行权限。
+通过常规 `skill` 工具加载 `security-investigation`，再按材料与问题组合 `security-web`、`security-firmware`、`security-android` 和 `security-iot-offline`。这些 [skill（技能）方法](src/methods.ts) 指导根据证据提出假设、设计可区分假设的检查、选择工具和限定委派范围。要求完整枚举鉴权机制时，使用现有 checks 记录样本和入口范围、证据及未决问题。报告区分已检查、未检查和无法检查的范围，不把正常鉴权机制当作漏洞发现。Web 调查追踪身份、输入和处理入口；固件调查连接提取组件与可达的使用方；Android 调查区分 APK/DEX 检查与明确选择的 adb 设备观察。无法访问设备时，设备行为保持未验证，不妨碍有价值的静态工作。方法不安装工具，也不授予权限：现有角色检查、项目范围和执行审批仍决定执行权限。
 
 1. 在已配置工作区的 Web 对话中描述任务，或创建项目并指定目标和已配置环境。从部署的 `importRoots` 导入 PE、ELF、APK、DEX 文件，或不可变源码文件或目录。
 2. 根据每项资产的研究问题选择下一步分析和 provider。APK 导入会分别测量 DEX 和 native 库，并保存父子关系。
@@ -95,7 +95,7 @@ Job 负责取消并等待子任务清理。成功取得 job ID 只代表已派�
 
 尚无发现记录时，reviewer 可以检查已有证据，并返回包含证据引用和不确定性的结构化报告。该报告既不创建发现，也不记录对发现的正式裁决。需要正式裁决时，协调者先保存带证据的疑似发现，再由 reviewer 使用真实发现 ID 和当前哈希调用 `security_review`。
 
-内置 `binary` provider 不需要外部安装。调用 `security_static`，设置 `provider: "binary"`、指定资产/环境及 `operation: "identity"`、`"hex"` 或 `"strings"`。身份查询返回实测 SHA-256 和部分 PE/ELF 头字段。十六进制与字符串参数接受字节 `offset` 和 `length`；字符串还接受 `minLength` 与 `encoding`（`ascii` 或 `utf16le`，仅提取可打印 ASCII 字符）。省略长度时取输出预算的八分之一。分页结果保留偏移和不完整标记；跨页字符串需重叠查询。这些观察不能证明文件完全有效、入口可达或存在漏洞。
+内置 `binary` provider 不需要外部安装。调用 `security_static`，设置 `provider: "binary"`、指定资产/环境及 `operation: "identity"`、`"hex"` 或 `"strings"`。身份查询接受 parameters "{}"，返回实测 SHA-256 和部分 PE/ELF 头字段。通过 assetId 选择已导入的单文件；源码快照和 parameters.path 在采集前被拒绝。协调者使用 security_help(action: "import") 和 action.kind 为 "import" 的 security_command 导入授权范围内的绝对文件路径；子分析者需向协调者请求导入。十六进制与字符串参数接受字节 `offset` 和 `length`；字符串还接受 `minLength` 与 `encoding`（`ascii` 或 `utf16le`，仅提取可打印 ASCII 字符）。省略长度时取输出预算的八分之一。分页结果保留偏移和不完整标记；跨页字符串需重叠查询。这些观察不能证明文件完全有效、入口可达或存在漏洞。
 
 ### 证据与恢复
 
@@ -105,9 +105,9 @@ Job 负责取消并等待子任务清理。成功取得 job ID 只代表已派�
 
 协调者、侦察、逆向分析和 Web 分析角色使用原生工作区工具及继承的 DSH 权限运行脚本。`security_capabilities.analysisDirectory` 返回 Session 工作区下 `.dsh/analysis/<task-session-key>/` 的绝对路径；缺少工作区或活动绑定时返回 null。查询不会创建目录或授予权限。协调者和子任务指令要求把生成脚本放入 `scripts/`、结果及日志放入 `outputs/`、中间文件放入 `tmp/`；Shell 调用以分析目录作为 `workdir`，用绝对路径读取原始输入。任务与 Session 标识决定各自独立且稳定的目录。文件跨轮保留；清理前需保存相关工具结果作为证据。用户要求的项目代码和交付物遵循项目布局。研究和复核角色不能执行脚本。项目停止和归档会取消跟踪的原生前台进程及所属后台任务，并等待清理。原生 Shell 取消涵盖 DSH 管理的进程树；外部服务或脱离的容器工作负载需要通过对应环境的生命周期操作清理。专用验证 provider 仍要求已批准计划。
 
-只读 `toolboxDirectory` Remote 立即显示未检测的定义，打开页面不运行探测。`toolboxInventory` 和 `security_environment` 按当前目录检测所选工具 ID 及其递归依赖。Host 与 CLI 共享定义校验、候选路径发现、依赖排序、探测参数和结果解析。CLI `doctor` 报告 Python 解释器、虚拟环境和 pip 信息；`import`、`export`、`--tag` 与 `--collection` 管理可复用工具包。`security_capabilities` 按查询词、标签、集合或工具 ID 返回有界摘要；`details` 加载所选工具或 `providerId` 的完整说明。`toolDiscoveryPageSize` 限制每页数量，`modelResultBytes` 限制完整响应。系统指令仅保留发现原则。TShark 详情区分可执行文件、驱动、接口与访问检查，并包含 Wireshark extcap 发现方法；版本检测不能证明抓包权限。
+只读 `toolboxDirectory` Remote 立即显示未检测的定义，打开页面不运行探测。`toolboxInventory` 和 `security_environment` 按当前目录检测所选工具 ID 及其递归依赖。Host 与 CLI 共享定义校验、候选路径发现、依赖排序、探测参数和结果解析。reverse 集合包含通过选定 Python 探测的 capstone 和 pefile 模块。CLI `doctor` 报告 Python 解释器、虚拟环境和 pip 信息；`import`、`export`、`--tag` 与 `--collection` 管理可复用工具包。`security_capabilities` 按查询词、标签、集合或工具 ID 返回有界摘要；`details` 加载所选工具或 `providerId` 的完整说明。`toolDiscoveryPageSize` 限制每页数量，`modelResultBytes` 限制完整响应。系统指令仅保留发现原则。TShark 详情区分可执行文件、驱动、接口与访问检查，并包含 Wireshark extcap 发现方法；版本检测不能证明抓包权限。
 
-共享指导优先采用原生机器可读结果，并按当前安全问题选择有界查询。按需加载的[工具指南](src/builtin-tools.ts)说明二进制、抓包、动态、Android、HTTP 和扫描工具的格式及限制；[调查方法](src/methods.ts)衔接所需观察、最小查询、结果解释和停止决策。输入身份、参数和覆盖范围匹配时复用已保存结果。小型任务脚本筛选或关联字段，同时保留原始文件和定位信息。把文本放入 `stdout` 不等于结构化其内容。空结果、部分结果、截断、格式不支持或执行失败均需明确保留缺口；工具观察和建模假设应与 finding 及 review 结论区分。
+共享指导优先采用原生机器可读结果，并按当前安全问题选择有界查询。按需加载的[工具指南](src/builtin-tools.ts)说明二进制、抓包、动态、Android、HTTP 和扫描工具的格式及限制；[调查方法](src/methods.ts)衔接所需观察、最小查询、结果解释和停止决策。输入身份、参数和覆盖范围匹配时复用已保存结果。radare2 指引将相关查询合并到同一进程，执行一次所需分析；插件发现保留无目标调用参数 -q -c Lcj --，避免使用会禁用插件的 -NN。小型任务脚本筛选或关联字段，同时保留原始文件和定位信息。把文本放入 `stdout` 不等于结构化其内容。空结果、部分结果、截断、格式不支持或执行失败均需明确保留缺口；工具观察和建模假设应与 finding 及 review 结论区分。
 
 Metasploit 详情包含 JSON 任务文件模板，区分可复用的模块设置、本次环境与目标绑定，以及实测运行结果。指南要求 agent 在 `scripts/` 保留 rc 模板，在 `outputs/` 保留实际执行的 rc 和带哈希的输出，并将调用捕获为证据。复用采用所选环境的实测启动参数，明确宿主与容器路径，通过相同 Docker context 复制文件。模块覆盖值保留适用条件，未执行的负对照保持未验证。获准的 `import-source` 可归档 `importRoots` 内的文件；checkpoint 引用文件和证据。这些是现有原生 Shell 工具的使用指引，不是自动配方执行器，也不代表 Metasploit 集成已验收。
 
@@ -128,7 +128,7 @@ Host 运行期间，配置成对的 `knowledgeProvider` 和 `knowledgeModel` 后
 <a id="source-snapshots-and-offline-checks"></a>
 ### 源码快照与离线检查
 
-委派接受可选 `checkId` 和 `inputEvidenceIds`。关联检查必须属于指定项目和资产，在准入和绑定子任务时保持待检查且依赖全部完成。输入观察必须属于该资产，并通过字节长度与摘要校验；失败或不完整观察仍可用于解释阻塞。重试须显式提供本次输入。子任务记录的初始消息包含检查标题、完成条件和依据引用；原始观察通过依据工具读取。待启动或运行中的委派阻止重开对应检查及受影响的上游检查，须先取消并等待清理。采纳报告不会完成检查或确认发现。
+委派接受可选 `checkId` 和 `inputEvidenceIds`。关联检查必须属于指定项目和资产，在准入和绑定子任务时保持待检查且依赖全部完成。输入观察必须属于该资产，并通过字节长度与摘要校验；失败或不完整观察仍可用于解释阻塞。重试须显式提供本次输入。子任务记录的初始消息包含检查标题、完成条件和依据引用；原始观察通过依据工具读取。调查方法要求交接包含已完成范围、未决问题和反证，子任务重复采集前先读取 inputEvidenceIds；各 Session 的可写目录保持独立。待启动或运行中的委派阻止重开对应检查及受影响的上游检查，须先取消并等待清理。采纳报告不会完成检查或确认发现。
 
 共享的[覆盖投影](src/workbench/coverage.ts)区分检查执行、观察和已采纳的当前复核。观察仅通过检查、依据和计划的显式引用关联。活动流 snapshot/project 帧可携带同修订的覆盖，不持久化派生结果。新报告使用同一投影，已保存报告保留原快照。未关联检查、采集不完整、模拟和未记录方式保持可见；数量不表示目标安全程度。
 
@@ -138,7 +138,7 @@ Host 运行期间，配置成对的 `knowledgeProvider` 和 `knowledgeModel` 后
 
 `./native` 插件直接在 Host（包括 Windows）执行已审批的 `native/python` 计划。选择验证检查项和本机环境，提交完整 Python 脚本，参数为 `{}` 或环境工作区内的 `{cwd: 绝对目录}`。准备阶段发现已配置或可用的 Python，固定程序路径、版本、操作系统和已存在的工作目录。执行前重新核对这些值，通过标准输入和 `-I -u -B` 运行已保存脚本，不另行加载可变脚本包装器。输入和依赖仍为本机当前文件，应使用绝对路径并在结果中记录其身份。本机执行具有 Host 当前用户的文件、网络和设备权限，不提供 Docker 隔离；计划须说明影响和清理方式。审批、时长与输出上限、项目停止和子进程清理仍生效。脚本生成的文件保留；`graceMs` 配置进程清理宽限期。Windows DLL 需要 Windows 和兼容的 Python 架构。应新建本机计划，不能复用离线审批。
 
-`./offline` 插件仅通过已审批的不可变计划接收 Python 或浏览器脚本。配置本地 `docker` 和包含 Python、Node、Playwright、Chromium 的现有镜像；[镜像配方](resources/offline/Dockerfile) 与[浏览器运行器](resources/offline/browser.mjs) 定义运行时布局。准备阶段固定已安装镜像 ID，provider 不拉取镜像。可配置限制为 `image`、`memoryMb`、`cpus`、`pids`、`temporaryMb` 和 `graceMs`。这种 Linux 模拟不能读取 Host 磁盘路径或原生加载 Windows DLL；此类检查应选择 `native/python`。
+`./offline` 插件仅通过已审批的不可变计划接收 Python 或浏览器脚本。配置本地 `docker` 和包含 Python、Node、Playwright、Chromium 的现有镜像；[镜像配方](resources/offline/Dockerfile) 与[浏览器运行器](resources/offline/browser.mjs) 定义运行时布局。准备阶段固定已安装镜像 ID，provider 不拉取镜像。计划提交完整脚本代码，不是宿主脚本路径；导入源码位于 /input/source（DSH_SOURCE_ROOT），临时文件放入 /tmp。给宿主路径加上 /tmp 前缀不会挂载该路径。可配置限制为 `image`、`memoryMb`、`cpus`、`pids`、`temporaryMb` 和 `graceMs`。这种 Linux 模拟不能读取 Host 磁盘路径或原生加载 Windows DLL；此类检查应选择 `native/python`。
 
 每次执行使用新的非特权容器，禁用网络和设备访问，根目录与源码挂载只读，临时存储有界。浏览器请求从快照拦截到 `http://localhost`。脚本注入模拟硬件，打印运行时版本、事件与断言，并在断言失败时返回失败。证据区分模拟、静态和设备观察，保留失败及清理详情。容器测试覆盖 Python 和 Chromium，但不能证明固件或无线行为；Host 崩溃后仍需操作者核对残留离线容器。
 
@@ -192,7 +192,7 @@ Cookie、Bearer、Basic 和表单/JSON 登录身份保存在 Host credentials �
 
 改进分析从成功与失败的安全任务中发现本 Agent 在能力、流程、脚本和方法论上的不足，提出可复用工具、缺失接口、委派改进、脚本参数化、流程调整或可重复执行的调查方法，并附实际依据和验收场景。方法改进可落实为提示词、技能文档或工作流规则，无需新增工具。网络与 IoT 复盘重点检查协议状态、抓包/固件/日志关联、可复现验证，以及协作中的上下文缺口。目标漏洞仍归安全发现管理。允许没有建议。工作台提供手动分析、统一改进池、人工状态和可交接的编码任务；操作见[用户流程](../../../docs/user/guide/security-analysis.zh.md#continuous-improvement)。
 
-服务的 `evolution.auto` 默认为 false，安全 profile 将其设为 true。新增活动后，`idleMs` 默认等待 300,000 毫秒；协调会话、子任务、检查和后台作业须全部空闲。手动请求也等待空闲，但不等待静默间隔。每个任务保留一个请求；`concurrency` 默认为一。新增活动取消分析并重新等待。停止、归档和卸载会取消并等待执行结束。待处理请求跨重启保留；中断运行重新排队，失败则等待新增活动或手动重试。历史任务不自动回溯。
+服务的 `evolution.auto` 默认为 false，安全 profile 将其设为 true。新增活动后，`idleMs` 默认等待 300,000 毫秒；协调会话、子任务、检查和后台作业须全部空闲。手动请求也等待空闲，但不等待静默间隔。每个任务保留一个请求；`concurrency` 默认为一。新增活动取消分析并重新等待。停止、归档和卸载会取消并等待执行结束。待处理请求跨重启保留；中断运行重新排队，失败则等待新增活动或手动重试。历史任务不自动回溯。可见事件、项目记录、活动摘要和按相关性排序的归并候选轮流进入完整请求预算，并准确记录省略数量。过大条目会被跳过；指令或任意可用观察均无法装入时明确报错。命令文本相同不代表脚本或输入未变，活动摘要未含诊断也不代表原日志缺失。
 
 专用 `evolution.provider` 与 `model` 必须一起配置；否则沿用最近观察到的协调者已解析 provider/model。独立分析沿用模型默认推理强度；`evolution.reasoningEffort` 可显式选择受支持的强度，不支持的值会在发送请求前报错。该设置不改变协调者。在推理与正文共用额度的服务商上，`outputTokens` 同时限制两者。默认 `inputBytes: 131072`、`excerptBytes: 2048`、`outputTokens: 24576`、`timeoutMs: 300000`、`maxCandidates: 20` 和 `maxSuggestions: 5`。输入包含有界可见记录、准确 Session 序号、任务记录、运行版本、截断标记和历史资料缺口。事件发生时确定归属；工具结果保留调用所属任务。不收集推理流。候选筛选匹配组件、适用条件和预期改动的中英文关键词；模型归并保留人工进度，准确来源去重。已验证建议收到新依据时提示复查，不改变状态。
 

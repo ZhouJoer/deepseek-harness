@@ -41,6 +41,7 @@ const stringValue: unknown = expect.any(String)
 describe('offline provider', () => {
   it('pins the installed image and confines approved scripts to immutable inputs', async () => {
     const { root, provider, context, resolved } = await fixture()
+    expect(provider.inputGuide).toMatchSnapshot('offline input guide')
     vi.mocked(runProcess).mockResolvedValue(completed)
     const result = await provider.run(resolved, context)
     expect(resolved.parameters.imageId).toBe(imageId)

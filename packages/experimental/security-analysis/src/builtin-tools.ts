@@ -85,7 +85,7 @@ export const builtinToolPack = parseToolPack({
         '-v',
       ],
       'url': 'https://github.com/radareorg/radare2',
-      'guide': 'For native ELF/.so, PE/.dll/.exe and Mach-O, prefer available radare2/r2 for metadata, functions, cross-references and disassembly. Invoke the measured command and prefixArgs through the native shell, not as a security_static provider. Start with bounded metadata or a relevant function. Prefer native JSON commands supported by the installed version; keep sample identity, architecture, function addresses and cross-reference addresses. Distinguish file offsets from virtual addresses and preserve the queried range. Use scripts for orchestration or a demonstrated tool gap.',
+      'guide': 'For native ELF/.so, PE/.dll/.exe and Mach-O, prefer available radare2/r2 for metadata, functions, cross-references and disassembly. Invoke the measured command and prefixArgs through the native shell, not as a security_static provider. Start with bounded metadata or a relevant function. Group related queries in one process and run only the required analysis level once; do not prepend aa/aaa to every query. Prefer native JSON commands supported by the installed version; keep sample hash, tool version, parameters, architecture, function addresses and cross-reference addresses. Preserve raw output and diagnostics separately; invalid JSON is a failed parse, not an empty result. Reuse saved observations only when input identity, parameters and coverage match. Distinguish file offsets from virtual addresses and preserve the queried range. Use scripts for orchestration or a demonstrated tool gap.',
       'skills': [
         'security-firmware',
       ],
@@ -113,7 +113,7 @@ export const builtinToolPack = parseToolPack({
         'kind': 'json-plugin',
         'name': 'r2ghidra',
       },
-      'guide': 'Decompiler plugin in the selected radare2 process. Check the plugin through the same radare2 installation; use bounded decompilation of selected functions. Prefer pdgj when supported by the installed plugin. Keep decompiled code as text with the function address and relevant references from radare2; do not parse pseudocode into asserted semantics. Preserve diagnostics and unsupported-command failures instead of treating them as empty functions.',
+      'guide': 'Decompiler plugin in the selected radare2 process. Use security_environment to check the plugin through the selected radare2 installation. A target-free probe uses arguments -q -c Lcj --; retain the final --, otherwise radare2 may report a missing input file. Do not use -NN to decide whether the plugin is installed: it disables plugin loading. If unavailable, continue supported metadata or disassembly queries without assuming decompilation works; recheck after the installation changes. Use bounded decompilation of selected functions. Prefer pdgj when supported by the installed plugin. Keep decompiled code as text with the function address and relevant references from radare2; do not parse pseudocode into asserted semantics. Preserve diagnostics and unsupported-command failures instead of treating them as empty functions.',
       'skills': [
         'security-firmware',
       ],
@@ -138,6 +138,32 @@ export const builtinToolPack = parseToolPack({
       'skills': [
         'security-firmware',
       ],
+    },
+    {
+      'id': 'capstone',
+      'label': 'Capstone',
+      'description': 'Python instruction decoding / 逆向 指令 反汇编',
+      'category': 'reverse',
+      'tags': ['reverse', 'binary', 'firmware'],
+      'url': 'https://www.capstone-engine.org/',
+      'dependency': 'python',
+      'invocation': 'python',
+      'probe': { 'kind': 'python-module', 'module': 'capstone', 'distribution': 'capstone' },
+      'guide': 'Import capstone through the measured Python interpreter and prefixArgs. Specify architecture, mode, input byte range and base address explicitly. Preserve instruction addresses and original bytes. Successful decoding alone does not establish function boundaries, reachability or runtime behavior.',
+      'skills': ['security-firmware'],
+    },
+    {
+      'id': 'pefile',
+      'label': 'pefile',
+      'description': 'Python PE headers, imports and exports / 逆向 PE DLL 导入 导出',
+      'category': 'reverse',
+      'tags': ['reverse', 'binary', 'dll'],
+      'url': 'https://github.com/erocarrera/pefile',
+      'dependency': 'python',
+      'invocation': 'python',
+      'probe': { 'kind': 'python-module', 'module': 'pefile', 'distribution': 'pefile' },
+      'guide': 'Import pefile through the measured Python interpreter and prefixArgs. Preserve the sample hash, selected headers or tables, and parser diagnostics. Distinguish RVA, virtual address and file offset. Imports and exports identify investigation leads; they do not establish that a function is reached or an authorization check is enforced.',
+      'skills': ['security-firmware'],
     },
     {
       'id': 'unicorn',
@@ -601,7 +627,7 @@ On reuse, verify saved file hashes, reread the recipe's applicability, bind the 
     {
       'id': 'reverse',
       'label': 'Reverse engineering / 逆向分析',
-      'toolIds': ['radare2', 'r2ghidra', 'r2pipe', 'ghidra', 'unicorn', 'frida', 'jadx', 'readelf', 'objdump', 'nm', 'strings'],
+      'toolIds': ['radare2', 'r2ghidra', 'r2pipe', 'capstone', 'pefile', 'ghidra', 'unicorn', 'frida', 'jadx', 'readelf', 'objdump', 'nm', 'strings'],
     },
     {
       'id': 'iot',

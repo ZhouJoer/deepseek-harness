@@ -32,9 +32,27 @@ beforeEach(() => {
   run.mockReset()
   run.mockImplementation(async (_ctx, _env, id) => ok(id === 'python' ? pythonIdentity()
     : id === 'r2ghidra' ? '[{"name":"r2ghidra","version":"6.2","path":"plugins/core.dll"}]'
-      : id === 'r2pipe' || id === 'frida' ? '{"version":"1.0","location":"site-packages"}' : '6.2'))
+      : ['r2pipe', 'frida', 'capstone', 'pefile'].includes(id) ? '{"version":"1.0","location":"site-packages"}' : '6.2'))
 })
 describe('tool inventory', () => {
+  it.each(['capstone', 'pefile'])('probes %s only through the selected Python and preserves failure diagnostics', async (id) => {
+    const environment: SecurityEnvironment = { ...env, tools: [
+      { id: 'python', command: 'selected-python', prefixArgs: ['-I'], versionArgs: ['--version'], source: 'Configured' },
+    ] }
+    const { inspect, resolveExecutable } = fixture(['selected-python'])
+    const result = await inspect(environment, undefined, [id])
+    expect(result.tools.find(tool => tool.id === id)).toMatchObject({ status: 'available', command: 'selected-python', prefixArgs: ['-I'] })
+    expect(run.mock.calls.map(call => call[2])).toEqual(['python', id])
+    expect(run.mock.calls[1]?.[1].tools.find(tool => tool.id === id)).toMatchObject({ command: 'selected-python', prefixArgs: ['-I'] })
+    expect(resolveExecutable.mock.calls.every(call => call[0] === 'selected-python')).toBe(true)
+    run.mockImplementation(async (_ctx, _env, tool) => tool === 'python' ? ok(pythonIdentity('selected-python'))
+      : { ...ok(''), exitCode: 1, stderr: `ModuleNotFoundError: No module named '${id}'` })
+    const missing = (await inspect(environment, undefined, [id])).tools.find(tool => tool.id === id)
+    expect(missing?.status).toBe('missing')
+    expect(missing?.detail).toContain('ModuleNotFoundError')
+    run.mockImplementation(async (_ctx, _env, tool) => tool === 'python' ? ok(pythonIdentity('selected-python')) : ok('invalid JSON'))
+    expect((await inspect(environment, undefined, [id])).tools.find(tool => tool.id === id)?.status).toBe('error')
+  })
   it.each([
     { name: 'analysis-one', workdir: '/work/first', context: 'lab-one' },
     { name: 'analysis-two', workdir: '/opt/second run', context: 'lab-two' },

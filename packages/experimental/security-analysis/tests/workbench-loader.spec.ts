@@ -500,7 +500,7 @@ describe('security workbench Loader composition', () => {
       expect(tshark?.skills).toEqual(['security-packet-analysis', 'security-mqtt', 'security-iot-offline'])
       expect(JSON.stringify(value)).not.toContain('USBPcapCMD.exe')
     }
-    for (const id of ['radare2', 'r2ghidra', 'r2pipe', 'unicorn', 'frida', 'jadx', 'adb', 'curl', 'nmap', 'nuclei', 'metasploit', 'tshark', 'file', 'strings', 'readelf', 'objdump', 'nm']) {
+    for (const id of ['radare2', 'r2ghidra', 'r2pipe', 'capstone', 'pefile', 'unicorn', 'frida', 'jadx', 'adb', 'curl', 'nmap', 'nuclei', 'metasploit', 'tshark', 'file', 'strings', 'readelf', 'objdump', 'nm']) {
       const detail = await execute(ctx, agent, 'security_capabilities', { toolIds: [id], details: true })
       expect(detail.isError).toBe(false)
       const { catalog } = JSON.parse(detail.content.filter(block => block.type === 'text').map(block => block.text).join('')) as { catalog: { id: string; guide: string }[] }
@@ -1735,6 +1735,53 @@ it('cancels an active refinement and drains the worker before project stop retur
   expect(ctx.agents.get(worker!.id)).toBeUndefined()
 })
 
+it('recovers binary identity from a directory asset by importing one file without changing child permissions', async () => {
+  const { ctx, agent, controller } = await load()
+  const root = roots[roots.length - 1]!
+  const directory = join(root, 'bin64')
+  await mkdir(directory)
+  const path = join(directory, 'sample.dll')
+  await writeFile(path, 'owned binary fixture')
+  const send = operator(controller, agent)
+  await send({ kind: 'create', title: 'Identity recovery', objective: 'Inspect one file', environmentIds: ['local'], maxAttempts: 2 })
+  await send({ kind: 'import-source', path: directory, label: 'bin64' })
+  const source = controller.view(agent.id).records.find(item => item.kind === 'asset')!
+  if (source.kind !== 'asset') throw new Error('Missing source')
+  const identity = { provider: 'binary', operation: 'identity', assetId: source.value.id, environmentId: 'local' }
+  for (const parameters of ['{"path":"bin64/sample.dll"}', '{}']) {
+    const result = await execute(ctx, agent, 'security_static', { ...identity, parameters }, `directory-${parameters.length}`)
+    expect(result.isError).toBe(true)
+    expect(result.content.filter(block => block.type === 'text').map(block => block.text).join(''))
+      .toMatchSnapshot('directory identity recovery')
+  }
+  const childId = SessionId('identity-recovery-child')
+  await bindDelegatedChild(controller, agent.id, childId, source.value.id, 'reverse-analyst')
+  const { agent: child } = await ctx.agents.create({ sessionId: childId, parentAgent: agent,
+    meta: { parentSession: agent.id, origin: 'subagent', delegationDepth: 1 } })
+  const childResult = await execute(ctx, child, 'security_static', { ...identity, parameters: '{}' })
+  expect(childResult.isError).toBe(true)
+  expect(JSON.stringify(childResult)).toContain('Delegated analysts must ask the coordinator')
+  const command = { operationId: 'import-single-binary', expectedRevision: controller.view(agent.id).revision,
+    action: { kind: 'import', path, label: 'sample.dll' } }
+  expect((await execute(ctx, child, 'security_command', { command: JSON.stringify(command) })).isError).toBe(true)
+  expect((await execute(ctx, agent, 'security_help', { action: 'import' })).isError).toBe(false)
+  expect((await execute(ctx, agent, 'security_command', { command: JSON.stringify(command) })).isError).toBe(false)
+  const imported = controller.view(agent.id).records.find(item => item.kind === 'asset' && !('kind' in item.value))
+  if (imported?.kind !== 'asset') throw new Error('Missing imported file')
+  const wrong = await execute(ctx, agent, 'security_static', { ...identity, assetId: imported.value.id, parameters: '{"path":"sample.dll"}' })
+  expect(wrong.isError).toBe(true)
+  expect(wrong.content.filter(block => block.type === 'text').map(block => block.text).join('')).toMatchSnapshot('file identity parameters')
+  expect(controller.view(agent.id).records.filter(item => item.kind === 'evidence')).toHaveLength(0)
+  const recovered = await execute(ctx, agent, 'security_static', { ...identity, assetId: imported.value.id, parameters: '{}' }, 'recovered-identity')
+  expect(recovered.isError, JSON.stringify(recovered)).toBe(false)
+  const evidence = controller.view(agent.id).records.filter(item => item.kind === 'evidence')
+  expect(evidence).toHaveLength(1)
+  if (evidence[0]?.kind !== 'evidence') throw new Error('Missing identity observation')
+  const measured: unknown = JSON.parse((await controller.artifacts.read(evidence[0].value.artifact)).toString())
+  expect(measured).toMatchObject({ size: 20, format: 'other' })
+  expect(measured).toHaveProperty('sha256', expect.stringMatching(/^[a-f0-9]{64}$/u))
+})
+
 it.each(['directory', 'file'] as const)('imports and reads a source %s through the real Loader tool composition', async (selection) => {
   const { ctx, agent, controller } = await load()
   const root = roots[roots.length - 1]!
@@ -1918,8 +1965,8 @@ it('streams Session selection from unbound through create, switch and leave, and
   } finally { abort.abort(); await stream.return?.() }
 })
 
-it('finds functional improvements in an isolated Loader Session and exports a coding task', async () => {
-  const { ctx, agent, controller, model } = await load(false, 0, { evolution: { provider: 'fixture', model: 'fixture' } })
+it.each([0, 20])('finds improvements and respects maxCandidates %i in an isolated Loader Session', async (maxCandidates) => {
+  const { ctx, agent, controller, model } = await load(false, 0, { evolution: { provider: 'fixture', model: 'fixture', maxCandidates } })
   const send = operator(controller, agent)
   await send({ kind: 'create', title: 'Parser workflow', objective: 'Inspect packet captures', environmentIds: ['local'], maxAttempts: 2 })
   await send({ kind: 'checkpoint', phase: 'assessment', title: 'Packet processing', reason: 'Compare captures',
@@ -1948,6 +1995,17 @@ it('finds functional improvements in an isolated Loader Session and exports a co
   await vi.waitFor(async () => { expect((await ctx.securityWorkbench.improvements()).runs.at(-1)).toMatchObject({ status: 'completed', detail: '' }) })
   expect(model.requests).toHaveLength(1)
   expect((await ctx.securityWorkbench.improvements()).proposals[0]?.occurrences).toHaveLength(1)
+  await send({ kind: 'checkpoint', phase: 'assessment', title: 'More packet processing', reason: 'Compare packet captures',
+    summary: 'Repeated parser work in another capture', next: 'Reuse parser', evidenceIds: [], findingIds: [] })
+  model.evolutionOutput = (prompt) => {
+    const data = evolutionInputSchema.parse(JSON.parse(prompt.split('\nObservations: ')[1]!))
+    expect(data.candidates).toHaveLength(maxCandidates ? 1 : 0)
+    return '{"suggestions":[]}'
+  }
+  const changed = await ctx.securityWorkbench.improvements()
+  await ctx.securityWorkbench.analyzeImprovements(JSON.stringify({ operationId: 'changed-analysis', projectId, expectedRevision: changed.revision }))
+  await vi.waitFor(async () => { expect((await ctx.securityWorkbench.improvements()).runs.at(-1)?.status).toBe('completed') })
+  expect(model.requests).toHaveLength(2)
 })
 
 it('cancels improvement synthesis and waits for teardown before task stop returns', async () => {
